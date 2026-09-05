@@ -7,16 +7,35 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="app-header">
-    <h1>🏃 Sprint Lab</h1>
-    <nav class="tabs" id="tabs">
-      <button class="tab-btn active" data-tab="diagnosis"><span class="tab-icon">🎥</span><span class="tab-label">Diagnosis</span></button>
-      <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📅</span><span class="tab-label">Workouts</span></button>
-      <button class="tab-btn" data-tab="weights"><span class="tab-icon">🏋️</span><span class="tab-label">Weights</span></button>
-      <button class="tab-btn" data-tab="times"><span class="tab-icon">🎯</span><span class="tab-label">Times</span></button>
-      <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
-    </nav>
-  </header>
+  <!-- AUTH GATE -->
+  <div id="authGate" class="auth-gate">
+    <div class="card auth-card">
+      <h1>🏃 Sprint Lab</h1>
+      <p class="hint">Sign in to sync your training data across devices.</p>
+      <input type="email" id="authEmail" placeholder="Email" autocomplete="email" />
+      <input type="password" id="authPassword" placeholder="Password (min 6 characters)" autocomplete="current-password" />
+      <div class="row">
+        <button id="authSignIn" class="btn primary">Sign In</button>
+        <button id="authSignUp" class="btn">Create Account</button>
+      </div>
+      <button id="authMagicLink" class="btn" style="width:100%">Email me a sign-in link instead</button>
+      <p id="authMessage" class="hint"></p>
+    </div>
+  </div>
+
+  <!-- APP SHELL (hidden until signed in) -->
+  <div id="appShell" hidden>
+    <header class="app-header">
+      <h1>🏃 Sprint Lab</h1>
+      <button id="signOutBtn" class="btn sign-out-btn">Sign Out</button>
+      <nav class="tabs" id="tabs">
+        <button class="tab-btn active" data-tab="diagnosis"><span class="tab-icon">🎥</span><span class="tab-label">Diagnosis</span></button>
+        <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📅</span><span class="tab-label">Workouts</span></button>
+        <button class="tab-btn" data-tab="weights"><span class="tab-icon">🏋️</span><span class="tab-label">Weights</span></button>
+        <button class="tab-btn" data-tab="times"><span class="tab-icon">🎯</span><span class="tab-label">Times</span></button>
+        <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
+      </nav>
+    </header>
 
   <main id="app">
     <!-- FORM DIAGNOSIS -->
@@ -159,7 +178,10 @@
       </div>
     </section>
   </main>
+  </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

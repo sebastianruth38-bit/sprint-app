@@ -1,3 +1,77 @@
+// ---------- Supabase client + auth ----------
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentUser = null;
+
+const authGate = document.getElementById('authGate');
+const appShell = document.getElementById('appShell');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authMessage = document.getElementById('authMessage');
+
+function setAuthMessage(msg, isError = false) {
+  authMessage.textContent = msg;
+  authMessage.style.color = isError ? 'var(--accent)' : 'var(--muted)';
+}
+
+document.getElementById('authSignIn').addEventListener('click', async () => {
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  if (!email || !password) return setAuthMessage('Enter an email and password.', true);
+  setAuthMessage('Signing in...');
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) setAuthMessage(error.message, true);
+});
+
+document.getElementById('authSignUp').addEventListener('click', async () => {
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  if (!email || !password) return setAuthMessage('Enter an email and password.', true);
+  if (password.length < 6) return setAuthMessage('Password must be at least 6 characters.', true);
+  setAuthMessage('Creating account...');
+  const { error } = await supabaseClient.auth.signUp({ email, password });
+  if (error) return setAuthMessage(error.message, true);
+  setAuthMessage("Account created — you're signed in, or check your email if confirmation is required.");
+});
+
+document.getElementById('authMagicLink').addEventListener('click', async () => {
+  const email = authEmail.value.trim();
+  if (!email) return setAuthMessage('Enter your email first.', true);
+  setAuthMessage('Sending link...');
+  const { error } = await supabaseClient.auth.signInWithOtp({ email });
+  if (error) setAuthMessage(error.message, true);
+  else setAuthMessage('Check your email for a sign-in link.');
+});
+
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  await supabaseClient.auth.signOut();
+});
+
+function handleSession(session) {
+  if (session && session.user) {
+    currentUser = session.user;
+    authGate.hidden = true;
+    appShell.hidden = false;
+    refreshAllData();
+  } else {
+    currentUser = null;
+    authGate.hidden = false;
+    appShell.hidden = true;
+  }
+}
+
+supabaseClient.auth.getSession().then(({ data }) => handleSession(data.session));
+supabaseClient.auth.onAuthStateChange((_event, session) => handleSession(session));
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function ytSearch(query) {
+  return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+}
+
 // ---------- Tabs ----------
 document.getElementById('tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('.tab-btn');
@@ -8,59 +82,15 @@ document.getElementById('tabs').addEventListener('click', (e) => {
   document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
 });
 
-// ---------- Storage helpers ----------
-const store = {
-  get(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  },
-  set(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-  },
-};
-
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-
-// ---------- IndexedDB for video blobs ----------
-let dbPromise = new Promise((resolve, reject) => {
-  const req = indexedDB.open('sprintLabDB', 1);
-  req.onupgradeneeded = () => req.result.createObjectStore('videos');
-  req.onsuccess = () => resolve(req.result);
-  req.onerror = () => reject(req.error);
-});
-
-async function saveVideoBlob(id, blob) {
-  const db = await dbPromise;
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('videos', 'readwrite');
-    tx.objectStore('videos').put(blob, id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function getVideoBlob(id) {
-  const db = await dbPromise;
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('videos', 'readonly');
-    const req = tx.objectStore('videos').get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function deleteVideoBlob(id) {
-  const db = await dbPromise;
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('videos', 'readwrite');
-    tx.objectStore('videos').delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+async function refreshAllData() {
+  renderWeekBoard();
+  renderWeights();
+  renderTimes();
+  renderBigGoals();
+  renderDiagnosis();
+  renderFavorites();
+  renderMotivationLinks();
+  document.getElementById('newQuote').click();
 }
 
 // =====================================================
@@ -118,54 +148,78 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     alert('Add some notes or a clip first.');
     return;
   }
-  const id = uid();
-  const entries = store.get('sprint_diagnosis', []);
-  const entry = { id, date: new Date().toISOString(), notes, hasVideo: !!pendingBlob };
-  if (pendingBlob) await saveVideoBlob(id, pendingBlob);
-  entries.unshift(entry);
-  store.set('sprint_diagnosis', entries);
-  document.getElementById('diagnosisNotes').value = '';
-  pendingBlob = null;
-  videoUpload.value = '';
-  renderDiagnosis();
+  const saveBtn = document.getElementById('saveDiagnosis');
+  saveBtn.disabled = true;
+  try {
+    const id = crypto.randomUUID();
+    let videoPath = null;
+    if (pendingBlob) {
+      videoPath = `${currentUser.id}/${id}.webm`;
+      const { error: uploadError } = await supabaseClient.storage
+        .from('diagnosis-videos')
+        .upload(videoPath, pendingBlob, { contentType: pendingBlob.type || 'video/webm' });
+      if (uploadError) {
+        alert('Video upload failed: ' + uploadError.message);
+        return;
+      }
+    }
+    const { error } = await supabaseClient
+      .from('diagnosis_entries')
+      .insert({ id, user_id: currentUser.id, notes, video_path: videoPath });
+    if (error) {
+      alert('Save failed: ' + error.message);
+      return;
+    }
+    document.getElementById('diagnosisNotes').value = '';
+    pendingBlob = null;
+    videoUpload.value = '';
+    renderDiagnosis();
+  } finally {
+    saveBtn.disabled = false;
+  }
 });
 
 async function renderDiagnosis() {
-  const entries = store.get('sprint_diagnosis', []);
+  const { data, error } = await supabaseClient
+    .from('diagnosis_entries')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+  if (error) { console.error(error); return; }
+
   const list = document.getElementById('diagnosisList');
   list.innerHTML = '';
-  for (const entry of entries) {
+  for (const entry of data) {
     const div = document.createElement('div');
     div.className = 'entry';
-    const dateStr = new Date(entry.date).toLocaleString();
+    const dateStr = new Date(entry.created_at).toLocaleString();
     div.innerHTML = `
       <div class="entry-top">
         <span class="date">${dateStr}</span>
-        <button class="delete-btn" data-id="${entry.id}">Delete</button>
+        <button class="delete-btn">Delete</button>
       </div>
       <div>${escapeHtml(entry.notes || '')}</div>
     `;
-    if (entry.hasVideo) {
-      const video = document.createElement('video');
-      video.controls = true;
-      const blob = await getVideoBlob(entry.id);
-      if (blob) video.src = URL.createObjectURL(blob);
-      div.appendChild(video);
+    if (entry.video_path) {
+      const { data: signed } = await supabaseClient.storage
+        .from('diagnosis-videos')
+        .createSignedUrl(entry.video_path, 3600);
+      if (signed) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.src = signed.signedUrl;
+        div.appendChild(video);
+      }
     }
     div.querySelector('.delete-btn').addEventListener('click', async () => {
-      const remaining = store.get('sprint_diagnosis', []).filter((e) => e.id !== entry.id);
-      store.set('sprint_diagnosis', remaining);
-      if (entry.hasVideo) await deleteVideoBlob(entry.id);
+      if (entry.video_path) {
+        await supabaseClient.storage.from('diagnosis-videos').remove([entry.video_path]);
+      }
+      await supabaseClient.from('diagnosis_entries').delete().eq('id', entry.id);
       renderDiagnosis();
     });
     list.appendChild(div);
   }
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 // =====================================================
@@ -173,36 +227,43 @@ function escapeHtml(str) {
 // =====================================================
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-document.getElementById('saveWorkout').addEventListener('click', () => {
+document.getElementById('saveWorkout').addEventListener('click', async () => {
   const day = document.getElementById('workoutDay').value;
   const type = document.getElementById('workoutType').value;
   const details = document.getElementById('workoutDetails').value.trim();
-  const workouts = store.get('sprint_workouts', {});
-  workouts[day] = { type, details };
-  store.set('sprint_workouts', workouts);
+  const { error } = await supabaseClient
+    .from('workouts')
+    .upsert({ user_id: currentUser.id, day, type, details }, { onConflict: 'user_id,day' });
+  if (error) { alert('Save failed: ' + error.message); return; }
   document.getElementById('workoutDetails').value = '';
   renderWeekBoard();
 });
 
-function renderWeekBoard() {
-  const workouts = store.get('sprint_workouts', {});
+async function renderWeekBoard() {
+  const { data, error } = await supabaseClient
+    .from('workouts')
+    .select('*')
+    .eq('user_id', currentUser.id);
+  if (error) { console.error(error); return; }
+
+  const byDay = {};
+  data.forEach((w) => { byDay[w.day] = w; });
+
   const board = document.getElementById('weekBoard');
   board.innerHTML = '';
   DAYS.forEach((day) => {
-    const w = workouts[day];
+    const w = byDay[day];
     const card = document.createElement('div');
     card.className = 'day-card' + (w ? '' : ' empty');
     card.innerHTML = `
       <h4>${day}</h4>
       ${w ? `<div class="type">${escapeHtml(w.type)}</div><div class="details">${escapeHtml(w.details || '')}</div>`
           : `<div class="details">No session set</div>`}
-      ${w ? `<button class="delete-btn" data-day="${day}">Clear</button>` : ''}
+      ${w ? `<button class="delete-btn">Clear</button>` : ''}
     `;
     if (w) {
-      card.querySelector('.delete-btn').addEventListener('click', () => {
-        const all = store.get('sprint_workouts', {});
-        delete all[day];
-        store.set('sprint_workouts', all);
+      card.querySelector('.delete-btn').addEventListener('click', async () => {
+        await supabaseClient.from('workouts').delete().eq('id', w.id);
         renderWeekBoard();
       });
     }
@@ -228,10 +289,6 @@ const DEFAULT_EXERCISES = [
   { name: 'Copenhagen Plank', url: ytSearch('copenhagen plank groin exercise') },
 ];
 
-function ytSearch(query) {
-  return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
-}
-
 function getWeekKey() {
   const d = new Date();
   const onejan = new Date(d.getFullYear(), 0, 1);
@@ -239,32 +296,45 @@ function getWeekKey() {
   return `${d.getFullYear()}-W${week}`;
 }
 
-function initExercises() {
-  let list = store.get('sprint_exercises', null);
-  if (!list) {
-    list = DEFAULT_EXERCISES.map((ex) => ({ id: uid(), ...ex, custom: false }));
-    store.set('sprint_exercises', list);
+async function ensureDefaultExercises() {
+  const { data, error } = await supabaseClient
+    .from('exercises')
+    .select('id')
+    .eq('user_id', currentUser.id)
+    .limit(1);
+  if (error) { console.error(error); return; }
+  if (data.length === 0) {
+    const rows = DEFAULT_EXERCISES.map((ex) => ({
+      user_id: currentUser.id, name: ex.name, url: ex.url, is_custom: false,
+    }));
+    await supabaseClient.from('exercises').insert(rows);
   }
-  return list;
 }
 
-document.getElementById('addCustomEx').addEventListener('click', () => {
+document.getElementById('addCustomEx').addEventListener('click', async () => {
   const name = document.getElementById('customExName').value.trim();
   const url = document.getElementById('customExUrl').value.trim();
   if (!name) return;
-  const list = store.get('sprint_exercises', []);
-  list.push({ id: uid(), name, url: url || null, custom: true });
-  store.set('sprint_exercises', list);
+  await supabaseClient
+    .from('exercises')
+    .insert({ user_id: currentUser.id, name, url: url || null, is_custom: true });
   document.getElementById('customExName').value = '';
   document.getElementById('customExUrl').value = '';
   renderWeights();
 });
 
-function renderWeights() {
-  const list = store.get('sprint_exercises', []) || initExercises();
+async function renderWeights() {
+  await ensureDefaultExercises();
   const weekKey = getWeekKey();
-  const checks = store.get('sprint_weight_checks', {});
-  const weekChecks = checks[weekKey] || {};
+
+  const [{ data: list, error: exError }, { data: checks, error: checkError }] = await Promise.all([
+    supabaseClient.from('exercises').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true }),
+    supabaseClient.from('weight_checks').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey),
+  ]);
+  if (exError || checkError) { console.error(exError || checkError); return; }
+
+  const checkMap = {};
+  checks.forEach((c) => { checkMap[c.exercise_id] = c.done; });
 
   const container = document.getElementById('weightsList');
   container.innerHTML = '';
@@ -272,21 +342,22 @@ function renderWeights() {
     const row = document.createElement('div');
     row.className = 'ex-row';
     row.innerHTML = `
-      <input type="checkbox" ${weekChecks[ex.id] ? 'checked' : ''} data-id="${ex.id}" />
+      <input type="checkbox" ${checkMap[ex.id] ? 'checked' : ''} />
       <span class="ex-name">${escapeHtml(ex.name)}${ex.url ? `<a href="${ex.url}" target="_blank" rel="noopener">▶ how-to</a>` : ''}</span>
-      ${ex.custom ? `<button class="delete-btn" data-remove="${ex.id}">Remove</button>` : ''}
+      ${ex.is_custom ? `<button class="delete-btn">Remove</button>` : ''}
     `;
-    row.querySelector('input').addEventListener('change', (e) => {
-      const c = store.get('sprint_weight_checks', {});
-      c[weekKey] = c[weekKey] || {};
-      c[weekKey][ex.id] = e.target.checked;
-      store.set('sprint_weight_checks', c);
+    row.querySelector('input').addEventListener('change', async (e) => {
+      await supabaseClient
+        .from('weight_checks')
+        .upsert(
+          { user_id: currentUser.id, exercise_id: ex.id, week_key: weekKey, done: e.target.checked },
+          { onConflict: 'user_id,exercise_id,week_key' }
+        );
     });
-    const removeBtn = row.querySelector('[data-remove]');
+    const removeBtn = row.querySelector('.delete-btn');
     if (removeBtn) {
-      removeBtn.addEventListener('click', () => {
-        const all = store.get('sprint_exercises', []).filter((e) => e.id !== ex.id);
-        store.set('sprint_exercises', all);
+      removeBtn.addEventListener('click', async () => {
+        await supabaseClient.from('exercises').delete().eq('id', ex.id);
         renderWeights();
       });
     }
@@ -299,57 +370,68 @@ function renderWeights() {
 // =====================================================
 document.getElementById('timeDate').valueAsDate = new Date();
 
-document.getElementById('saveTime').addEventListener('click', () => {
+document.getElementById('saveTime').addEventListener('click', async () => {
   const distance = document.getElementById('timeDistance').value;
   const time = document.getElementById('timeValue').value.trim();
   const date = document.getElementById('timeDate').value;
   if (!time) return;
-  const times = store.get('sprint_times', []);
-  times.unshift({ id: uid(), distance, time, date });
-  store.set('sprint_times', times);
+  await supabaseClient
+    .from('times')
+    .insert({ user_id: currentUser.id, distance, time, logged_date: date });
   document.getElementById('timeValue').value = '';
   renderTimes();
 });
 
-function renderTimes() {
-  const times = store.get('sprint_times', []);
+async function renderTimes() {
+  const { data, error } = await supabaseClient
+    .from('times')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('logged_date', { ascending: false })
+    .order('created_at', { ascending: false });
+  if (error) { console.error(error); return; }
+
   const list = document.getElementById('timesList');
   list.innerHTML = '';
-  times.forEach((t) => {
+  data.forEach((t) => {
     const div = document.createElement('div');
     div.className = 'entry';
     div.innerHTML = `
       <div class="entry-top">
         <span><strong>${escapeHtml(t.distance)}</strong> — ${escapeHtml(t.time)}s</span>
-        <span class="date">${t.date}</span>
-        <button class="delete-btn" data-id="${t.id}">Delete</button>
+        <span class="date">${t.logged_date}</span>
+        <button class="delete-btn">Delete</button>
       </div>
     `;
-    div.querySelector('.delete-btn').addEventListener('click', () => {
-      store.set('sprint_times', store.get('sprint_times', []).filter((x) => x.id !== t.id));
+    div.querySelector('.delete-btn').addEventListener('click', async () => {
+      await supabaseClient.from('times').delete().eq('id', t.id);
       renderTimes();
     });
     list.appendChild(div);
   });
 }
 
-document.getElementById('addBigGoal').addEventListener('click', () => {
+document.getElementById('addBigGoal').addEventListener('click', async () => {
   const text = document.getElementById('bigGoalText').value.trim();
   if (!text) return;
-  const goals = store.get('sprint_big_goals', []);
-  goals.unshift({ id: uid(), text, smallGoals: [] });
-  store.set('sprint_big_goals', goals);
+  await supabaseClient.from('big_goals').insert({ user_id: currentUser.id, text });
   document.getElementById('bigGoalText').value = '';
   renderBigGoals();
 });
 
-function renderBigGoals() {
-  const goals = store.get('sprint_big_goals', []);
+async function renderBigGoals() {
+  const [{ data: goals, error: goalsError }, { data: smallGoals, error: smallError }] = await Promise.all([
+    supabaseClient.from('big_goals').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
+    supabaseClient.from('small_goals').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true }),
+  ]);
+  if (goalsError || smallError) { console.error(goalsError || smallError); return; }
+
   const container = document.getElementById('bigGoalsList');
   container.innerHTML = '';
   goals.forEach((goal) => {
-    const done = goal.smallGoals.filter((s) => s.done).length;
-    const total = goal.smallGoals.length;
+    const mine = smallGoals.filter((s) => s.big_goal_id === goal.id);
+    const done = mine.filter((s) => s.done).length;
+    const total = mine.length;
     const pct = total ? Math.round((done / total) * 100) : 0;
 
     const div = document.createElement('div');
@@ -357,7 +439,7 @@ function renderBigGoals() {
     div.innerHTML = `
       <div class="goal-header">
         <span>🎯 ${escapeHtml(goal.text)}</span>
-        <button class="delete-btn" data-id="${goal.id}">Delete</button>
+        <button class="delete-btn">Delete</button>
       </div>
       <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div class="date">${done}/${total} small goals complete</div>
@@ -368,7 +450,7 @@ function renderBigGoals() {
       </div>
     `;
     const smallContainer = div.querySelector('.small-goals');
-    goal.smallGoals.forEach((sg) => {
+    mine.forEach((sg) => {
       const row = document.createElement('div');
       row.className = 'small-goal-row' + (sg.done ? ' done' : '');
       row.innerHTML = `
@@ -376,36 +458,26 @@ function renderBigGoals() {
         <span>${escapeHtml(sg.text)}</span>
         <button class="delete-btn" style="margin-left:auto">✕</button>
       `;
-      row.querySelector('input').addEventListener('change', (e) => {
-        const all = store.get('sprint_big_goals', []);
-        const g = all.find((x) => x.id === goal.id);
-        const s = g.smallGoals.find((x) => x.id === sg.id);
-        s.done = e.target.checked;
-        store.set('sprint_big_goals', all);
+      row.querySelector('input').addEventListener('change', async (e) => {
+        await supabaseClient.from('small_goals').update({ done: e.target.checked }).eq('id', sg.id);
         renderBigGoals();
       });
-      row.querySelector('.delete-btn').addEventListener('click', () => {
-        const all = store.get('sprint_big_goals', []);
-        const g = all.find((x) => x.id === goal.id);
-        g.smallGoals = g.smallGoals.filter((x) => x.id !== sg.id);
-        store.set('sprint_big_goals', all);
+      row.querySelector('.delete-btn').addEventListener('click', async () => {
+        await supabaseClient.from('small_goals').delete().eq('id', sg.id);
         renderBigGoals();
       });
       smallContainer.appendChild(row);
     });
 
-    div.querySelector('.delete-btn[data-id]').addEventListener('click', () => {
-      store.set('sprint_big_goals', store.get('sprint_big_goals', []).filter((g) => g.id !== goal.id));
+    div.querySelector('.goal-header .delete-btn').addEventListener('click', async () => {
+      await supabaseClient.from('big_goals').delete().eq('id', goal.id);
       renderBigGoals();
     });
-    div.querySelector('.add-small-btn').addEventListener('click', () => {
+    div.querySelector('.add-small-btn').addEventListener('click', async () => {
       const input = div.querySelector('.small-goal-input');
       const text = input.value.trim();
       if (!text) return;
-      const all = store.get('sprint_big_goals', []);
-      const g = all.find((x) => x.id === goal.id);
-      g.smallGoals.push({ id: uid(), text, done: false });
-      store.set('sprint_big_goals', all);
+      await supabaseClient.from('small_goals').insert({ big_goal_id: goal.id, user_id: currentUser.id, text });
       renderBigGoals();
     });
     container.appendChild(div);
@@ -441,7 +513,7 @@ const MOTIVATION_LINKS = [
   { title: 'Usain Bolt Slow Motion Sprint Mechanics', url: ytSearch('Usain Bolt slow motion sprint mechanics') },
   { title: "Florence Griffith-Joyner (Flo-Jo) 100m WR", url: ytSearch('Flo Jo 100m world record 10.49') },
   { title: 'Noah Lyles 200m Races', url: ytSearch('Noah Lyles 200m race highlights') },
-  { title: 'Sha\'Carri Richardson Highlights', url: ytSearch("Sha'Carri Richardson 100m highlights") },
+  { title: "Sha'Carri Richardson Highlights", url: ytSearch("Sha'Carri Richardson 100m highlights") },
   { title: 'Sprint Technique Breakdown (Elite Athletes)', url: ytSearch('elite sprint technique breakdown slow motion') },
 ];
 
@@ -459,46 +531,39 @@ function renderMotivationLinks() {
   });
 }
 
-document.getElementById('addFav').addEventListener('click', () => {
+document.getElementById('addFav').addEventListener('click', async () => {
   const title = document.getElementById('favTitle').value.trim();
   const url = document.getElementById('favUrl').value.trim();
   if (!title || !url) return;
-  const favs = store.get('sprint_favorites', []);
-  favs.unshift({ id: uid(), title, url });
-  store.set('sprint_favorites', favs);
+  await supabaseClient.from('favorites').insert({ user_id: currentUser.id, title, url });
   document.getElementById('favTitle').value = '';
   document.getElementById('favUrl').value = '';
   renderFavorites();
 });
 
-function renderFavorites() {
-  const favs = store.get('sprint_favorites', []);
+async function renderFavorites() {
+  const { data, error } = await supabaseClient
+    .from('favorites')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+  if (error) { console.error(error); return; }
+
   const list = document.getElementById('favList');
   list.innerHTML = '';
-  favs.forEach((f) => {
+  data.forEach((f) => {
     const div = document.createElement('div');
     div.className = 'entry';
     div.innerHTML = `
       <div class="entry-top">
         <a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">▶ ${escapeHtml(f.title)}</a>
-        <button class="delete-btn" data-id="${f.id}">Delete</button>
+        <button class="delete-btn">Delete</button>
       </div>
     `;
-    div.querySelector('.delete-btn').addEventListener('click', () => {
-      store.set('sprint_favorites', store.get('sprint_favorites', []).filter((x) => x.id !== f.id));
+    div.querySelector('.delete-btn').addEventListener('click', async () => {
+      await supabaseClient.from('favorites').delete().eq('id', f.id);
       renderFavorites();
     });
     list.appendChild(div);
   });
 }
-
-// ---------- Init ----------
-renderDiagnosis();
-renderWeekBoard();
-initExercises();
-renderWeights();
-renderTimes();
-renderBigGoals();
-renderMotivationLinks();
-renderFavorites();
-document.getElementById('newQuote').click();

@@ -41,7 +41,47 @@ body {
 .app-header h1 {
   margin: 0 0 0.75rem;
   font-size: 1.4rem;
+  display: inline-block;
 }
+
+.sign-out-btn {
+  float: right;
+  margin-top: -0.1rem;
+}
+
+/* ---------- Auth gate ---------- */
+.auth-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+.auth-card h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.4rem;
+}
+
+.auth-card input {
+  margin-bottom: 0.6rem;
+}
+
+.auth-card .row {
+  margin-bottom: 0.6rem;
+}
+
+.auth-card .row .btn {
+  flex: 1;
+}
+
+#authMessage:empty { display: none; }
 
 .tabs {
   display: flex;
