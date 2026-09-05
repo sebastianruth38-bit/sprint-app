@@ -66,6 +66,8 @@ body {
   font-weight: 600;
 }
 
+.tab-icon { display: none; }
+
 main {
   max-width: 900px;
   margin: 0 auto;
@@ -279,3 +281,79 @@ blockquote {
   font-size: 0.9rem;
 }
 .link-card:hover { border-color: var(--accent); }
+
+/* ---------- Mobile: bottom tab bar, bigger targets, no auto-zoom ---------- */
+@media (max-width: 640px) {
+  .app-header {
+    padding: max(0.6rem, env(safe-area-inset-top)) 0 0;
+    border-bottom: none;
+  }
+  .app-header h1 {
+    padding: 0 1rem;
+    font-size: 1.1rem;
+  }
+
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: none;
+    padding: 0.3rem 0.3rem calc(0.3rem + env(safe-area-inset-bottom));
+    justify-content: space-between;
+    overflow-x: visible;
+  }
+
+  .tab-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.4rem 0.1rem;
+    border-bottom: none;
+    border-radius: 10px;
+    min-height: 48px;
+  }
+  .tab-btn.active { background: var(--bg); }
+  .tab-icon { display: block; font-size: 1.2rem; line-height: 1; }
+  .tab-label { font-size: 0.68rem; }
+
+  main {
+    padding: 1rem;
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+
+  .form-grid,
+  .week-board,
+  .link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  input, select, textarea {
+    font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
+  }
+
+  .btn {
+    min-height: 44px;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .row { flex-direction: column; }
+  .row .btn { width: 100%; }
+
+  .file-label {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+  .file-label input { width: 100%; }
+
+  .entry-top {
+    flex-wrap: wrap;
+  }
+}
