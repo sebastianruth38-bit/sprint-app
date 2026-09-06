@@ -64,6 +64,70 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ---------- Weekly availability ----------
+const DAY_ABBR = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
+const calendarBtn = document.getElementById('calendarBtn');
+const availabilityModal = document.getElementById('availabilityModal');
+const sprintDayPicker = document.getElementById('sprintDayPicker');
+const gymDayPicker = document.getElementById('gymDayPicker');
+
+let sprintDaysSelected = new Set();
+let gymDaysSelected = new Set();
+
+function renderDayPicker(container, selectedSet) {
+  container.innerHTML = '';
+  DAYS.forEach((day) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'day-chip' + (selectedSet.has(day) ? ' selected' : '');
+    btn.textContent = DAY_ABBR[day];
+    btn.addEventListener('click', () => {
+      if (selectedSet.has(day)) selectedSet.delete(day); else selectedSet.add(day);
+      btn.classList.toggle('selected');
+    });
+    container.appendChild(btn);
+  });
+}
+
+calendarBtn.addEventListener('click', async () => {
+  settingsMenu.hidden = true;
+  const weekKey = getWeekKey();
+  const { data } = await supabaseClient
+    .from('availability')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('week_key', weekKey)
+    .maybeSingle();
+  sprintDaysSelected = new Set((data && data.sprint_days) || []);
+  gymDaysSelected = new Set((data && data.gym_days) || []);
+  renderDayPicker(sprintDayPicker, sprintDaysSelected);
+  renderDayPicker(gymDayPicker, gymDaysSelected);
+  availabilityModal.hidden = false;
+});
+
+document.getElementById('closeAvailability').addEventListener('click', () => {
+  availabilityModal.hidden = true;
+});
+
+availabilityModal.addEventListener('click', (e) => {
+  if (e.target === availabilityModal) availabilityModal.hidden = true;
+});
+
+document.getElementById('saveAvailability').addEventListener('click', async () => {
+  const weekKey = getWeekKey();
+  await supabaseClient.from('availability').upsert(
+    {
+      user_id: currentUser.id,
+      week_key: weekKey,
+      sprint_days: Array.from(sprintDaysSelected),
+      gym_days: Array.from(gymDaysSelected),
+    },
+    { onConflict: 'user_id,week_key' }
+  );
+  availabilityModal.hidden = true;
+  renderWeekBoard();
+});
+
 function handleSession(session) {
   if (session && session.user) {
     currentUser = session.user;
@@ -258,25 +322,33 @@ document.getElementById('saveWorkout').addEventListener('click', async () => {
 });
 
 async function renderWeekBoard() {
-  const { data, error } = await supabaseClient
-    .from('workouts')
-    .select('*')
-    .eq('user_id', currentUser.id);
+  const weekKey = getWeekKey();
+  const [{ data, error }, { data: avail }] = await Promise.all([
+    supabaseClient.from('workouts').select('*').eq('user_id', currentUser.id),
+    supabaseClient.from('availability').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey).maybeSingle(),
+  ]);
   if (error) { console.error(error); return; }
 
   const byDay = {};
   data.forEach((w) => { byDay[w.day] = w; });
+  const sprintDays = new Set((avail && avail.sprint_days) || []);
+  const gymDays = new Set((avail && avail.gym_days) || []);
 
   const board = document.getElementById('weekBoard');
   board.innerHTML = '';
   DAYS.forEach((day) => {
     const w = byDay[day];
+    const badges = [];
+    if (sprintDays.has(day)) badges.push('<span class="day-badge">🏃 Sprint OK</span>');
+    if (gymDays.has(day)) badges.push('<span class="day-badge">💪 Gym OK</span>');
+
     const card = document.createElement('div');
     card.className = 'day-card' + (w ? '' : ' empty');
     card.innerHTML = `
       <h4>${day}</h4>
       ${w ? `<div class="type">${escapeHtml(w.type)}</div><div class="details">${escapeHtml(w.details || '')}</div>`
           : `<div class="details">No session set</div>`}
+      ${badges.length ? `<div class="day-badges">${badges.join('')}</div>` : ''}
       ${w ? `<button class="delete-btn">Clear</button>` : ''}
     `;
     if (w) {

@@ -81,6 +81,16 @@ create table if not exists public.favorites (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Weekly availability (guideline, not a hard schedule) ----------
+create table if not exists public.availability (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  week_key text not null, -- e.g. "2026-W36"
+  sprint_days jsonb not null default '[]'::jsonb, -- e.g. ["Monday","Wednesday"]
+  gym_days jsonb not null default '[]'::jsonb,
+  unique (user_id, week_key)
+);
+
 -- ---------- Row Level Security: every table, owner-only ----------
 alter table public.workouts enable row level security;
 alter table public.times enable row level security;
@@ -90,12 +100,13 @@ alter table public.exercises enable row level security;
 alter table public.weight_checks enable row level security;
 alter table public.diagnosis_entries enable row level security;
 alter table public.favorites enable row level security;
+alter table public.availability enable row level security;
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites']
+  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability']
   loop
     execute format('
       create policy "owner_select" on public.%I for select using (auth.uid() = user_id);

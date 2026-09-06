@@ -16,40 +16,47 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 500;
   background: var(--bg);
   color: var(--text);
 }
 
+button, input, select, textarea { font-family: inherit; }
+
 h1, h2, h3, .tab-label, .type {
-  font-family: 'Oswald', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Barlow Condensed', 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 700;
 }
 
 h2 {
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 1.3rem;
+  font-size: 1.4rem;
 }
+
+.btn { font-weight: 600; }
 
 .app-header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 1rem 1.5rem 0;
+  padding: 0.85rem 1.25rem;
   position: sticky;
   top: 0;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .app-header h1 {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 1.4rem;
-  display: inline-block;
 }
 
 .settings-wrap {
-  float: right;
   position: relative;
-  margin-top: -0.1rem;
 }
 
 .icon-btn {
@@ -77,6 +84,68 @@ h2 {
 }
 
 .settings-note { margin: 0 0 0.6rem; font-size: 0.8rem; }
+
+/* ---------- Weekly availability modal ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  margin-bottom: 0;
+}
+
+.avail-label {
+  font-weight: 600;
+  margin: 0.9rem 0 0.5rem;
+}
+
+.day-picker {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.35rem;
+}
+
+.day-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 0.5rem 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.day-chip.selected {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.day-badges {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.day-badge {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
 
 /* ---------- Auth gate ---------- */
 .auth-gate {
@@ -419,11 +488,10 @@ blockquote {
 /* ---------- Mobile: bigger targets, no auto-zoom ---------- */
 @media (max-width: 640px) {
   .app-header {
-    padding: max(0.6rem, env(safe-area-inset-top)) 0 0;
+    padding: max(0.6rem, env(safe-area-inset-top)) 1rem 0.6rem;
     border-bottom: none;
   }
   .app-header h1 {
-    padding: 0 1rem;
     font-size: 1.1rem;
   }
 
@@ -478,7 +546,7 @@ blockquote {
 /* ---------- Landscape phones: reclaim vertical space ---------- */
 @media (max-height: 480px) and (orientation: landscape) {
   .app-header { padding-top: 0.4rem; }
-  .app-header h1 { font-size: 1rem; margin-bottom: 0.4rem; }
+  .app-header h1 { font-size: 1rem; }
   main { padding-top: 0.75rem; padding-bottom: 4.5rem; }
   .bottom-nav { bottom: 0.5rem; padding: 0.3rem 0.4rem; }
   .tab-btn { min-height: 36px; font-size: 0.58rem; }
