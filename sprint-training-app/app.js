@@ -227,11 +227,23 @@ function waitForEvent(target, eventName, timeoutMs) {
 // Waits for a video frame to actually be decoded/painted, not just for the
 // 'seeked' event -- 'seeked' can fire slightly before a frame is available
 // to copy into a canvas, which is how you get all-black captures.
-function videoFramePainted(video) {
-  if (typeof video.requestVideoFrameCallback === 'function') {
-    return new Promise((resolve) => video.requestVideoFrameCallback(() => resolve()));
-  }
-  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+function videoFramePainted(video, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    // requestVideoFrameCallback isn't guaranteed to fire on a paused/seeking
+    // video in every browser -- never leave this un-timed-out.
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      video.requestVideoFrameCallback(finish);
+    } else {
+      requestAnimationFrame(() => requestAnimationFrame(finish));
+    }
+    setTimeout(finish, timeoutMs);
+  });
 }
 
 async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
