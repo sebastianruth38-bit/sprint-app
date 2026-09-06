@@ -28,7 +28,13 @@
   <div id="appShell" hidden>
     <header class="app-header">
       <h1>Sprint Lab</h1>
-      <button id="signOutBtn" class="btn sign-out-btn">Sign Out</button>
+      <div class="settings-wrap">
+        <button id="settingsBtn" class="icon-btn" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙️</button>
+        <div id="settingsMenu" class="settings-menu" hidden>
+          <p class="hint settings-note">More settings coming soon.</p>
+          <button id="signOutBtn" class="btn" style="width:100%">Sign Out</button>
+        </div>
+      </div>
     </header>
 
   <main id="app">

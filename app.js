@@ -46,6 +46,24 @@ document.getElementById('signOutBtn').addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
 });
 
+// ---------- Settings menu ----------
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsMenu = document.getElementById('settingsMenu');
+
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const willOpen = settingsMenu.hidden;
+  settingsMenu.hidden = !willOpen;
+  settingsBtn.setAttribute('aria-expanded', String(willOpen));
+});
+
+document.addEventListener('click', (e) => {
+  if (!settingsMenu.hidden && !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
+    settingsMenu.hidden = true;
+    settingsBtn.setAttribute('aria-expanded', 'false');
+  }
+});
+
 function handleSession(session) {
   if (session && session.user) {
     currentUser = session.user;
