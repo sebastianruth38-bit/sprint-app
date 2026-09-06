@@ -69,6 +69,19 @@ create table if not exists public.diagnosis_entries (
   user_id uuid not null references auth.users(id) on delete cascade,
   notes text,
   video_path text,
+  clip_type text, -- 'Acceleration' | 'Max Velocity' | 'Speed Endurance'
+  distance text,
+  effort text,
+  created_at timestamptz not null default now()
+);
+
+-- ---------- Form criteria: what to teach the AI to look for ----------
+create table if not exists public.form_criteria (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  category text not null,
+  good_desc text,
+  bad_desc text,
   created_at timestamptz not null default now()
 );
 
@@ -101,12 +114,13 @@ alter table public.weight_checks enable row level security;
 alter table public.diagnosis_entries enable row level security;
 alter table public.favorites enable row level security;
 alter table public.availability enable row level security;
+alter table public.form_criteria enable row level security;
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability']
+  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','form_criteria']
   loop
     execute format('
       create policy "owner_select" on public.%I for select using (auth.uid() = user_id);

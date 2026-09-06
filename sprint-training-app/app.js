@@ -187,6 +187,7 @@ async function refreshAllData() {
   renderTimes();
   renderBigGoals();
   renderDiagnosis();
+  renderFormCriteria();
   renderFavorites();
   renderMotivationLinks();
   document.getElementById('newQuote').click();
@@ -195,46 +196,9 @@ async function refreshAllData() {
 // =====================================================
 // FORM DIAGNOSIS
 // =====================================================
-let mediaStream = null;
-let mediaRecorder = null;
-let recordedChunks = [];
 let pendingBlob = null;
 
-const camPreview = document.getElementById('camPreview');
-const startCamBtn = document.getElementById('startCam');
-const recordBtn = document.getElementById('recordBtn');
-const stopBtn = document.getElementById('stopBtn');
 const videoUpload = document.getElementById('videoUpload');
-
-startCamBtn.addEventListener('click', async () => {
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    camPreview.srcObject = mediaStream;
-    recordBtn.disabled = false;
-    startCamBtn.disabled = true;
-  } catch (err) {
-    alert('Could not access camera: ' + err.message + '\nYou can still upload a video file below.');
-  }
-});
-
-recordBtn.addEventListener('click', () => {
-  if (!mediaStream) return;
-  recordedChunks = [];
-  mediaRecorder = new MediaRecorder(mediaStream);
-  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = () => {
-    pendingBlob = new Blob(recordedChunks, { type: 'video/webm' });
-  };
-  mediaRecorder.start();
-  recordBtn.disabled = true;
-  stopBtn.disabled = false;
-});
-
-stopBtn.addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  recordBtn.disabled = false;
-  stopBtn.disabled = true;
-});
 
 videoUpload.addEventListener('change', () => {
   const file = videoUpload.files[0];
@@ -243,6 +207,9 @@ videoUpload.addEventListener('change', () => {
 
 document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   const notes = document.getElementById('diagnosisNotes').value.trim();
+  const clipType = document.getElementById('clipType').value;
+  const distance = document.getElementById('clipDistance').value.trim();
+  const effort = document.getElementById('clipEffort').value.trim();
   if (!notes && !pendingBlob) {
     alert('Add some notes or a clip first.');
     return;
@@ -264,12 +231,23 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     }
     const { error } = await supabaseClient
       .from('diagnosis_entries')
-      .insert({ id, user_id: currentUser.id, notes, video_path: videoPath });
+      .insert({
+        id,
+        user_id: currentUser.id,
+        notes,
+        video_path: videoPath,
+        clip_type: clipType || null,
+        distance: distance || null,
+        effort: effort || null,
+      });
     if (error) {
       alert('Save failed: ' + error.message);
       return;
     }
     document.getElementById('diagnosisNotes').value = '';
+    document.getElementById('clipType').value = '';
+    document.getElementById('clipDistance').value = '';
+    document.getElementById('clipEffort').value = '';
     pendingBlob = null;
     videoUpload.value = '';
     renderDiagnosis();
@@ -292,11 +270,13 @@ async function renderDiagnosis() {
     const div = document.createElement('div');
     div.className = 'entry';
     const dateStr = new Date(entry.created_at).toLocaleString();
+    const tags = [entry.clip_type, entry.distance, entry.effort].filter(Boolean).join(' · ');
     div.innerHTML = `
       <div class="entry-top">
         <span class="date">${dateStr}</span>
         <button class="delete-btn">Delete</button>
       </div>
+      ${tags ? `<div class="day-badges"><span class="day-badge">${escapeHtml(tags)}</span></div>` : ''}
       <div>${escapeHtml(entry.notes || '')}</div>
     `;
     if (entry.video_path) {
@@ -319,6 +299,59 @@ async function renderDiagnosis() {
     });
     list.appendChild(div);
   }
+}
+
+// =====================================================
+// TEACH THE AI: form criteria
+// =====================================================
+document.getElementById('addCriterion').addEventListener('click', async () => {
+  const category = document.getElementById('criterionCategory').value.trim();
+  const good = document.getElementById('criterionGood').value.trim();
+  const bad = document.getElementById('criterionBad').value.trim();
+  if (!category || (!good && !bad)) {
+    alert('Add a category and at least one of good/bad description.');
+    return;
+  }
+  const { error } = await supabaseClient
+    .from('form_criteria')
+    .insert({ user_id: currentUser.id, category, good_desc: good || null, bad_desc: bad || null });
+  if (error) {
+    alert('Save failed: ' + error.message);
+    return;
+  }
+  document.getElementById('criterionCategory').value = '';
+  document.getElementById('criterionGood').value = '';
+  document.getElementById('criterionBad').value = '';
+  renderFormCriteria();
+});
+
+async function renderFormCriteria() {
+  const { data, error } = await supabaseClient
+    .from('form_criteria')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: true });
+  if (error) { console.error(error); return; }
+
+  const list = document.getElementById('criteriaList');
+  list.innerHTML = '';
+  data.forEach((c) => {
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `
+      <div class="entry-top">
+        <strong>${escapeHtml(c.category)}</strong>
+        <button class="delete-btn">Delete</button>
+      </div>
+      ${c.good_desc ? `<div>✅ ${escapeHtml(c.good_desc)}</div>` : ''}
+      ${c.bad_desc ? `<div>❌ ${escapeHtml(c.bad_desc)}</div>` : ''}
+    `;
+    div.querySelector('.delete-btn').addEventListener('click', async () => {
+      await supabaseClient.from('form_criteria').delete().eq('id', c.id);
+      renderFormCriteria();
+    });
+    list.appendChild(div);
+  });
 }
 
 // =====================================================
