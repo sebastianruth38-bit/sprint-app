@@ -204,6 +204,48 @@ videoUpload.addEventListener('change', () => {
   if (file) pendingBlob = file;
 });
 
+// Pulls N evenly-spaced frames out of a video file as small JPEG data URLs,
+// for sending to the analysis model. Runs entirely client-side (canvas).
+async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
+  const url = URL.createObjectURL(videoBlob);
+  const video = document.createElement('video');
+  video.src = url;
+  video.muted = true;
+  video.playsInline = true;
+
+  try {
+    await new Promise((resolve, reject) => {
+      video.addEventListener('loadedmetadata', resolve, { once: true });
+      video.addEventListener('error', () => reject(new Error('Could not read video file')), { once: true });
+    });
+
+    const duration = video.duration;
+    if (!isFinite(duration) || duration <= 0) {
+      throw new Error('Video has no readable duration');
+    }
+
+    const scale = Math.min(1, maxWidth / video.videoWidth);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const ctx = canvas.getContext('2d');
+
+    const frames = [];
+    for (let i = 0; i < count; i++) {
+      const t = Math.min((duration * i) / Math.max(count - 1, 1), Math.max(duration - 0.05, 0));
+      await new Promise((resolve) => {
+        video.addEventListener('seeked', resolve, { once: true });
+        video.currentTime = t;
+      });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      frames.push(canvas.toDataURL('image/jpeg', 0.7));
+    }
+    return frames;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   const clipType = document.getElementById('clipType').value;
   const distance = document.getElementById('clipDistance').value.trim();
@@ -214,8 +256,10 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   }
   const saveBtn = document.getElementById('saveDiagnosis');
   saveBtn.disabled = true;
+  const originalLabel = saveBtn.textContent;
   try {
     const id = crypto.randomUUID();
+    saveBtn.textContent = 'Uploading…';
     const videoPath = `${currentUser.id}/${id}.webm`;
     const { error: uploadError } = await supabaseClient.storage
       .from('diagnosis-videos')
@@ -224,6 +268,22 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       alert('Video upload failed: ' + uploadError.message);
       return;
     }
+
+    let analysis = null;
+    try {
+      saveBtn.textContent = 'Analyzing…';
+      const frames = await extractFrames(pendingBlob);
+      const { data: analysisData, error: analysisError } = await supabaseClient.functions.invoke(
+        'analyze-form',
+        { body: { clipType, distance, effort, frames } }
+      );
+      if (analysisError) throw analysisError;
+      analysis = analysisData;
+    } catch (analysisErr) {
+      console.error('Analysis failed:', analysisErr);
+      alert('Clip saved, but AI analysis failed: ' + (analysisErr.message || analysisErr));
+    }
+
     const { error } = await supabaseClient
       .from('diagnosis_entries')
       .insert({
@@ -233,6 +293,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         clip_type: clipType || null,
         distance: distance || null,
         effort: effort || null,
+        analysis,
       });
     if (error) {
       alert('Save failed: ' + error.message);
@@ -246,8 +307,32 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     renderDiagnosis();
   } finally {
     saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
   }
 });
+
+function renderAnalysisHtml(analysis) {
+  if (!analysis || (!analysis.summary && !(analysis.pinpoints || []).length)) {
+    return `<div class="hint">Weak points: analysis coming soon</div>`;
+  }
+  const rows = [...(analysis.pinpoints || []), ...(analysis.additional_observations || [])]
+    .map((p) => `
+      <div class="score-row">
+        <span>${escapeHtml(p.name)}</span>
+        <span class="score-pill">${escapeHtml(String(p.score))}/5</span>
+      </div>
+      ${p.note ? `<div class="hint score-note">${escapeHtml(p.note)}</div>` : ''}
+    `)
+    .join('');
+  const flags = (analysis.flags || [])
+    .map((f) => `<div class="hint">⚠️ ${escapeHtml(f)}</div>`)
+    .join('');
+  return `
+    ${analysis.summary ? `<div>${escapeHtml(analysis.summary)}</div>` : ''}
+    ${rows}
+    ${flags}
+  `;
+}
 
 async function renderDiagnosis() {
   const { data, error } = await supabaseClient
@@ -270,7 +355,7 @@ async function renderDiagnosis() {
         <button class="delete-btn">Delete</button>
       </div>
       ${tags ? `<div class="day-badges"><span class="day-badge">${escapeHtml(tags)}</span></div>` : ''}
-      <div class="hint">Weak points: ${entry.notes ? escapeHtml(entry.notes) : 'analysis coming soon'}</div>
+      ${renderAnalysisHtml(entry.analysis)}
     `;
     if (entry.video_path) {
       const { data: signed } = await supabaseClient.storage

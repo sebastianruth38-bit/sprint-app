@@ -72,6 +72,7 @@ create table if not exists public.diagnosis_entries (
   clip_type text, -- 'Acceleration' | 'Max Velocity' | 'Speed Endurance'
   distance text,
   effort text,
+  analysis jsonb, -- AI-generated: { summary, pinpoints[], additional_observations[], flags[] }
   created_at timestamptz not null default now()
 );
 

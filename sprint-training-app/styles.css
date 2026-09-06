@@ -374,6 +374,21 @@ textarea {
 
 .entry video { width: 100%; max-width: 380px; border-radius: 6px; margin-top: 0.4rem; }
 
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-weight: 600;
+}
+.score-pill {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.8rem;
+}
+.score-note { margin-top: -0.1rem; }
+
 .delete-btn {
   background: none;
   border: none;
