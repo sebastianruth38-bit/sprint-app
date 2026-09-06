@@ -187,7 +187,6 @@ async function refreshAllData() {
   renderTimes();
   renderBigGoals();
   renderDiagnosis();
-  renderFormCriteria();
   renderFavorites();
   renderMotivationLinks();
   document.getElementById('newQuote').click();
@@ -299,59 +298,6 @@ async function renderDiagnosis() {
     });
     list.appendChild(div);
   }
-}
-
-// =====================================================
-// TEACH THE AI: form criteria
-// =====================================================
-document.getElementById('addCriterion').addEventListener('click', async () => {
-  const category = document.getElementById('criterionCategory').value.trim();
-  const good = document.getElementById('criterionGood').value.trim();
-  const bad = document.getElementById('criterionBad').value.trim();
-  if (!category || (!good && !bad)) {
-    alert('Add a category and at least one of good/bad description.');
-    return;
-  }
-  const { error } = await supabaseClient
-    .from('form_criteria')
-    .insert({ user_id: currentUser.id, category, good_desc: good || null, bad_desc: bad || null });
-  if (error) {
-    alert('Save failed: ' + error.message);
-    return;
-  }
-  document.getElementById('criterionCategory').value = '';
-  document.getElementById('criterionGood').value = '';
-  document.getElementById('criterionBad').value = '';
-  renderFormCriteria();
-});
-
-async function renderFormCriteria() {
-  const { data, error } = await supabaseClient
-    .from('form_criteria')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('created_at', { ascending: true });
-  if (error) { console.error(error); return; }
-
-  const list = document.getElementById('criteriaList');
-  list.innerHTML = '';
-  data.forEach((c) => {
-    const div = document.createElement('div');
-    div.className = 'entry';
-    div.innerHTML = `
-      <div class="entry-top">
-        <strong>${escapeHtml(c.category)}</strong>
-        <button class="delete-btn">Delete</button>
-      </div>
-      ${c.good_desc ? `<div>✅ ${escapeHtml(c.good_desc)}</div>` : ''}
-      ${c.bad_desc ? `<div>❌ ${escapeHtml(c.bad_desc)}</div>` : ''}
-    `;
-    div.querySelector('.delete-btn').addEventListener('click', async () => {
-      await supabaseClient.from('form_criteria').delete().eq('id', c.id);
-      renderFormCriteria();
-    });
-    list.appendChild(div);
-  });
 }
 
 // =====================================================
