@@ -145,7 +145,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const result = await anthropicRes.json();
-    const rawText = result.content?.[0]?.text ?? "";
+    // Sonnet 5 thinks by default, so content[0] is often a thinking block
+    // (no .text field) rather than the actual answer -- find the real
+    // text block instead of assuming it's first.
+    const textBlock = (result.content || []).find((block: { type: string }) => block.type === "text");
+    const rawText = (textBlock as { text?: string } | undefined)?.text ?? "";
 
     let parsed;
     try {
