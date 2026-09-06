@@ -101,17 +101,22 @@ calendarBtn.addEventListener('click', async () => {
   if (!currentUser) return;
   try {
     const weekKey = getWeekKey();
-    const { data, error } = await supabaseClient
-      .from('availability')
-      .select('*')
-      .eq('user_id', currentUser.id)
-      .eq('week_key', weekKey)
-      .maybeSingle();
+    const [{ data, error }, { data: season, error: seasonError }] = await Promise.all([
+      supabaseClient.from('availability').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey).maybeSingle(),
+      supabaseClient.from('competition_seasons').select('*').eq('user_id', currentUser.id).maybeSingle(),
+    ]);
     if (error) throw error;
     sprintDaysSelected = new Set((data && data.sprint_days) || []);
     gymDaysSelected = new Set((data && data.gym_days) || []);
     renderDayPicker(sprintDayPicker, sprintDaysSelected);
     renderDayPicker(gymDayPicker, gymDaysSelected);
+
+    if (!seasonError && season) {
+      document.getElementById('indoorStart').value = season.indoor_start || '';
+      document.getElementById('indoorEnd').value = season.indoor_end || '';
+      document.getElementById('outdoorStart').value = season.outdoor_start || '';
+      document.getElementById('outdoorEnd').value = season.outdoor_end || '';
+    }
   } catch (err) {
     console.error('Failed to load availability:', err);
   }
@@ -141,8 +146,105 @@ document.getElementById('saveAvailability').addEventListener('click', async () =
     alert('Could not save availability: ' + error.message);
     return;
   }
+
+  const { error: seasonError } = await supabaseClient.from('competition_seasons').upsert(
+    {
+      user_id: currentUser.id,
+      indoor_start: document.getElementById('indoorStart').value || null,
+      indoor_end: document.getElementById('indoorEnd').value || null,
+      outdoor_start: document.getElementById('outdoorStart').value || null,
+      outdoor_end: document.getElementById('outdoorEnd').value || null,
+    },
+    { onConflict: 'user_id' }
+  );
+  if (seasonError) {
+    alert('Could not save competition season: ' + seasonError.message);
+    return;
+  }
+
   availabilityModal.hidden = true;
   renderWeekBoard();
+});
+
+// ---------- Athlete profile ----------
+const profileModal = document.getElementById('profileModal');
+
+function scoreColor(score) {
+  return { 1: '#e5484d', 2: '#f5a623', 3: '#f5d90a', 4: '#8bc34a', 5: '#2e7d32' }[score] || '#666';
+}
+
+async function renderProfile() {
+  const content = document.getElementById('profileContent');
+  content.innerHTML = '<p class="hint">Loading…</p>';
+
+  const { data, error } = await supabaseClient
+    .from('diagnosis_entries')
+    .select('clip_type, analysis, created_at')
+    .eq('user_id', currentUser.id)
+    .not('analysis', 'is', null)
+    .order('created_at', { ascending: false });
+
+  if (error || !data || !data.length) {
+    content.innerHTML = '<p class="hint">No analyzed clips yet.</p>';
+    return;
+  }
+
+  // Most recent score wins per (clip type, pinpoint name) -- data is
+  // already newest-first, so the first hit for a key is the latest one.
+  const byType = {};
+  data.forEach((entry) => {
+    if (!entry.clip_type || !entry.analysis) return;
+    (entry.analysis.pinpoints || []).forEach((p) => {
+      if (typeof p.score !== 'number') return;
+      byType[entry.clip_type] = byType[entry.clip_type] || {};
+      if (!(p.name in byType[entry.clip_type])) {
+        byType[entry.clip_type][p.name] = p.score;
+      }
+    });
+  });
+
+  const types = Object.keys(byType);
+  if (!types.length) {
+    content.innerHTML = '<p class="hint">No scored categories yet.</p>';
+    return;
+  }
+
+  content.innerHTML = types
+    .map(
+      (type) => `
+    <h3>${escapeHtml(type)}</h3>
+    ${Object.entries(byType[type])
+      .map(
+        ([name, score]) => `
+      <div class="profile-row">
+        <div class="entry-top">
+          <span>${escapeHtml(name)}</span>
+          <span class="score-pill">${score}/5</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:${(score / 5) * 100}%;background:${scoreColor(score)}"></div>
+        </div>
+      </div>
+    `
+      )
+      .join('')}
+  `
+    )
+    .join('');
+}
+
+document.getElementById('profileBtn').addEventListener('click', async () => {
+  settingsMenu.hidden = true;
+  profileModal.hidden = false;
+  await renderProfile();
+});
+
+document.getElementById('closeProfile').addEventListener('click', () => {
+  profileModal.hidden = true;
+});
+
+profileModal.addEventListener('click', (e) => {
+  if (e.target === profileModal) profileModal.hidden = true;
 });
 
 function handleSession(session) {
