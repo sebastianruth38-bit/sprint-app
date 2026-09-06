@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sprint Lab</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -27,6 +27,7 @@
   <!-- APP SHELL (hidden until signed in) -->
   <div id="appShell" hidden>
     <header class="app-header">
+      <button id="calendarBtn" class="icon-btn" aria-label="Weekly availability" aria-haspopup="true" aria-expanded="false">📅</button>
       <h1>Sprint Lab</h1>
       <div class="settings-wrap">
         <button id="settingsBtn" class="icon-btn" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙️</button>
@@ -36,6 +37,25 @@
         </div>
       </div>
     </header>
+
+    <!-- WEEKLY AVAILABILITY MODAL -->
+    <div id="availabilityModal" class="modal-overlay" hidden>
+      <div class="card modal-card">
+        <div class="entry-top">
+          <h3 style="margin:0">This Week's Availability</h3>
+          <button id="closeAvailability" class="delete-btn" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">A guideline, not a schedule — mark the days you're generally free to sprint or lift this week. Workouts can still land on any day.</p>
+
+        <p class="avail-label">🏃 Can sprint</p>
+        <div class="day-picker" id="sprintDayPicker"></div>
+
+        <p class="avail-label">💪 Can hit the gym</p>
+        <div class="day-picker" id="gymDayPicker"></div>
+
+        <button id="saveAvailability" class="btn primary" style="width:100%">Save</button>
+      </div>
+    </div>
 
   <main id="app">
     <!-- FORM DIAGNOSIS -->
@@ -180,13 +200,13 @@
   </main>
 
   <nav class="bottom-nav" id="tabs">
-    <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📅</span><span class="tab-label">Workouts</span></button>
-    <button class="tab-btn" data-tab="weights"><span class="tab-icon">🏋️</span><span class="tab-label">Weights</span></button>
+    <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📋</span><span class="tab-label">Workouts</span></button>
+    <button class="tab-btn" data-tab="weights"><span class="tab-icon">💪</span><span class="tab-label">Weights</span></button>
     <button class="tab-btn tab-btn-center active" data-tab="diagnosis">
-      <span class="tab-center-icon">🏃</span>
+      <span class="tab-center-icon">🐆</span>
       <span class="tab-label">Sprint Analysis</span>
     </button>
-    <button class="tab-btn" data-tab="times"><span class="tab-icon">🎯</span><span class="tab-label">Times</span></button>
+    <button class="tab-btn" data-tab="times"><span class="tab-icon">⏱️</span><span class="tab-label">Times</span></button>
     <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
   </nav>
   </div>
