@@ -609,13 +609,116 @@ document.getElementById('saveWorkout').addEventListener('click', async () => {
   renderWeekBoard();
 });
 
+// ---------- Training phase (calendar-driven) ----------
+// Deload = every 3rd ISO week of the year. Taper = meet is 7-13 days out.
+// Competition week = meet falls in the next 0-6 days. Otherwise off/pre/in
+// season based on the competition_seasons date ranges.
+function computeTrainingPhase(season, nextMeetDate) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const toDate = (s) => (s ? new Date(s + 'T00:00:00') : null);
+
+  const ranges = [
+    [toDate(season && season.indoor_start), toDate(season && season.indoor_end)],
+    [toDate(season && season.outdoor_start), toDate(season && season.outdoor_end)],
+  ].filter(([s, e]) => s && e);
+
+  const inSeason = ranges.some(([s, e]) => today >= s && today <= e);
+
+  if (nextMeetDate) {
+    const daysToMeet = Math.round((toDate(nextMeetDate) - today) / 86400000);
+    if (daysToMeet >= 0 && daysToMeet <= 6) return { label: 'Competition Week', className: 'competition' };
+    if (daysToMeet >= 7 && daysToMeet <= 13) return { label: 'Taper Week', className: 'taper' };
+  }
+
+  const weekNum = parseInt(getWeekKey().split('W')[1], 10);
+  if (weekNum % 3 === 0) return { label: 'Deload Week', className: 'deload' };
+
+  if (inSeason) return { label: 'In Season', className: '' };
+
+  const upcomingStarts = ranges.map(([s]) => s).filter((s) => s > today);
+  if (upcomingStarts.length) {
+    const nearest = upcomingStarts.reduce((a, b) => (a < b ? a : b));
+    const daysToStart = Math.round((nearest - today) / 86400000);
+    if (daysToStart <= 60) return { label: 'Pre-Season', className: '' };
+  }
+  return { label: 'Off-Season', className: '' };
+}
+
+async function getSeasonAndMeet() {
+  if (!currentUser) return { season: null, nextMeetDate: null };
+  const [{ data: season }, { data: settings }] = await Promise.all([
+    supabaseClient.from('competition_seasons').select('*').eq('user_id', currentUser.id).maybeSingle(),
+    supabaseClient.from('athlete_settings').select('next_meet_date').eq('user_id', currentUser.id).maybeSingle(),
+  ]);
+  return { season, nextMeetDate: settings && settings.next_meet_date };
+}
+
+// ---------- Workout templates + equipment substitution ----------
+const WORKOUT_TEMPLATES = {
+  'Acceleration (0-30m)': [
+    { text: '2x(10,20,30)' },
+    { text: '2x20-30m hill sprints', requires: 'Hills' },
+    { text: '(2x20,2x25,2x30,1x40)' },
+    { text: 'Sleds (2x10,20,30)', requires: 'Sleds', fallback: '2x30' },
+  ],
+  'Max Velocity (flys/build-ups)': [
+    { text: '4x30m fly' },
+    { text: '4x float sprint (40-60-90)' },
+    { text: '2x40m fly, 2x30m fly' },
+  ],
+  'Tempo (extensive/aerobic)': [
+    { text: '3x3x100' },
+    { text: '8x200' },
+    { text: '5x300' },
+    { text: '150,200,250,300,250,200,150' },
+    { text: '8x150' },
+    { text: '6x250' },
+  ],
+};
+
+document.getElementById('suggestWorkout').addEventListener('click', async () => {
+  const type = document.getElementById('workoutType').value;
+  const options = WORKOUT_TEMPLATES[type];
+  if (!options) {
+    alert('No templates yet for this workout type -- write it in directly below.');
+    return;
+  }
+
+  let equipment = new Set();
+  if (currentUser) {
+    const { data } = await supabaseClient.from('athlete_settings').select('equipment').eq('user_id', currentUser.id).maybeSingle();
+    if (data && data.equipment) equipment = new Set(data.equipment);
+  }
+
+  const usable = options.filter((o) => !o.requires || equipment.has(o.requires));
+  const pick = usable.length ? usable[Math.floor(Math.random() * usable.length)] : options[0];
+  let text = pick.text;
+  if (pick.requires && !equipment.has(pick.requires) && pick.fallback) {
+    text = `${pick.fallback} (no ${pick.requires.toLowerCase()})`;
+  }
+
+  const { season, nextMeetDate } = await getSeasonAndMeet();
+  const phase = computeTrainingPhase(season, nextMeetDate);
+  if (phase.className === 'deload' || phase.className === 'taper') {
+    text += ` -- ${phase.label.toLowerCase()}, cut volume ~30%`;
+  }
+  document.getElementById('workoutDetails').value = text;
+});
+
 async function renderWeekBoard() {
   const weekKey = getWeekKey();
-  const [{ data, error }, { data: avail }] = await Promise.all([
+  const [{ data, error }, { data: avail }, { season, nextMeetDate }] = await Promise.all([
     supabaseClient.from('workouts').select('*').eq('user_id', currentUser.id),
     supabaseClient.from('availability').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey).maybeSingle(),
+    getSeasonAndMeet(),
   ]);
   if (error) { console.error(error); return; }
+
+  const phase = computeTrainingPhase(season, nextMeetDate);
+  const badge = document.getElementById('phaseBadge');
+  badge.textContent = phase.label;
+  badge.className = 'phase-badge' + (phase.className ? ' ' + phase.className : '');
 
   const byDay = {};
   data.forEach((w) => { byDay[w.day] = w; });
@@ -648,6 +751,80 @@ async function renderWeekBoard() {
     board.appendChild(card);
   });
 }
+
+// ---------- Training Setup (events, equipment, next meet) ----------
+const EQUIPMENT_OPTIONS = ['Sleds', 'Hills', 'Blocks'];
+let equipmentSelected = new Set();
+const trainingSetupModal = document.getElementById('trainingSetupModal');
+
+function renderEquipmentPicker() {
+  const container = document.getElementById('equipmentPicker');
+  container.innerHTML = '';
+  EQUIPMENT_OPTIONS.forEach((item) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'day-chip' + (equipmentSelected.has(item) ? ' selected' : '');
+    btn.textContent = item;
+    btn.addEventListener('click', () => {
+      if (equipmentSelected.has(item)) equipmentSelected.delete(item); else equipmentSelected.add(item);
+      btn.classList.toggle('selected');
+    });
+    container.appendChild(btn);
+  });
+}
+
+document.getElementById('trainingSetupBtn').addEventListener('click', async () => {
+  settingsMenu.hidden = true;
+  renderEquipmentPicker();
+  trainingSetupModal.hidden = false;
+  if (!currentUser) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('athlete_settings')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) {
+      document.getElementById('primaryEvents').value = (data.primary_events || []).join(', ');
+      equipmentSelected = new Set(data.equipment || []);
+      renderEquipmentPicker();
+      document.getElementById('nextMeetDate').value = data.next_meet_date || '';
+      document.getElementById('nextMeetEvents').value = (data.next_meet_events || []).join(', ');
+    }
+  } catch (err) {
+    console.error('Failed to load training setup:', err);
+  }
+});
+
+document.getElementById('closeTrainingSetup').addEventListener('click', () => {
+  trainingSetupModal.hidden = true;
+});
+
+trainingSetupModal.addEventListener('click', (e) => {
+  if (e.target === trainingSetupModal) trainingSetupModal.hidden = true;
+});
+
+document.getElementById('saveTrainingSetup').addEventListener('click', async () => {
+  if (!currentUser) return;
+  const splitCsv = (val) => val.split(',').map((s) => s.trim()).filter(Boolean);
+  const { error } = await supabaseClient.from('athlete_settings').upsert(
+    {
+      user_id: currentUser.id,
+      primary_events: splitCsv(document.getElementById('primaryEvents').value),
+      equipment: Array.from(equipmentSelected),
+      next_meet_date: document.getElementById('nextMeetDate').value || null,
+      next_meet_events: splitCsv(document.getElementById('nextMeetEvents').value),
+    },
+    { onConflict: 'user_id' }
+  );
+  if (error) {
+    alert('Could not save training setup: ' + error.message);
+    return;
+  }
+  trainingSetupModal.hidden = true;
+  renderWeekBoard();
+});
 
 // =====================================================
 // WEIGHT ROOM
