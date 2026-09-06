@@ -613,6 +613,10 @@ document.getElementById('saveWorkout').addEventListener('click', async () => {
 // Deload = every 3rd ISO week of the year. Taper = meet is 7-13 days out.
 // Competition week = meet falls in the next 0-6 days. Otherwise off/pre/in
 // season based on the competition_seasons date ranges.
+// Returns both the underlying seasonPhase ('off'|'pre'|'in') -- which
+// decides the weekly workout pattern -- and a modifier ('deload'|'taper'|
+// 'competition'|null) that layers on top of whatever pattern applies.
+// label/className are for the badge and stay as before.
 function computeTrainingPhase(season, nextMeetDate) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -625,24 +629,37 @@ function computeTrainingPhase(season, nextMeetDate) {
 
   const inSeason = ranges.some(([s, e]) => today >= s && today <= e);
 
+  let seasonPhase = 'off';
+  if (inSeason) {
+    seasonPhase = 'in';
+  } else {
+    const upcomingStarts = ranges.map(([s]) => s).filter((s) => s > today);
+    if (upcomingStarts.length) {
+      const nearest = upcomingStarts.reduce((a, b) => (a < b ? a : b));
+      const daysToStart = Math.round((nearest - today) / 86400000);
+      seasonPhase = daysToStart <= 60 ? 'pre' : 'off';
+    }
+  }
+
+  let modifier = null;
   if (nextMeetDate) {
     const daysToMeet = Math.round((toDate(nextMeetDate) - today) / 86400000);
-    if (daysToMeet >= 0 && daysToMeet <= 6) return { label: 'Competition Week', className: 'competition' };
-    if (daysToMeet >= 7 && daysToMeet <= 13) return { label: 'Taper Week', className: 'taper' };
+    if (daysToMeet >= 0 && daysToMeet <= 6) modifier = 'competition';
+    else if (daysToMeet >= 7 && daysToMeet <= 13) modifier = 'taper';
+  }
+  if (!modifier) {
+    const weekNum = parseInt(getWeekKey().split('W')[1], 10);
+    if (weekNum % 3 === 0) modifier = 'deload';
   }
 
-  const weekNum = parseInt(getWeekKey().split('W')[1], 10);
-  if (weekNum % 3 === 0) return { label: 'Deload Week', className: 'deload' };
-
-  if (inSeason) return { label: 'In Season', className: '' };
-
-  const upcomingStarts = ranges.map(([s]) => s).filter((s) => s > today);
-  if (upcomingStarts.length) {
-    const nearest = upcomingStarts.reduce((a, b) => (a < b ? a : b));
-    const daysToStart = Math.round((nearest - today) / 86400000);
-    if (daysToStart <= 60) return { label: 'Pre-Season', className: '' };
-  }
-  return { label: 'Off-Season', className: '' };
+  const seasonLabels = { off: 'Off-Season', pre: 'Pre-Season', in: 'In Season' };
+  const modLabels = { competition: 'Competition Week', taper: 'Taper Week', deload: 'Deload Week' };
+  return {
+    seasonPhase,
+    modifier,
+    label: modifier ? modLabels[modifier] : seasonLabels[seasonPhase],
+    className: modifier || '',
+  };
 }
 
 async function getSeasonAndMeet() {
@@ -677,33 +694,149 @@ const WORKOUT_TEMPLATES = {
   ],
 };
 
-document.getElementById('suggestWorkout').addEventListener('click', async () => {
-  const type = document.getElementById('workoutType').value;
+// Picks a template for a workout type, substitutes for missing equipment,
+// and appends a volume/intensity note for deload/taper/competition weeks.
+// Returns null if there are no templates for this type yet.
+function pickTemplateText(type, equipment, phase) {
   const options = WORKOUT_TEMPLATES[type];
-  if (!options) {
-    alert('No templates yet for this workout type -- write it in directly below.');
-    return;
-  }
+  if (!options) return null;
 
-  let equipment = new Set();
-  if (currentUser) {
-    const { data } = await supabaseClient.from('athlete_settings').select('equipment').eq('user_id', currentUser.id).maybeSingle();
-    if (data && data.equipment) equipment = new Set(data.equipment);
-  }
-
-  const usable = options.filter((o) => !o.requires || equipment.has(o.requires));
+  // A template with a fallback stays eligible even without the equipment
+  // (it just swaps to the fallback text below) -- only equipment-locked
+  // templates with no fallback get excluded outright.
+  const usable = options.filter((o) => !o.requires || equipment.has(o.requires) || o.fallback);
   const pick = usable.length ? usable[Math.floor(Math.random() * usable.length)] : options[0];
   let text = pick.text;
   if (pick.requires && !equipment.has(pick.requires) && pick.fallback) {
     text = `${pick.fallback} (no ${pick.requires.toLowerCase()})`;
   }
 
+  if (phase.modifier === 'deload' || phase.modifier === 'taper') {
+    text += ` -- ${phase.label.toLowerCase()}, cut volume ~30%`;
+  } else if (phase.modifier === 'competition') {
+    text += ' -- competition week, keep it light';
+  }
+  return text;
+}
+
+async function getEquipment() {
+  if (!currentUser) return new Set();
+  const { data } = await supabaseClient.from('athlete_settings').select('equipment').eq('user_id', currentUser.id).maybeSingle();
+  return new Set((data && data.equipment) || []);
+}
+
+document.getElementById('suggestWorkout').addEventListener('click', async () => {
+  const type = document.getElementById('workoutType').value;
+  if (!WORKOUT_TEMPLATES[type]) {
+    alert('No templates yet for this workout type -- write it in directly below.');
+    return;
+  }
+  const equipment = await getEquipment();
   const { season, nextMeetDate } = await getSeasonAndMeet();
   const phase = computeTrainingPhase(season, nextMeetDate);
-  if (phase.className === 'deload' || phase.className === 'taper') {
-    text += ` -- ${phase.label.toLowerCase()}, cut volume ~30%`;
+  document.getElementById('workoutDetails').value = pickTemplateText(type, equipment, phase);
+});
+
+// ---------- Full week plan ----------
+// Off/pre-season: Speed, Tempo, Rest, Speed, Mobility, Rest.
+// In-season: Speed Endurance replaces Tempo, Tempo (+ mobility) replaces
+// Mobility. The two Speed days alternate Acceleration/Max Velocity.
+const OFFSEASON_PATTERN_TYPES = {
+  speed1: 'Acceleration (0-30m)',
+  speed2: 'Max Velocity (flys/build-ups)',
+  gapA: 'Tempo (extensive/aerobic)',
+  gapB: 'Recovery / Mobility',
+};
+const INSEASON_PATTERN_TYPES = {
+  speed1: 'Acceleration (0-30m)',
+  speed2: 'Max Velocity (flys/build-ups)',
+  gapA: 'Speed Endurance (60-150m)',
+  gapB: 'Tempo (extensive/aerobic)',
+};
+
+function buildWeekPlan(sprintDays, equipment, phase) {
+  const patternTypes = phase.seasonPhase === 'in' ? INSEASON_PATTERN_TYPES : OFFSEASON_PATTERN_TYPES;
+  const speedIdx = DAYS.map((d, i) => (sprintDays.has(d) ? i : -1)).filter((i) => i !== -1);
+  const plan = DAYS.map(() => ({ type: 'Rest Day', details: '' }));
+  if (!speedIdx.length) return plan;
+
+  for (let i = 0; i < 7; i++) {
+    if (speedIdx.includes(i)) {
+      const occurrence = speedIdx.indexOf(i);
+      const type = occurrence % 2 === 0 ? patternTypes.speed1 : patternTypes.speed2;
+      plan[i] = { type, details: pickTemplateText(type, equipment, phase) || '', isSpeed: true };
+      continue;
+    }
+    // Nearest preceding speed day, wrapping across the week -- only the
+    // very next day after a speed day gets a named session; everything
+    // further out defaults to Rest (both patterns agree there).
+    let back = 1;
+    let prevIdx = -1;
+    while (back <= 7) {
+      const idx = (i - back + 7) % 7;
+      if (speedIdx.includes(idx)) { prevIdx = idx; break; }
+      back++;
+    }
+    if (back === 1) {
+      const occurrence = speedIdx.indexOf(prevIdx);
+      const useGapA = occurrence % 2 === 0;
+      const type = useGapA ? patternTypes.gapA : patternTypes.gapB;
+      let details = pickTemplateText(type, equipment, phase) || '';
+      if (!useGapA && phase.seasonPhase === 'in') details += (details ? ' ' : '') + '+ mobility';
+      plan[i] = { type, details };
+    }
   }
-  document.getElementById('workoutDetails').value = text;
+  return plan;
+}
+
+// A lift always accompanies a speed day. If the gym isn't available that
+// day, it shifts to the next day if that's a gym day (e.g. a Tempo day).
+function pairLiftDays(plan, gymDays) {
+  const liftDayIdx = new Set();
+  plan.forEach((entry, i) => {
+    if (!entry.isSpeed) return;
+    if (gymDays.has(DAYS[i])) { liftDayIdx.add(i); return; }
+    const nextIdx = (i + 1) % 7;
+    if (gymDays.has(DAYS[nextIdx])) liftDayIdx.add(nextIdx);
+  });
+  return liftDayIdx;
+}
+
+document.getElementById('generateWeekPlan').addEventListener('click', async () => {
+  if (!currentUser) return;
+  const weekKey = getWeekKey();
+  const [{ data: avail }, equipment, seasonAndMeet, { data: existing }] = await Promise.all([
+    supabaseClient.from('availability').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey).maybeSingle(),
+    getEquipment(),
+    getSeasonAndMeet(),
+    supabaseClient.from('workouts').select('day').eq('user_id', currentUser.id),
+  ]);
+
+  const sprintDays = new Set((avail && avail.sprint_days) || []);
+  const gymDays = new Set((avail && avail.gym_days) || []);
+  if (!sprintDays.size) {
+    alert('Set which days you can sprint this week first (calendar icon), then generate the plan.');
+    return;
+  }
+  if (existing && existing.length && !confirm('This overwrites your existing sessions for this week. Continue?')) {
+    return;
+  }
+
+  const phase = computeTrainingPhase(seasonAndMeet.season, seasonAndMeet.nextMeetDate);
+  const plan = buildWeekPlan(sprintDays, equipment, phase);
+  const liftDayIdx = pairLiftDays(plan, gymDays);
+
+  const { error } = await supabaseClient.from('workouts').upsert(
+    DAYS.map((day, i) => ({
+      user_id: currentUser.id,
+      day,
+      type: plan[i].type,
+      details: plan[i].details + (liftDayIdx.has(i) ? (plan[i].details ? ' ' : '') + '+ lift' : ''),
+    })),
+    { onConflict: 'user_id,day' }
+  );
+  if (error) { alert('Could not generate plan: ' + error.message); return; }
+  renderWeekBoard();
 });
 
 async function renderWeekBoard() {
