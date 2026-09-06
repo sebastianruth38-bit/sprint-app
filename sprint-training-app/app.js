@@ -206,18 +206,38 @@ videoUpload.addEventListener('change', () => {
 
 // Pulls N evenly-spaced frames out of a video file as small JPEG data URLs,
 // for sending to the analysis model. Runs entirely client-side (canvas).
+// Waits for an event, but never hangs forever -- some mobile browsers
+// silently skip firing 'seeked' (e.g. seeking to the same time twice), so
+// every wait here has a timeout fallback that just moves on.
+function waitForEvent(target, eventName, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      target.removeEventListener(eventName, onEvent);
+      resolve();
+    };
+    const onEvent = () => finish();
+    target.addEventListener(eventName, onEvent, { once: true });
+    setTimeout(finish, timeoutMs);
+  });
+}
+
 async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
   const url = URL.createObjectURL(videoBlob);
   const video = document.createElement('video');
   video.src = url;
   video.muted = true;
   video.playsInline = true;
+  video.setAttribute('playsinline', '');
+  // Some mobile browsers (notably iOS Safari) won't reliably decode frames
+  // for a <video> that's never attached to the page, even if hidden.
+  video.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;';
+  document.body.appendChild(video);
 
   try {
-    await new Promise((resolve, reject) => {
-      video.addEventListener('loadedmetadata', resolve, { once: true });
-      video.addEventListener('error', () => reject(new Error('Could not read video file')), { once: true });
-    });
+    await waitForEvent(video, 'loadedmetadata', 4000);
 
     const duration = video.duration;
     if (!isFinite(duration) || duration <= 0) {
@@ -226,22 +246,24 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
 
     const scale = Math.min(1, maxWidth / video.videoWidth);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.width = Math.round(video.videoWidth * scale) || maxWidth;
+    canvas.height = Math.round(video.videoHeight * scale) || maxWidth;
     const ctx = canvas.getContext('2d');
 
     const frames = [];
     for (let i = 0; i < count; i++) {
-      const t = Math.min((duration * i) / Math.max(count - 1, 1), Math.max(duration - 0.05, 0));
-      await new Promise((resolve) => {
-        video.addEventListener('seeked', resolve, { once: true });
-        video.currentTime = t;
-      });
+      // Nudge the very first timestamp off zero -- setting currentTime to
+      // the value it's already at can silently no-op the seek.
+      const raw = (duration * i) / Math.max(count - 1, 1);
+      const t = Math.min(Math.max(raw, 0.05), Math.max(duration - 0.05, 0));
+      video.currentTime = t;
+      await waitForEvent(video, 'seeked', 2000);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       frames.push(canvas.toDataURL('image/jpeg', 0.7));
     }
     return frames;
   } finally {
+    document.body.removeChild(video);
     URL.revokeObjectURL(url);
   }
 }
@@ -273,10 +295,13 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     try {
       saveBtn.textContent = 'Analyzing…';
       const frames = await extractFrames(pendingBlob);
-      const { data: analysisData, error: analysisError } = await supabaseClient.functions.invoke(
-        'analyze-form',
-        { body: { clipType, distance, effort, frames } }
+      const invokePromise = supabaseClient.functions.invoke('analyze-form', {
+        body: { clipType, distance, effort, frames },
+      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Analysis timed out after 45s')), 45000)
       );
+      const { data: analysisData, error: analysisError } = await Promise.race([invokePromise, timeoutPromise]);
       if (analysisError) throw analysisError;
       analysis = analysisData;
     } catch (analysisErr) {
