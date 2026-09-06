@@ -1,23 +1,33 @@
 :root {
-  --bg: #f7f7f5;
+  --bg: #f2f2f2;
   --surface: #ffffff;
-  --text: #1a1a1a;
-  --muted: #6b6b6b;
-  --border: #e2e2e0;
-  --accent: #e0532f;
+  --text: #111111;
+  --muted: #6e6e6e;
+  --border: #dcdcdc;
+  --accent: #111111;
   --accent-text: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15161a;
-    --surface: #1e2025;
-    --text: #f0f0f0;
+  :root:not([data-theme="light"]) {
+    --bg: #0d0d0d;
+    --surface: #1a1a1a;
+    --text: #f2f2f2;
     --muted: #9a9a9a;
-    --border: #2e3036;
-    --accent: #ff7a4d;
-    --accent-text: #1a1a1a;
+    --border: #2c2c2c;
+    --accent: #f2f2f2;
+    --accent-text: #0d0d0d;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d0d0d;
+  --surface: #1a1a1a;
+  --text: #f2f2f2;
+  --muted: #9a9a9a;
+  --border: #2c2c2c;
+  --accent: #f2f2f2;
+  --accent-text: #0d0d0d;
 }
 
 * { box-sizing: border-box; }
@@ -95,35 +105,77 @@ h2 {
 
 #authMessage:empty { display: none; }
 
-.tabs {
+/* ---------- Bottom navigation ---------- */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
-  gap: 0.25rem;
-  overflow-x: auto;
+  align-items: flex-end;
+  justify-content: space-around;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom));
 }
 
 .tab-btn {
   background: none;
   border: none;
-  border-bottom: 3px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  flex: 1;
   color: var(--muted);
-  padding: 0.6rem 0.9rem;
-  font-size: 0.95rem;
+  padding: 0.3rem 0.2rem;
+  font-size: 0.65rem;
+  border-radius: 10px;
   cursor: pointer;
-  white-space: nowrap;
+  min-height: 48px;
 }
 
-.tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+.tab-btn.active { color: var(--text); font-weight: 600; }
+.tab-btn .tab-icon { font-size: 1.3rem; line-height: 1; }
+
+.tab-btn-center {
+  flex: 0 0 auto;
+  margin-top: -1.9rem;
+  min-height: auto;
+}
+
+.tab-center-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 1.75rem;
+  border: 3px solid var(--surface);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+  transition: transform 0.1s ease;
+}
+
+.tab-btn-center.active .tab-center-icon,
+.tab-btn-center:active .tab-center-icon {
+  transform: scale(1.06);
+}
+
+.tab-btn-center .tab-label {
+  color: var(--muted);
   font-weight: 600;
 }
-
-.tab-icon { display: none; }
+.tab-btn-center.active .tab-label { color: var(--text); }
 
 main {
   max-width: 900px;
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: 1.25rem 1.25rem calc(5.5rem + env(safe-area-inset-bottom));
 }
 
 .tab-panel { display: none; }
@@ -339,7 +391,7 @@ blockquote {
 }
 .link-card:hover { border-color: var(--accent); }
 
-/* ---------- Mobile: bottom tab bar, bigger targets, no auto-zoom ---------- */
+/* ---------- Mobile: bigger targets, no auto-zoom ---------- */
 @media (max-width: 640px) {
   .app-header {
     padding: max(0.6rem, env(safe-area-inset-top)) 0 0;
@@ -350,38 +402,8 @@ blockquote {
     font-size: 1.1rem;
   }
 
-  .tabs {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 20;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    border-bottom: none;
-    padding: 0.3rem 0.3rem calc(0.3rem + env(safe-area-inset-bottom));
-    justify-content: space-between;
-    overflow-x: visible;
-  }
-
-  .tab-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.15rem;
-    padding: 0.4rem 0.1rem;
-    border-bottom: none;
-    border-radius: 10px;
-    min-height: 48px;
-  }
-  .tab-btn.active { background: var(--bg); }
-  .tab-icon { display: block; font-size: 1.2rem; line-height: 1; }
-  .tab-label { font-size: 0.68rem; }
-
   main {
-    padding: 1rem;
-    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    padding: 1rem 1rem calc(5.5rem + env(safe-area-inset-bottom));
   }
 
   .form-grid,
