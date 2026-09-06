@@ -27,15 +27,8 @@
   <!-- APP SHELL (hidden until signed in) -->
   <div id="appShell" hidden>
     <header class="app-header">
-      <h1>🏃 Sprint Lab</h1>
+      <h1>Sprint Lab</h1>
       <button id="signOutBtn" class="btn sign-out-btn">Sign Out</button>
-      <nav class="tabs" id="tabs">
-        <button class="tab-btn active" data-tab="diagnosis"><span class="tab-icon">🎥</span><span class="tab-label">Diagnosis</span></button>
-        <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📅</span><span class="tab-label">Workouts</span></button>
-        <button class="tab-btn" data-tab="weights"><span class="tab-icon">🏋️</span><span class="tab-label">Weights</span></button>
-        <button class="tab-btn" data-tab="times"><span class="tab-icon">🎯</span><span class="tab-label">Times</span></button>
-        <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
-      </nav>
     </header>
 
   <main id="app">
@@ -179,6 +172,17 @@
       </div>
     </section>
   </main>
+
+  <nav class="bottom-nav" id="tabs">
+    <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📅</span><span class="tab-label">Workouts</span></button>
+    <button class="tab-btn" data-tab="weights"><span class="tab-icon">🏋️</span><span class="tab-label">Weights</span></button>
+    <button class="tab-btn tab-btn-center active" data-tab="diagnosis">
+      <span class="tab-center-icon">🏃</span>
+      <span class="tab-label">Sprint Analysis</span>
+    </button>
+    <button class="tab-btn" data-tab="times"><span class="tab-icon">🎯</span><span class="tab-label">Times</span></button>
+    <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
+  </nav>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
