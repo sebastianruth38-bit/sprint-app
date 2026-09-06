@@ -434,10 +434,14 @@ function renderAnalysisHtml(analysis) {
   const flags = (analysis.flags || [])
     .map((f) => `<div class="hint">⚠️ ${escapeHtml(f)}</div>`)
     .join('');
+  const filmingNote = analysis.filming_note
+    ? `<div class="hint">🎥 ${escapeHtml(analysis.filming_note)}</div>`
+    : '';
   return `
     ${analysis.summary ? `<div>${escapeHtml(analysis.summary)}</div>` : ''}
     ${rows}
     ${flags}
+    ${filmingNote}
   `;
 }
 
