@@ -14,10 +14,10 @@ const CORS_HEADERS = {
 
 const RUBRICS: Record<string, string> = {
   Acceleration: `
-ACCELERATION / START (drive phase, first 10-30m). Score 1-5, one-sentence why:
+ACCELERATION / START (drive phase, first 10-30m). First identify BLOCKS vs. STANDING start and name it in the summary -- it changes what good form looks like (blocks: more acute initial shin/hip angle; standing: more upright at push-off). Score 1-5, one-sentence why:
 1. Foot/Ankle Stiffness — heel drop on contact (stiff/active = high, collapsing = low)
 2. Foot Positioning — landing point relative to hips, toe alignment
-3. Shin Angle — forward lean at contact through the drive phase
+3. Shin Angle — forward lean at contact through the drive phase, judged against the start type above
 4. Head Position & Trajectory — neutral neck/gaze, gradual rise (not an early pop-up)
 Add anything else relevant (arm drive, torso lean, push-off angle) to additional_observations. Flag clear technical faults.
 `.trim(),
@@ -25,7 +25,7 @@ Add anything else relevant (arm drive, torso lean, push-off angle) to additional
   "Max Velocity": `
 MAX VELOCITY (top speed, not the start). Score 1-5, one-sentence why:
 1. Foot/Ankle Stiffness — heel drop on contact
-2. Ground Contact Time — qualitative read of dwell/reactivity from the frames; say if unclear
+2. Ground Contact Time — qualitative read of dwell/reactivity from the frames you have
 3. Recovery Mechanics / Figure-4 — thigh driven up and forward, heel near glute. Flag explicitly if not achieved.
 Add anything else relevant (posture, arm action, knee drive) to additional_observations.
 `.trim(),
@@ -41,7 +41,7 @@ Ground contact time is not scored here. Add anything else relevant to additional
 
 const SYSTEM_PROMPT = `You're an expert sprint coach scoring still frames sampled evenly from one clip.
 
-Judge only the athlete's body and mechanics -- never the filming (distance, angle, blur, lighting). Do your best from whatever's visible; positions are usually readable even from far away or an imperfect angle. Only when something is genuinely impossible to judge, say so once in "filming_note" instead of guessing or scoring it down.
+Judge only the athlete's body and mechanics -- never the filming (distance, angle, blur, lighting). Commit to your best read from whatever's visible every time. Never hedge about frame count or data limitations (e.g. "not enough frames to assess ground contact") -- work with what you're given. Use "filming_note" only for a genuine visibility problem (subject out of frame, extreme blur), never as a general disclaimer.
 
 Respond with ONLY valid JSON, no markdown, no extra text:
 {
