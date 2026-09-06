@@ -298,10 +298,28 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   try {
     const id = crypto.randomUUID();
     saveBtn.textContent = 'Uploading…';
-    const videoPath = `${currentUser.id}/${id}.webm`;
+    // pendingBlob is the actual uploaded File -- use its real extension/type
+    // instead of hardcoding one. Naming/labeling it wrong (e.g. a phone's
+    // .mov as "video/webm") makes the browser unable to decode it at all,
+    // for both playback and frame extraction. iOS sometimes reports an
+    // empty File.type for video picked from the photo library, so fall
+    // back to guessing from the filename extension.
+    const EXT_TO_MIME = {
+      mov: 'video/quicktime', qt: 'video/quicktime',
+      mp4: 'video/mp4', m4v: 'video/mp4',
+      webm: 'video/webm', ogv: 'video/ogg',
+      '3gp': 'video/3gpp', avi: 'video/x-msvideo',
+    };
+    const nameExt = pendingBlob.name && pendingBlob.name.includes('.')
+      ? pendingBlob.name.split('.').pop().toLowerCase()
+      : null;
+    const contentType = pendingBlob.type || (nameExt && EXT_TO_MIME[nameExt]) || 'video/mp4';
+    const typeExt = contentType.includes('/') ? contentType.split('/').pop() : null;
+    const ext = nameExt || typeExt || 'mp4';
+    const videoPath = `${currentUser.id}/${id}.${ext}`;
     const { error: uploadError } = await supabaseClient.storage
       .from('diagnosis-videos')
-      .upload(videoPath, pendingBlob, { contentType: pendingBlob.type || 'video/webm' });
+      .upload(videoPath, pendingBlob, { contentType });
     if (uploadError) {
       alert('Video upload failed: ' + uploadError.message);
       return;
