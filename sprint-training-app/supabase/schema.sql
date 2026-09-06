@@ -95,6 +95,17 @@ create table if not exists public.availability (
   unique (user_id, week_key)
 );
 
+-- ---------- Competition season (one row per athlete, not per week) ----------
+create table if not exists public.competition_seasons (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade unique,
+  indoor_start date,
+  indoor_end date,
+  outdoor_start date,
+  outdoor_end date,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- Row Level Security: every table, owner-only ----------
 alter table public.workouts enable row level security;
 alter table public.times enable row level security;
@@ -104,12 +115,13 @@ alter table public.exercises enable row level security;
 alter table public.weight_checks enable row level security;
 alter table public.diagnosis_entries enable row level security;
 alter table public.favorites enable row level security;
+alter table public.competition_seasons enable row level security;
 alter table public.availability enable row level security;
 do $$
 declare
   t text;
 begin
-  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability']
+  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','competition_seasons']
   loop
     execute format('
       create policy "owner_select" on public.%I for select using (auth.uid() = user_id);
