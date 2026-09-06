@@ -246,7 +246,7 @@ function videoFramePainted(video, timeoutMs = 1500) {
   });
 }
 
-async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
+async function extractFrames(videoBlob, count = 8, maxWidth = 480, onProgress = () => {}) {
   const url = URL.createObjectURL(videoBlob);
   const video = document.createElement('video');
   video.src = url;
@@ -261,14 +261,16 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
   document.body.appendChild(video);
 
   try {
+    onProgress('Reading video metadata…');
     await waitForEvent(video, 'loadedmetadata', 4000);
     if (video.readyState < 2) {
+      onProgress('Waiting for video data…');
       await waitForEvent(video, 'loadeddata', 4000);
     }
 
     const duration = video.duration;
     if (!isFinite(duration) || duration <= 0) {
-      throw new Error('Video has no readable duration');
+      throw new Error('Video has no readable duration (readyState=' + video.readyState + ')');
     }
 
     const scale = Math.min(1, maxWidth / video.videoWidth);
@@ -279,6 +281,7 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
 
     const frames = [];
     for (let i = 0; i < count; i++) {
+      onProgress(`Extracting frame ${i + 1}/${count}…`);
       // Nudge the very first timestamp off zero -- setting currentTime to
       // the value it's already at can silently no-op the seek.
       const raw = (duration * i) / Math.max(count - 1, 1);
@@ -296,6 +299,14 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
   }
 }
 
+function setAnalysisStatus(msg) {
+  const el = document.getElementById('analysisStatus');
+  if (!el) return;
+  const time = new Date().toLocaleTimeString();
+  el.textContent = msg ? `[${time}] ${msg}` : '';
+  console.log(`[analysis ${time}]`, msg);
+}
+
 document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   const clipType = document.getElementById('clipType').value;
   const distance = document.getElementById('clipDistance').value.trim();
@@ -307,8 +318,23 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   const saveBtn = document.getElementById('saveDiagnosis');
   saveBtn.disabled = true;
   const originalLabel = saveBtn.textContent;
+
+  // Hard outer ceiling: no matter what goes wrong above, the button and
+  // status always get released after this. This is a last-resort net on
+  // top of the per-step timeouts already inside extractFrames/the
+  // analysis call, not a replacement for them.
+  let finished = false;
+  const hardTimeout = setTimeout(() => {
+    if (finished) return;
+    finished = true;
+    setAnalysisStatus('Gave up after 2 minutes -- something is stuck. Send a screenshot of this status line.');
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
+  }, 120000);
+
   try {
     const id = crypto.randomUUID();
+    setAnalysisStatus('Uploading video…');
     saveBtn.textContent = 'Uploading…';
     // pendingBlob is the actual uploaded File -- use its real extension/type
     // instead of hardcoding one. Naming/labeling it wrong (e.g. a phone's
@@ -333,6 +359,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       .from('diagnosis-videos')
       .upload(videoPath, pendingBlob, { contentType });
     if (uploadError) {
+      setAnalysisStatus('Upload failed: ' + uploadError.message);
       alert('Video upload failed: ' + uploadError.message);
       return;
     }
@@ -340,7 +367,8 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let analysis = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const frames = await extractFrames(pendingBlob);
+      const frames = await extractFrames(pendingBlob, 8, 480, setAnalysisStatus);
+      setAnalysisStatus(`Sending ${frames.length} frames to the AI…`);
       const invokePromise = supabaseClient.functions.invoke('analyze-form', {
         body: { clipType, distance, effort, frames },
       });
@@ -350,11 +378,14 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       const { data: analysisData, error: analysisError } = await Promise.race([invokePromise, timeoutPromise]);
       if (analysisError) throw analysisError;
       analysis = analysisData;
+      setAnalysisStatus('Analysis complete.');
     } catch (analysisErr) {
       console.error('Analysis failed:', analysisErr);
+      setAnalysisStatus('Analysis failed: ' + (analysisErr.message || analysisErr));
       alert('Clip saved, but AI analysis failed: ' + (analysisErr.message || analysisErr));
     }
 
+    setAnalysisStatus('Saving session…');
     const { error } = await supabaseClient
       .from('diagnosis_entries')
       .insert({
@@ -367,6 +398,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         analysis,
       });
     if (error) {
+      setAnalysisStatus('Save failed: ' + error.message);
       alert('Save failed: ' + error.message);
       return;
     }
@@ -377,8 +409,12 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     videoUpload.value = '';
     renderDiagnosis();
   } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = originalLabel;
+    if (!finished) {
+      finished = true;
+      clearTimeout(hardTimeout);
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalLabel;
+    }
   }
 });
 
