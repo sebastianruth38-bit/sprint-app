@@ -55,9 +55,39 @@ Respond with ONLY valid JSON (no markdown fences, no commentary outside the JSON
 }
 "score" is always an integer 1-5. If a pinpoint truly can't be assessed from the frames given, omit it rather than guessing.`;
 
+// Verifies the caller is a signed-in user of this app. Done manually here
+// (rather than relying on the platform's "Enforce JWT Verification" toggle)
+// because that toggle also gates the CORS preflight (OPTIONS) request --
+// if it fails, the browser never even sees a response with CORS headers,
+// and the request looks like it failed to send at all. So: JWT
+// verification is OFF at the platform level for this function, and
+// enforced here instead, after CORS is already handled.
+async function getAuthedUser(req: Request) {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return null;
+
+  const { createClient } = await import("npm:@supabase/supabase-js@2");
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    { global: { headers: { Authorization: authHeader } } }
+  );
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) return null;
+  return data.user;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
+  }
+
+  const user = await getAuthedUser(req);
+  if (!user) {
+    return new Response(JSON.stringify({ error: "Not signed in" }), {
+      status: 401,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    });
   }
 
   try {
