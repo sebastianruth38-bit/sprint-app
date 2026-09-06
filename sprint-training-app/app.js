@@ -91,18 +91,30 @@ function renderDayPicker(container, selectedSet) {
 
 calendarBtn.addEventListener('click', async () => {
   settingsMenu.hidden = true;
-  const weekKey = getWeekKey();
-  const { data } = await supabaseClient
-    .from('availability')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .eq('week_key', weekKey)
-    .maybeSingle();
-  sprintDaysSelected = new Set((data && data.sprint_days) || []);
-  gymDaysSelected = new Set((data && data.gym_days) || []);
+
+  // Open immediately with whatever we last had, so a slow/failed fetch
+  // never leaves the button looking like it did nothing.
   renderDayPicker(sprintDayPicker, sprintDaysSelected);
   renderDayPicker(gymDayPicker, gymDaysSelected);
   availabilityModal.hidden = false;
+
+  if (!currentUser) return;
+  try {
+    const weekKey = getWeekKey();
+    const { data, error } = await supabaseClient
+      .from('availability')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .eq('week_key', weekKey)
+      .maybeSingle();
+    if (error) throw error;
+    sprintDaysSelected = new Set((data && data.sprint_days) || []);
+    gymDaysSelected = new Set((data && data.gym_days) || []);
+    renderDayPicker(sprintDayPicker, sprintDaysSelected);
+    renderDayPicker(gymDayPicker, gymDaysSelected);
+  } catch (err) {
+    console.error('Failed to load availability:', err);
+  }
 });
 
 document.getElementById('closeAvailability').addEventListener('click', () => {
@@ -114,8 +126,9 @@ availabilityModal.addEventListener('click', (e) => {
 });
 
 document.getElementById('saveAvailability').addEventListener('click', async () => {
+  if (!currentUser) return;
   const weekKey = getWeekKey();
-  await supabaseClient.from('availability').upsert(
+  const { error } = await supabaseClient.from('availability').upsert(
     {
       user_id: currentUser.id,
       week_key: weekKey,
@@ -124,6 +137,10 @@ document.getElementById('saveAvailability').addEventListener('click', async () =
     },
     { onConflict: 'user_id,week_key' }
   );
+  if (error) {
+    alert('Could not save availability: ' + error.message);
+    return;
+  }
   availabilityModal.hidden = true;
   renderWeekBoard();
 });
