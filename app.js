@@ -205,35 +205,30 @@ videoUpload.addEventListener('change', () => {
 });
 
 document.getElementById('saveDiagnosis').addEventListener('click', async () => {
-  const notes = document.getElementById('diagnosisNotes').value.trim();
   const clipType = document.getElementById('clipType').value;
   const distance = document.getElementById('clipDistance').value.trim();
   const effort = document.getElementById('clipEffort').value.trim();
-  if (!notes && !pendingBlob) {
-    alert('Add some notes or a clip first.');
+  if (!pendingBlob) {
+    alert('Upload a clip first.');
     return;
   }
   const saveBtn = document.getElementById('saveDiagnosis');
   saveBtn.disabled = true;
   try {
     const id = crypto.randomUUID();
-    let videoPath = null;
-    if (pendingBlob) {
-      videoPath = `${currentUser.id}/${id}.webm`;
-      const { error: uploadError } = await supabaseClient.storage
-        .from('diagnosis-videos')
-        .upload(videoPath, pendingBlob, { contentType: pendingBlob.type || 'video/webm' });
-      if (uploadError) {
-        alert('Video upload failed: ' + uploadError.message);
-        return;
-      }
+    const videoPath = `${currentUser.id}/${id}.webm`;
+    const { error: uploadError } = await supabaseClient.storage
+      .from('diagnosis-videos')
+      .upload(videoPath, pendingBlob, { contentType: pendingBlob.type || 'video/webm' });
+    if (uploadError) {
+      alert('Video upload failed: ' + uploadError.message);
+      return;
     }
     const { error } = await supabaseClient
       .from('diagnosis_entries')
       .insert({
         id,
         user_id: currentUser.id,
-        notes,
         video_path: videoPath,
         clip_type: clipType || null,
         distance: distance || null,
@@ -243,7 +238,6 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       alert('Save failed: ' + error.message);
       return;
     }
-    document.getElementById('diagnosisNotes').value = '';
     document.getElementById('clipType').value = '';
     document.getElementById('clipDistance').value = '';
     document.getElementById('clipEffort').value = '';
@@ -276,7 +270,7 @@ async function renderDiagnosis() {
         <button class="delete-btn">Delete</button>
       </div>
       ${tags ? `<div class="day-badges"><span class="day-badge">${escapeHtml(tags)}</span></div>` : ''}
-      <div>${escapeHtml(entry.notes || '')}</div>
+      <div class="hint">Weak points: ${entry.notes ? escapeHtml(entry.notes) : 'analysis coming soon'}</div>
     `;
     if (entry.video_path) {
       const { data: signed } = await supabaseClient.storage
