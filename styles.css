@@ -432,6 +432,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.75rem;
+  cursor: pointer;
 }
 .day-card h4 { margin: 0 0 0.4rem; }
 .day-card .type { color: var(--accent); font-weight: 600; font-size: 0.9rem; }
