@@ -224,6 +224,16 @@ function waitForEvent(target, eventName, timeoutMs) {
   });
 }
 
+// Waits for a video frame to actually be decoded/painted, not just for the
+// 'seeked' event -- 'seeked' can fire slightly before a frame is available
+// to copy into a canvas, which is how you get all-black captures.
+function videoFramePainted(video) {
+  if (typeof video.requestVideoFrameCallback === 'function') {
+    return new Promise((resolve) => video.requestVideoFrameCallback(() => resolve()));
+  }
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
 async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
   const url = URL.createObjectURL(videoBlob);
   const video = document.createElement('video');
@@ -231,13 +241,18 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
   video.muted = true;
   video.playsInline = true;
   video.setAttribute('playsinline', '');
-  // Some mobile browsers (notably iOS Safari) won't reliably decode frames
-  // for a <video> that's never attached to the page, even if hidden.
-  video.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;';
+  // Some mobile browsers won't reliably decode frames for a <video> that's
+  // never attached to the page -- and some skip decoding entirely for
+  // opacity:0/zero-size elements as a perf optimization. Placed off-screen
+  // instead, at a real size, so it's "visible" as far as decode is concerned.
+  video.style.cssText = 'position:fixed;top:0;left:-10000px;width:320px;height:240px;pointer-events:none;';
   document.body.appendChild(video);
 
   try {
     await waitForEvent(video, 'loadedmetadata', 4000);
+    if (video.readyState < 2) {
+      await waitForEvent(video, 'loadeddata', 4000);
+    }
 
     const duration = video.duration;
     if (!isFinite(duration) || duration <= 0) {
@@ -258,6 +273,7 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480) {
       const t = Math.min(Math.max(raw, 0.05), Math.max(duration - 0.05, 0));
       video.currentTime = t;
       await waitForEvent(video, 'seeked', 2000);
+      await videoFramePainted(video);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       frames.push(canvas.toDataURL('image/jpeg', 0.7));
     }
