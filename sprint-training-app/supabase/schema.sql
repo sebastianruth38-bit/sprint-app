@@ -12,6 +12,7 @@ create table if not exists public.workouts (
   day text not null check (day in ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')),
   type text not null,
   details text,
+  timed text, -- 'Timed' | 'Untimed' | null
   updated_at timestamptz not null default now(),
   unique (user_id, day)
 );
