@@ -352,15 +352,6 @@ textarea {
 }
 .file-label input { width: auto; }
 
-.video-preview {
-  width: 100%;
-  max-width: 420px;
-  border-radius: 8px;
-  background: #000;
-  display: block;
-  margin-bottom: 0.75rem;
-}
-
 .cue-list { color: var(--muted); }
 
 .entry-list { display: flex; flex-direction: column; gap: 0.75rem; }
