@@ -33,6 +33,7 @@
         <button id="settingsBtn" class="icon-btn" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙️</button>
         <div id="settingsMenu" class="settings-menu" hidden>
           <button id="profileBtn" class="btn" style="width:100%;margin-bottom:0.5rem">Profile</button>
+          <button id="trainingSetupBtn" class="btn" style="width:100%;margin-bottom:0.5rem">Training Setup</button>
           <button id="signOutBtn" class="btn" style="width:100%">Sign Out</button>
         </div>
       </div>
@@ -84,6 +85,30 @@
       </div>
     </div>
 
+    <!-- TRAINING SETUP MODAL -->
+    <div id="trainingSetupModal" class="modal-overlay" hidden>
+      <div class="card modal-card">
+        <div class="entry-top">
+          <h3 style="margin:0">Training Setup</h3>
+          <button id="closeTrainingSetup" class="delete-btn" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">Feeds workout suggestions and the training phase.</p>
+
+        <label class="hint season-label">Events you normally compete in</label>
+        <input type="text" id="primaryEvents" placeholder="e.g. 100m, 200m" />
+
+        <p class="avail-label">🎒 Equipment available</p>
+        <div class="day-picker" id="equipmentPicker" style="grid-template-columns:repeat(3,1fr)"></div>
+
+        <label class="hint season-label" style="margin-top:0.9rem">Next meet date</label>
+        <input type="date" id="nextMeetDate" />
+        <label class="hint season-label" style="margin-top:0.6rem">Events at that meet</label>
+        <input type="text" id="nextMeetEvents" placeholder="e.g. 100m, 4x100 relay" />
+
+        <button id="saveTrainingSetup" class="btn primary" style="width:100%;margin-top:0.75rem">Save</button>
+      </div>
+    </div>
+
   <main id="app">
     <!-- FORM DIAGNOSIS -->
     <section class="tab-panel active" id="panel-diagnosis">
@@ -119,6 +144,7 @@
     <!-- WORKOUTS -->
     <section class="tab-panel" id="panel-workouts">
       <h2>Weekly Sprint Workouts</h2>
+      <div id="phaseBadge" class="phase-badge"></div>
       <p class="hint">Plan what type of sprint session lands on each day.</p>
 
       <div class="card">
@@ -136,11 +162,15 @@
             <option>Tempo (extensive/aerobic)</option>
             <option>Hill Sprints</option>
             <option>Blocks / Starts</option>
+            <option>Pre-Meet</option>
             <option>Recovery / Mobility</option>
             <option>Rest Day</option>
             <option>Custom</option>
           </select>
-          <input type="text" id="workoutDetails" placeholder="e.g. 6x60m @95%, 3min rest" />
+        </div>
+        <div class="row">
+          <input type="text" id="workoutDetails" placeholder="e.g. 6x60m @95%, 3min rest" style="flex:1" />
+          <button id="suggestWorkout" class="btn">Suggest</button>
         </div>
         <button id="saveWorkout" class="btn primary">Save Session</button>
       </div>

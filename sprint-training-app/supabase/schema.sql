@@ -106,6 +106,17 @@ create table if not exists public.competition_seasons (
   updated_at timestamptz not null default now()
 );
 
+-- ---------- Athlete settings: events, equipment, next meet ----------
+create table if not exists public.athlete_settings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade unique,
+  primary_events jsonb not null default '[]'::jsonb,
+  equipment jsonb not null default '[]'::jsonb,
+  next_meet_date date,
+  next_meet_events jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- Row Level Security: every table, owner-only ----------
 alter table public.workouts enable row level security;
 alter table public.times enable row level security;
@@ -117,11 +128,12 @@ alter table public.diagnosis_entries enable row level security;
 alter table public.favorites enable row level security;
 alter table public.competition_seasons enable row level security;
 alter table public.availability enable row level security;
+alter table public.athlete_settings enable row level security;
 do $$
 declare
   t text;
 begin
-  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','competition_seasons']
+  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','competition_seasons','athlete_settings']
   loop
     execute format('
       create policy "owner_select" on public.%I for select using (auth.uid() = user_id);

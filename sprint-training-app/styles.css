@@ -408,6 +408,19 @@ textarea {
 }
 .delete-btn:hover { color: var(--accent); }
 
+.phase-badge {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+.phase-badge.competition { background: #e5484d; color: #fff; }
+.phase-badge.taper { background: #f5a623; color: #1a1a1a; }
+.phase-badge.deload { background: #f5d90a; color: #1a1a1a; }
+
 .week-board {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
