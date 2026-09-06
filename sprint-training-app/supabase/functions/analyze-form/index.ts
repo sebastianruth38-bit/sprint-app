@@ -14,46 +14,44 @@ const CORS_HEADERS = {
 
 const RUBRICS: Record<string, string> = {
   Acceleration: `
-This is an ACCELERATION / START clip (the drive phase, roughly the first 10-30m).
-Score each of the following 1-5 (5 = excellent), with a one-sentence "why":
-1. Foot/Ankle Stiffness — how little the heel drops toward the ground on contact; a stiff, active strike scores high, a heel that collapses/sinks scores low.
-2. Foot Positioning — where the foot lands relative to the hips/center of mass, and toe alignment.
-3. Shin Angle — forward shin lean at ground contact through the drive phase; a steep forward lean early on is expected and good.
-4. Head Position & Trajectory — neck/gaze neutrality, and whether the head/torso rises gradually through the acceleration phase rather than popping up early.
-Then add any OTHER positions or mechanics you find clearly relevant (e.g. arm drive, torso lean angle, push-off angle) as additional_observations, each scored 1-5 with a note.
-Flag anything that looks like a clear technical fault under "flags".
+ACCELERATION / START (drive phase, first 10-30m). Score 1-5, one-sentence why:
+1. Foot/Ankle Stiffness — heel drop on contact (stiff/active = high, collapsing = low)
+2. Foot Positioning — landing point relative to hips, toe alignment
+3. Shin Angle — forward lean at contact through the drive phase
+4. Head Position & Trajectory — neutral neck/gaze, gradual rise (not an early pop-up)
+Add anything else relevant (arm drive, torso lean, push-off angle) to additional_observations. Flag clear technical faults.
 `.trim(),
 
   "Max Velocity": `
-This is a MAX VELOCITY clip (top-speed running, not the start).
-Score each of the following 1-5 (5 = excellent), with a one-sentence "why":
-1. Foot/Ankle Stiffness — how little the heel drops toward the ground on contact.
-2. Ground Contact Time — a qualitative read of how short/quick the foot's ground contact looks (short and reactive scores high; any visible dwell/sinking scores low). This is an estimate from still frames, not a timed measurement -- say so if you can't tell.
-3. Recovery Mechanics / Figure-4 Position — check whether the recovery leg reaches the "figure-4" position during swing (thigh driven up and forward, lower leg folded under, heel close to the glute). If the athlete does NOT clearly achieve figure-4, say so explicitly and add it to "flags" as a positions issue.
-Then add any OTHER mechanics you find clearly relevant (e.g. posture/lean, arm action, knee drive height) as additional_observations, each scored 1-5 with a note.
+MAX VELOCITY (top speed, not the start). Score 1-5, one-sentence why:
+1. Foot/Ankle Stiffness — heel drop on contact
+2. Ground Contact Time — qualitative read of dwell/reactivity from the frames; say if unclear
+3. Recovery Mechanics / Figure-4 — thigh driven up and forward, heel near glute. Flag explicitly if not achieved.
+Add anything else relevant (posture, arm action, knee drive) to additional_observations.
 `.trim(),
 
   "Speed Endurance": `
-This is a SPEED ENDURANCE clip (longer, sub-maximal effort -- the point is holding form under fatigue, not raw top speed).
-Score each of the following 1-5 (5 = excellent), with a one-sentence "why":
-1. Smoothness / Consistency — compare the earliest frames to the latest frames: does form stay consistent through the run, or does it visibly degrade/get choppy? Score high if there's little change over the clip.
-2. Hip Extension — full extension at the hip through toe-off.
-3. Recovery Mechanics — same figure-4 check as max velocity; still matters here. Flag clearly if not achieved.
-Ground contact time is NOT a priority for this clip type -- do not score it as a pinpoint (you may mention it in additional_observations only if something looks notably wrong).
-Then add any OTHER mechanics you find clearly relevant as additional_observations, each scored 1-5 with a note.
+SPEED ENDURANCE (sub-max effort, holding form under fatigue). Score 1-5, one-sentence why:
+1. Smoothness / Consistency — early frames vs. late frames, any degradation
+2. Hip Extension — full extension at toe-off
+3. Recovery Mechanics — same figure-4 check; still matters. Flag if not achieved.
+Ground contact time is not scored here. Add anything else relevant to additional_observations.
 `.trim(),
 };
 
-const SYSTEM_PROMPT = `You are an expert sprint coach reviewing still frames extracted from a single sprint clip, sampled evenly across its duration. You are precise, encouraging but honest, and you never invent detail you can't actually see in the frames -- if something isn't visible or clear, say so rather than guessing confidently.
+const SYSTEM_PROMPT = `You're an expert sprint coach scoring still frames sampled evenly from one clip.
 
-Respond with ONLY valid JSON (no markdown fences, no commentary outside the JSON) matching exactly this shape:
+Judge only the athlete's body and mechanics -- never the filming (distance, angle, blur, lighting). Do your best from whatever's visible; positions are usually readable even from far away or an imperfect angle. Only when something is genuinely impossible to judge, say so once in "filming_note" instead of guessing or scoring it down.
+
+Respond with ONLY valid JSON, no markdown, no extra text:
 {
   "summary": string,
   "pinpoints": [ { "name": string, "score": number, "note": string } ],
   "additional_observations": [ { "name": string, "score": number, "note": string } ],
-  "flags": [ string ]
+  "flags": [ string ],
+  "filming_note": string | null
 }
-"score" is always an integer 1-5. If a pinpoint truly can't be assessed from the frames given, omit it rather than guessing.`;
+score is an integer 1-5. Omit a pinpoint only if truly unassessable.`;
 
 // Verifies the caller is a signed-in user of this app. Done manually here
 // (rather than relying on the platform's "Enforce JWT Verification" toggle)
