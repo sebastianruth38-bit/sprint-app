@@ -43,7 +43,9 @@ const SYSTEM_PROMPT = `You're an expert sprint coach scoring still frames sample
 
 Judge only the athlete's body and mechanics -- never the filming (distance, angle, blur, lighting). Commit to your best read from whatever's visible every time. Never hedge about frame count or data limitations (e.g. "not enough frames to assess ground contact") -- work with what you're given. Use "filming_note" only for a genuine visibility problem (subject out of frame, extreme blur), never as a general disclaimer.
 
-Respond with ONLY valid JSON, no markdown, no extra text:
+Keep every note under 10 words. Only include additional_observations if something is clearly significant -- at most 2, otherwise omit the field entirely. summary is one short sentence.
+
+Respond with ONLY valid JSON, no markdown fences, no code block, no text before or after the JSON:
 {
   "summary": string,
   "pinpoints": [ { "name": string, "score": number, "note": string } ],
@@ -151,9 +153,21 @@ Deno.serve(async (req: Request) => {
     const textBlock = (result.content || []).find((block: { type: string }) => block.type === "text");
     const rawText = (textBlock as { text?: string } | undefined)?.text ?? "";
 
+    // Claude sometimes wraps the JSON in ```fences``` or adds a stray
+    // sentence despite the instruction not to -- pull out the {...} object
+    // itself rather than assuming rawText is already pure JSON.
+    function extractJsonObject(text: string): string {
+      const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenced) return fenced[1].trim();
+      const start = text.indexOf("{");
+      const end = text.lastIndexOf("}");
+      if (start !== -1 && end > start) return text.slice(start, end + 1);
+      return text.trim();
+    }
+
     let parsed;
     try {
-      parsed = JSON.parse(rawText);
+      parsed = JSON.parse(extractJsonObject(rawText));
     } catch {
       parsed = { summary: rawText, pinpoints: [], additional_observations: [], flags: [] };
     }
