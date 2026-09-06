@@ -60,8 +60,8 @@
   <main id="app">
     <!-- FORM DIAGNOSIS -->
     <section class="tab-panel active" id="panel-diagnosis">
-      <h2>Form Diagnosis</h2>
-      <p class="hint">Upload a clip of your sprint, tag what it was, jot down what you saw, and track it over time.</p>
+      <h2>Form Analysis</h2>
+      <p class="hint">Upload a clip of your sprint, tag what it was, and analyze it.</p>
 
       <div class="card">
         <h3>Add a clip</h3>
@@ -81,7 +81,7 @@
         </div>
 
         <textarea id="diagnosisNotes" placeholder="What are you diagnosing? e.g. arm drive, shin angle at toe-off, hip extension, head/neck position, knee drive height..."></textarea>
-        <button id="saveDiagnosis" class="btn primary">Save Entry</button>
+        <button id="saveDiagnosis" class="btn primary">Analyze</button>
       </div>
 
       <h3>Checklist cues</h3>
@@ -93,20 +93,6 @@
         <li>Tall posture at top speed, minimal vertical bounce</li>
         <li>Active/clawing foot strike under the hips</li>
       </ul>
-
-      <h3>Teach the AI</h3>
-      <p class="hint">Describe what good vs. bad looks like for a position or moment (foot contact, knee drive, arm action, posture...). This becomes the AI's reference when it reviews your clips.</p>
-
-      <div class="card">
-        <div class="form-grid">
-          <input type="text" id="criterionCategory" placeholder="e.g. Foot Contact" />
-        </div>
-        <textarea id="criterionGood" placeholder="What GOOD looks like..."></textarea>
-        <textarea id="criterionBad" placeholder="What BAD looks like..."></textarea>
-        <button id="addCriterion" class="btn primary">Add Criterion</button>
-      </div>
-
-      <div id="criteriaList" class="entry-list"></div>
 
       <h3>Past Entries</h3>
       <div id="diagnosisList" class="entry-list"></div>
@@ -222,7 +208,7 @@
     <button class="tab-btn" data-tab="weights"><span class="tab-icon">💪</span><span class="tab-label">Weights</span></button>
     <button class="tab-btn tab-btn-center active" data-tab="diagnosis">
       <span class="tab-center-icon">🐆</span>
-      <span class="tab-label">Sprint Analysis</span>
+      <span class="tab-label">Form Analysis</span>
     </button>
     <button class="tab-btn" data-tab="times"><span class="tab-icon">⏱️</span><span class="tab-label">Times</span></button>
     <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
