@@ -597,6 +597,11 @@ async function renderDiagnosis() {
 // =====================================================
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+// Sessions that don't need track access, plus competition days -- a meet
+// isn't skipped because the athlete ticked a box, and a rest day needs
+// nothing to "do". Everything else hides when they can't sprint that day.
+const NO_TRACK_NEEDED = new Set(['Rest Day', 'Recovery / Mobility', 'Meet Day', 'Pre-Meet']);
+
 // Splits a plan description into its individual exercises/reps so each can
 // get its own weight/time input -- e.g. "Power Cleans 3x3-5, Broad Jumps 3x3"
 // becomes two items. Commas inside parentheses stay grouped, e.g.
@@ -1120,6 +1125,10 @@ async function renderWeekBoard() {
   data.forEach((w) => { byDay[w.day] = w; });
   const sprintDays = new Set((avail && avail.sprint_days) || []);
   const gymDays = new Set((avail && avail.gym_days) || []);
+  // Availability only filters once the athlete has actually marked days --
+  // an untouched week means "nothing said yet", not "available for nothing".
+  const sprintFiltered = sprintDays.size > 0;
+  const gymFiltered = gymDays.size > 0;
 
   const board = document.getElementById('weekBoard');
   board.innerHTML = '';
@@ -1129,13 +1138,38 @@ async function renderWeekBoard() {
     if (sprintDays.has(day)) badges.push('<span class="day-badge">🏃 Sprint OK</span>');
     if (gymDays.has(day)) badges.push('<span class="day-badge">💪 Gym OK</span>');
 
+    // A session is only hidden if it actually needs the thing the athlete
+    // can't get to. The plan itself is left untouched in the database, so
+    // marking the day available again brings the session straight back.
+    const canSprint = !sprintFiltered || sprintDays.has(day);
+    const canGym = !gymFiltered || gymDays.has(day);
+    const sprintBlocked = !!w && !canSprint && !NO_TRACK_NEEDED.has(w.type);
+    const liftBlocked = !!w && !!w.lift_details && !canGym;
+
+    let body;
+    if (!w) {
+      body = '<div class="details">No session set</div>';
+    } else if (sprintBlocked) {
+      body = `<div class="type blocked">Can't sprint this day</div>
+        <div class="details">${escapeHtml(w.type)} skipped — you marked yourself unavailable.</div>`;
+    } else {
+      body = `<div class="type">${escapeHtml(w.type)}${w.timed ? ` <span class="score-pill">${escapeHtml(w.timed)}</span>` : ''}</div>
+        <div class="details">${escapeHtml(w.details || '')}</div>`;
+    }
+
+    let liftLine = '';
+    if (w && w.lift_details) {
+      liftLine = liftBlocked
+        ? '<div class="hint blocked">🏋️ Lift skipped — no gym this day.</div>'
+        : `<div class="hint">🏋️ ${withLoggedValues(w.lift_details, w.lift_log, expandLiftItem)}</div>`;
+    }
+
     const card = document.createElement('div');
-    card.className = 'day-card' + (w ? '' : ' empty');
+    card.className = 'day-card' + (w ? '' : ' empty') + (sprintBlocked || liftBlocked ? ' blocked-day' : '');
     card.innerHTML = `
       <h4>${day}</h4>
-      ${w ? `<div class="type">${escapeHtml(w.type)}${w.timed ? ` <span class="score-pill">${escapeHtml(w.timed)}</span>` : ''}</div><div class="details">${escapeHtml(w.details || '')}</div>`
-          : `<div class="details">No session set</div>`}
-      ${w && w.lift_details ? `<div class="hint">🏋️ ${withLoggedValues(w.lift_details, w.lift_log, expandLiftItem)}</div>` : ''}
+      ${body}
+      ${liftLine}
       ${w && w.logged_result && Object.keys(w.logged_result).length ? `<div class="hint">⏱️ Ran: ${withLoggedValues(w.details, w.logged_result, expandSprintItem)}</div>` : ''}
       ${badges.length ? `<div class="day-badges">${badges.join('')}</div>` : ''}
       ${w ? `<button class="delete-btn">Clear</button>` : ''}
