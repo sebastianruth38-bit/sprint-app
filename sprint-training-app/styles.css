@@ -476,6 +476,31 @@ textarea {
 
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* Destructive-but-available: greyed and dashed so it reads as "only if you
+   mean it", rather than as the obvious next tap. */
+.btn.regen {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+  font-weight: 600;
+}
+.btn.regen:hover {
+  background: var(--surface-2);
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+#generateWeekPlan { margin-bottom: 0.9rem; }
+
+.regen-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+  margin: -0.55rem 0 0.9rem;
+  line-height: 1.4;
+}
+.regen-note:empty { display: none; }
+
 .file-label {
   display: inline-flex;
   align-items: center;
