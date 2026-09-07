@@ -14,7 +14,8 @@ create table if not exists public.workouts (
   details text,
   timed text, -- 'Timed' | 'Untimed' | null
   lift_details text,
-  logged_result text, -- what the athlete actually ran/lifted, e.g. "11.4, 11.3, 11.5"
+  lift_log jsonb, -- weight actually used per lift exercise, e.g. {"Power Cleans 3x3-5": "135lbs"}
+  logged_result jsonb, -- time actually run per sprint segment, e.g. {"2x20": "3.1", "2x25": "3.6"}
   updated_at timestamptz not null default now(),
   unique (user_id, day)
 );
@@ -79,6 +80,16 @@ create table if not exists public.diagnosis_entries (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Form analysis criteria (per-athlete custom good/bad cues) ----------
+create table if not exists public.form_criteria (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  category text not null,
+  good_desc text,
+  bad_desc text,
+  created_at timestamptz not null default now()
+);
+
 -- ---------- Motivation favorites ----------
 create table if not exists public.favorites (
   id uuid primary key default gen_random_uuid(),
@@ -132,11 +143,12 @@ alter table public.favorites enable row level security;
 alter table public.competition_seasons enable row level security;
 alter table public.availability enable row level security;
 alter table public.athlete_settings enable row level security;
+alter table public.form_criteria enable row level security;
 do $$
 declare
   t text;
 begin
-  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','competition_seasons','athlete_settings']
+  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','competition_seasons','athlete_settings','form_criteria']
   loop
     execute format('
       create policy "owner_select" on public.%I for select using (auth.uid() = user_id);

@@ -597,23 +597,107 @@ async function renderDiagnosis() {
 // =====================================================
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+// Splits a plan description into its individual exercises/reps so each can
+// get its own weight/time input -- e.g. "Power Cleans 3x3-5, Broad Jumps 3x3"
+// becomes two items. Commas inside parentheses stay grouped, e.g.
+// "(2x20,2x25,2x30,1x40)" is kept as one item rather than exploding it.
+function splitExercises(str) {
+  if (!str) return [];
+  const parts = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of str) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts.filter(Boolean);
+}
+
+// Renders a plan description with each exercise's logged value appended in
+// parentheses where one was logged, e.g. "Power Cleans 3x3-5 (135lbs), Broad Jumps 3x3".
+function withLoggedValues(planText, log) {
+  const items = splitExercises(planText);
+  if (!items.length) return escapeHtml(planText || '');
+  const log2 = log || {};
+  return items.map((label) => (log2[label] ? `${escapeHtml(label)} (${escapeHtml(log2[label])})` : escapeHtml(label))).join(', ');
+}
+
+// Reads whatever's currently in the exercise-log inputs of one kind
+// ('sprint' or 'lift') into a { exerciseLabel: value } map, skipping blanks.
+function getCurrentLog(kind) {
+  const log = {};
+  document.querySelectorAll(`#exerciseLog .explog-input[data-kind="${kind}"]`).forEach((input) => {
+    if (input.value.trim()) log[input.dataset.key] = input.value.trim();
+  });
+  return log;
+}
+
+// Rebuilds the per-exercise log rows from the current plan text in
+// workoutDetails/workoutLift, prefilling from the given saved logs (or from
+// whatever's already in the inputs, when called to preserve in-progress edits).
+function renderExerciseLog(sprintLog, liftLog) {
+  const sprintItems = splitExercises(document.getElementById('workoutDetails').value);
+  const liftItems = splitExercises(document.getElementById('workoutLift').value);
+  sprintLog = sprintLog || {};
+  liftLog = liftLog || {};
+
+  const rowsHtml = (items, log, kind, placeholder) => items.map((label) => `
+    <div class="ex-row">
+      <span class="ex-name">${escapeHtml(label)}</span>
+      <input type="text" class="explog-input" data-kind="${kind}" data-key="${escapeHtml(label)}" placeholder="${placeholder}" value="${escapeHtml(log[label] || '')}" style="width:100px" />
+    </div>
+  `).join('');
+
+  let html = '';
+  if (sprintItems.length) {
+    html += `<p class="hint" style="margin-bottom:0.2rem">⏱️ Log each rep's time</p>${rowsHtml(sprintItems, sprintLog, 'sprint', 'time')}`;
+  }
+  if (liftItems.length) {
+    html += `<p class="hint" style="margin:0.6rem 0 0.2rem">🏋️ Log each lift's weight</p>${rowsHtml(liftItems, liftLog, 'lift', 'weight')}`;
+  }
+  document.getElementById('exerciseLog').innerHTML = html;
+}
+
+function refreshExerciseLog() {
+  renderExerciseLog(getCurrentLog('sprint'), getCurrentLog('lift'));
+}
+document.getElementById('workoutDetails').addEventListener('input', refreshExerciseLog);
+document.getElementById('workoutLift').addEventListener('input', refreshExerciseLog);
+
 document.getElementById('saveWorkout').addEventListener('click', async () => {
   const day = document.getElementById('workoutDay').value;
   const type = document.getElementById('workoutType').value;
   const details = document.getElementById('workoutDetails').value.trim();
   const timed = document.getElementById('workoutTimed').value || null;
   const liftDetails = document.getElementById('workoutLift').value.trim();
-  const loggedResult = document.getElementById('workoutLoggedResult').value.trim();
+  const loggedResult = getCurrentLog('sprint');
+  const liftLog = getCurrentLog('lift');
   const { error } = await supabaseClient
     .from('workouts')
     .upsert(
-      { user_id: currentUser.id, day, type, details, timed, lift_details: liftDetails || null, logged_result: loggedResult || null },
+      {
+        user_id: currentUser.id,
+        day,
+        type,
+        details,
+        timed,
+        lift_details: liftDetails || null,
+        logged_result: Object.keys(loggedResult).length ? loggedResult : null,
+        lift_log: Object.keys(liftLog).length ? liftLog : null,
+      },
       { onConflict: 'user_id,day' }
     );
   if (error) { alert('Save failed: ' + error.message); return; }
   document.getElementById('workoutDetails').value = '';
   document.getElementById('workoutLift').value = '';
-  document.getElementById('workoutLoggedResult').value = '';
+  document.getElementById('exerciseLog').innerHTML = '';
   renderWeekBoard();
 });
 
@@ -876,6 +960,8 @@ document.getElementById('generateWeekPlan').addEventListener('click', async () =
       details: entry.details,
       timed: entry.timed || null,
       lift_details: entry.liftDetails || null,
+      logged_result: null,
+      lift_log: null,
     })),
     { onConflict: 'user_id,day' }
   );
@@ -916,8 +1002,8 @@ async function renderWeekBoard() {
       <h4>${day}</h4>
       ${w ? `<div class="type">${escapeHtml(w.type)}${w.timed ? ` <span class="score-pill">${escapeHtml(w.timed)}</span>` : ''}</div><div class="details">${escapeHtml(w.details || '')}</div>`
           : `<div class="details">No session set</div>`}
-      ${w && w.lift_details ? `<div class="hint">🏋️ ${escapeHtml(w.lift_details)}</div>` : ''}
-      ${w && w.logged_result ? `<div class="hint">⏱️ Ran: ${escapeHtml(w.logged_result)}</div>` : ''}
+      ${w && w.lift_details ? `<div class="hint">🏋️ ${withLoggedValues(w.lift_details, w.lift_log)}</div>` : ''}
+      ${w && w.logged_result && Object.keys(w.logged_result).length ? `<div class="hint">⏱️ Ran: ${withLoggedValues(w.details, w.logged_result)}</div>` : ''}
       ${badges.length ? `<div class="day-badges">${badges.join('')}</div>` : ''}
       ${w ? `<button class="delete-btn">Clear</button>` : ''}
     `;
@@ -930,7 +1016,7 @@ async function renderWeekBoard() {
       document.getElementById('workoutDetails').value = w ? w.details || '' : '';
       document.getElementById('workoutTimed').value = w && w.timed ? w.timed : '';
       document.getElementById('workoutLift').value = w && w.lift_details ? w.lift_details : '';
-      document.getElementById('workoutLoggedResult').value = w && w.logged_result ? w.logged_result : '';
+      renderExerciseLog(w ? w.logged_result : null, w ? w.lift_log : null);
       document.getElementById('workoutDetails').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     if (w) {
