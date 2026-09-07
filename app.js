@@ -163,8 +163,59 @@ document.getElementById('saveAvailability').addEventListener('click', async () =
   }
 
   availabilityModal.hidden = true;
+  await reapplyAvailabilityToSavedPlan();
   renderWeekBoard();
 });
+
+function hasLoggedData(row) {
+  return !!(row.logged_result && Object.keys(row.logged_result).length)
+    || !!(row.lift_log && Object.keys(row.lift_log).length);
+}
+
+// Availability changed, so shuffle the week that's already saved onto the
+// days the athlete can now train. Anything they've already logged is left
+// alone -- that session happened, on that day.
+async function reapplyAvailabilityToSavedPlan() {
+  if (!currentUser) return;
+  const weekKey = getWeekKey();
+  const [{ data: rows }, { data: avail }] = await Promise.all([
+    supabaseClient.from('workouts').select('*').eq('user_id', currentUser.id),
+    supabaseClient.from('availability').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey).maybeSingle(),
+  ]);
+  if (!rows || !rows.length) return;
+
+  const sprintDays = new Set((avail && avail.sprint_days) || []);
+  const gymDays = new Set((avail && avail.gym_days) || []);
+  if (!sprintDays.size && !gymDays.size) return;
+
+  const byDay = {};
+  rows.forEach((r) => { byDay[r.day] = r; });
+  const current = DAYS.map((day) => {
+    const r = byDay[day];
+    return r
+      ? { day, type: r.type, details: r.details, timed: r.timed, liftDetails: r.lift_details, loggedResult: r.logged_result, liftLog: r.lift_log }
+      : { day, type: 'Rest Day', details: '' };
+  });
+  const locked = new Set(rows.filter(hasLoggedData).map((r) => r.day));
+
+  const { plan, dropped } = reschedulePlan(current, sprintDays, gymDays, locked);
+  lastPlanNote = describeDropped(dropped);
+
+  const { error } = await supabaseClient.from('workouts').upsert(
+    plan.map((entry) => ({
+      user_id: currentUser.id,
+      day: entry.day,
+      type: entry.type,
+      details: entry.details || '',
+      timed: entry.timed || null,
+      lift_details: entry.liftDetails || null,
+      logged_result: entry.loggedResult || null,
+      lift_log: entry.liftLog || null,
+    })),
+    { onConflict: 'user_id,day' }
+  );
+  if (error) console.error('Could not re-place the week:', error);
+}
 
 // ---------- Athlete profile ----------
 const profileModal = document.getElementById('profileModal');
@@ -599,8 +650,119 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 
 // Sessions that don't need track access, plus competition days -- a meet
 // isn't skipped because the athlete ticked a box, and a rest day needs
-// nothing to "do". Everything else hides when they can't sprint that day.
-const NO_TRACK_NEEDED = new Set(['Rest Day', 'Recovery / Mobility', 'Meet Day', 'Pre-Meet']);
+// nothing to "do". Everything else needs a day they can sprint.
+const NO_TRACK_NEEDED = new Set(['Rest Day', 'Recovery / Mobility', 'Meet Day', 'Pre-Meet', 'Lift Only']);
+
+// A meet, and the day before it, are dates -- they never get moved.
+const FIXED_TYPES = new Set(['Meet Day', 'Pre-Meet']);
+
+// Speed work claims the available track days first. If the athlete only has
+// two days this week, they should be spent on acceleration and max velocity,
+// not on tempo -- so the lower the number, the earlier it picks a day.
+const SESSION_PRIORITY = {
+  'Acceleration (0-30m)': 1,
+  'Max Velocity (flys/build-ups)': 1,
+  'Blocks / Starts': 2,
+  'Hill Sprints': 2,
+  'Race Modeling': 3,
+  'Speed Endurance (60-150m)': 4,
+  'Special Endurance (150-300m)': 4,
+  'Tempo (extensive/aerobic)': 5,
+};
+
+// Re-places a week onto the days the athlete can actually train, instead of
+// dropping whatever falls on a day they can't. Sessions are placed hardest-
+// first so scarce track days go to the highest-value work; each one prefers
+// the day it was already on, then the nearest free day it can use. `locked`
+// days (already logged, so already done) stay exactly where they are.
+// Returns the new plan plus anything that couldn't be fitted at all.
+function reschedulePlan(plan, sprintDays, gymDays, locked = new Set()) {
+  const sprintFiltered = sprintDays.size > 0;
+  const gymFiltered = gymDays.size > 0;
+  if (!sprintFiltered && !gymFiltered) return { plan, dropped: [] };
+
+  const canSprint = (d) => !sprintFiltered || sprintDays.has(d);
+  const canGym = (d) => !gymFiltered || gymDays.has(d);
+  const nearestTo = (from) => (a, b) =>
+    Math.abs(DAYS.indexOf(a) - DAYS.indexOf(from)) - Math.abs(DAYS.indexOf(b) - DAYS.indexOf(from));
+
+  const placed = {};
+  const dropped = [];
+  plan.forEach((e) => {
+    if (FIXED_TYPES.has(e.type) || locked.has(e.day)) placed[e.day] = e;
+  });
+
+  const sessions = plan
+    .filter((e) => !placed[e.day] && !NO_TRACK_NEEDED.has(e.type))
+    .sort((a, b) =>
+      (SESSION_PRIORITY[a.type] || 9) - (SESSION_PRIORITY[b.type] || 9) ||
+      DAYS.indexOf(a.day) - DAYS.indexOf(b.day));
+
+  const homelessLifts = [];
+  sessions.forEach((entry) => {
+    const target = DAYS.filter((d) => canSprint(d) && !placed[d]).sort(nearestTo(entry.day))[0];
+    if (!target) {
+      // No track day left for this session -- but its lift doesn't need a
+      // track, so it still gets a shot at a gym day below.
+      dropped.push({ kind: 'session', label: entry.type });
+      if (entry.liftDetails) homelessLifts.push({ from: entry.day, type: entry.type, lift: entry.liftDetails });
+      return;
+    }
+    placed[target] = { ...entry, day: target };
+  });
+
+  // Rest / recovery days fill in around the sessions.
+  plan
+    .filter((e) => !placed[e.day] && NO_TRACK_NEEDED.has(e.type) && !FIXED_TYPES.has(e.type))
+    .forEach((entry) => {
+      const target = DAYS.filter((d) => !placed[d]).sort(nearestTo(entry.day))[0];
+      if (target) placed[target] = { ...entry, day: target };
+    });
+
+  // A lift rides with its session when there's gym access that day.
+  Object.keys(placed).forEach((day) => {
+    const entry = placed[day];
+    if (!entry.liftDetails || canGym(day) || locked.has(day)) return;
+    placed[day] = { ...entry, liftDetails: null };
+    homelessLifts.push({ from: day, type: entry.type, lift: entry.liftDetails });
+  });
+
+  // Otherwise it moves to the nearest gym day not already carrying one --
+  // landing on a rest day turns that day into a lift-only day rather than
+  // reading as a rest day with a workout on it.
+  homelessLifts
+    .sort((a, b) => (SESSION_PRIORITY[a.type] || 9) - (SESSION_PRIORITY[b.type] || 9))
+    .forEach(({ from, type, lift }) => {
+      const target = DAYS
+        .filter((d) => canGym(d) && !locked.has(d) && !(placed[d] && placed[d].liftDetails))
+        .sort(nearestTo(from))[0];
+      if (!target) { dropped.push({ kind: 'lift', label: type }); return; }
+      const existing = placed[target];
+      placed[target] = existing && existing.type !== 'Rest Day'
+        ? { ...existing, liftDetails: lift }
+        : { day: target, type: 'Lift Only', details: '', liftDetails: lift };
+    });
+
+  return {
+    plan: DAYS.map((day) => placed[day] || { day, type: 'Rest Day', details: '' }),
+    dropped,
+  };
+}
+
+// Set whenever a plan is placed, so the board can say what didn't fit.
+let lastPlanNote = '';
+
+// Counts matter here: the week can carry two tempo sessions, so "Tempo was
+// cut" would be misleading when one of them is still on the board.
+function describeDropped(dropped) {
+  if (!dropped.length) return '';
+  const byType = {};
+  dropped.filter((d) => d.kind === 'session').forEach((d) => { byType[d.label] = (byType[d.label] || 0) + 1; });
+  const parts = Object.entries(byType).map(([label, n]) => `${n} ${label} session${n > 1 ? 's' : ''}`);
+  const lifts = dropped.filter((d) => d.kind === 'lift').length;
+  if (lifts) parts.push(`${lifts} lift${lifts > 1 ? 's' : ''}`);
+  return `Cut to fit your available days: ${parts.join(', ')}.`;
+}
 
 // Splits a plan description into its individual exercises/reps so each can
 // get its own weight/time input -- e.g. "Power Cleans 3x3-5, Broad Jumps 3x3"
@@ -1076,11 +1238,12 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
 
 document.getElementById('generateWeekPlan').addEventListener('click', async () => {
   if (!currentUser) return;
-  const [equipment, primaryEvents, seasonAndMeet, { data: existing }] = await Promise.all([
+  const [equipment, primaryEvents, seasonAndMeet, { data: existing }, { data: avail }] = await Promise.all([
     getEquipment(),
     getPrimaryEvents(),
     getSeasonAndMeet(),
     supabaseClient.from('workouts').select('day').eq('user_id', currentUser.id),
+    supabaseClient.from('availability').select('*').eq('user_id', currentUser.id).eq('week_key', getWeekKey()).maybeSingle(),
   ]);
 
   if (existing && existing.length && !confirm('This will DELETE everything currently shown for this week (all sessions and lifts) and replace it with a new plan. This cannot be undone. Continue?')) {
@@ -1088,7 +1251,13 @@ document.getElementById('generateWeekPlan').addEventListener('click', async () =
   }
 
   const phase = computeTrainingPhase(seasonAndMeet.season, seasonAndMeet.nextMeetDate);
-  const plan = buildWeekPlan(phase, equipment, primaryEvents);
+  const ideal = buildWeekPlan(phase, equipment, primaryEvents);
+  const { plan, dropped } = reschedulePlan(
+    ideal,
+    new Set((avail && avail.sprint_days) || []),
+    new Set((avail && avail.gym_days) || [])
+  );
+  lastPlanNote = describeDropped(dropped);
 
   const { error } = await supabaseClient.from('workouts').upsert(
     plan.map((entry) => ({
@@ -1120,6 +1289,7 @@ async function renderWeekBoard() {
   const badge = document.getElementById('phaseBadge');
   badge.textContent = phase.label;
   badge.className = 'phase-badge' + (phase.className ? ' ' + phase.className : '');
+  document.getElementById('planNote').textContent = lastPlanNote;
 
   const byDay = {};
   data.forEach((w) => { byDay[w.day] = w; });
@@ -1141,10 +1311,15 @@ async function renderWeekBoard() {
     // A session is only hidden if it actually needs the thing the athlete
     // can't get to. The plan itself is left untouched in the database, so
     // marking the day available again brings the session straight back.
+    // Generating a plan (or changing availability) already moves sessions
+    // onto days the athlete can train, so this only catches a session they
+    // placed by hand on a day they can't -- and never one they've logged,
+    // since logging it means they did it.
     const canSprint = !sprintFiltered || sprintDays.has(day);
     const canGym = !gymFiltered || gymDays.has(day);
-    const sprintBlocked = !!w && !canSprint && !NO_TRACK_NEEDED.has(w.type);
-    const liftBlocked = !!w && !!w.lift_details && !canGym;
+    const logged = !!w && hasLoggedData(w);
+    const sprintBlocked = !!w && !logged && !canSprint && !NO_TRACK_NEEDED.has(w.type);
+    const liftBlocked = !!w && !logged && !!w.lift_details && !canGym;
 
     let body;
     if (!w) {

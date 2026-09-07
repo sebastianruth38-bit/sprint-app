@@ -551,6 +551,15 @@ textarea {
   background: var(--surface-2);
   color: var(--text);
 }
+.plan-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: -0.35rem 0 0.9rem;
+  line-height: 1.45;
+}
+.plan-note:empty { display: none; }
+
 .phase-badge.competition { background: #e5484d; color: #fff; }
 .phase-badge.taper { background: #f5a623; color: #1a1a1a; }
 .phase-badge.deload { background: #f5d90a; color: #1a1a1a; }
