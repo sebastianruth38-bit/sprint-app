@@ -464,6 +464,250 @@ function chooseBestFrames(candidates, count) {
   return chosen;
 }
 
+// =====================================================
+// LOCAL FORM ANALYSIS (pose landmarks, no API, no cost)
+// =====================================================
+// Runs MediaPipe's pose model on the athlete's own device and scores the
+// clip from joint geometry. Emits the same shape the AI path does
+// ({ summary, pinpoints, flags, filming_note }) so rendering, storage and
+// the Athlete Profile all work unchanged.
+//
+// Thresholds live here on purpose -- they're coaching judgement, not code,
+// and they were measured from reference clips with this same model, so
+// they're already in the units the model reports.
+
+const POSE_LM = {
+  nose: 0, lSho: 11, rSho: 12, lHip: 23, rHip: 24,
+  lKnee: 25, rKnee: 26, lAnk: 27, rAnk: 28, lHeel: 29, rHeel: 30,
+};
+
+// A landmark this uncertain is a guess. The model still returns coordinates
+// for a limb it cannot see -- confidently, and wrong -- so anything under
+// this is treated as missing rather than scored.
+const MIN_LANDMARK_CONFIDENCE = 0.5;
+
+// Max velocity: peak thigh separation (the scissor between the two thighs).
+// An elite reference clip measured 80.1 with this model.
+const SCISSOR_BANDS = [
+  { min: 85, max: 96, score: 5, note: 'Elite scissor -- full separation' },
+  { min: 78, max: 85, score: 4, note: 'Good separation, a touch under elite' },
+  { min: 72, max: 78, score: 3, note: 'Needs more front-side separation' },
+  { min: -Infinity, max: 72, score: 2, note: 'Legs not separating enough' },
+  { min: 96, max: Infinity, score: 3, note: 'Over-separated -- watch for reaching' },
+];
+
+function angleAt(a, b, c) {
+  const ba = [a[0] - b[0], a[1] - b[1]];
+  const bc = [c[0] - b[0], c[1] - b[1]];
+  const dot = ba[0] * bc[0] + ba[1] * bc[1];
+  const mag = Math.hypot(...ba) * Math.hypot(...bc);
+  if (!mag) return NaN;
+  return (Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180) / Math.PI;
+}
+
+// 0 = perfectly upright, 90 = horizontal.
+function angleFromVertical(p, q) {
+  return (Math.atan2(Math.abs(q[0] - p[0]), Math.abs(q[1] - p[1])) * 180) / Math.PI;
+}
+
+function midpoint(a, b) {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+// Landmarks arrive normalized to [0,1] against width and height separately,
+// so they must be scaled back to pixels before any angle is computed --
+// otherwise a non-square frame skews every result.
+function toPoints(landmarks, width, height) {
+  const pt = (i) => [landmarks[i].x * width, landmarks[i].y * height];
+  const conf = (i) => (landmarks[i].visibility ?? 1);
+  return { pt, conf };
+}
+
+function frameMetrics(landmarks, width, height) {
+  const { pt, conf } = toPoints(landmarks, width, height);
+  const need = (...idx) => idx.every((i) => conf(i) >= MIN_LANDMARK_CONFIDENCE);
+
+  const midHip = midpoint(pt(POSE_LM.lHip), pt(POSE_LM.rHip));
+  const midSho = midpoint(pt(POSE_LM.lSho), pt(POSE_LM.rSho));
+
+  const torsoOk = need(POSE_LM.lHip, POSE_LM.rHip, POSE_LM.lSho, POSE_LM.rSho);
+  const scissorOk = need(POSE_LM.lHip, POSE_LM.rHip, POSE_LM.lKnee, POSE_LM.rKnee);
+
+  return {
+    torsoFromVertical: torsoOk ? angleFromVertical(midHip, midSho) : null,
+    thighSeparation: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
+  };
+}
+
+function bandFor(value, bands) {
+  return bands.find((b) => value >= b.min && value < b.max) || bands[bands.length - 1];
+}
+
+// Max velocity is scored on the best scissor the athlete reaches, not the
+// average -- the peak is the position the stride is built around, and most
+// sampled frames land somewhere mid-cycle.
+function scoreMaxVelocity(metrics) {
+  const values = metrics.map((m) => m.thighSeparation).filter((v) => v != null);
+  if (!values.length) return null;
+  const peak = Math.max(...values);
+  const band = bandFor(peak, SCISSOR_BANDS);
+  return {
+    name: 'Thigh Separation (scissor)',
+    score: band.score,
+    note: `${band.note} (peak ${peak.toFixed(0)}°)`,
+    peak,
+  };
+}
+
+// Acceleration isn't one target posture -- it's a progression. The torso
+// starts near horizontal out of the blocks and rises gradually toward
+// upright, so what's scored is the shape of that rise, not any one frame.
+function scoreAcceleration(metrics) {
+  const series = metrics.map((m) => m.torsoFromVertical).filter((v) => v != null);
+  if (series.length < 3) return null;
+
+  const start = series[0];
+  const end = series[series.length - 1];
+  const drop = start - end;
+
+  let steps = 0;
+  let rising = 0;
+  for (let i = 1; i < series.length; i++) {
+    steps++;
+    if (series[i] <= series[i - 1] + 3) rising++; // small tolerance for jitter
+  }
+  const smoothness = steps ? rising / steps : 0;
+
+  const third = Math.max(1, Math.floor(series.length / 3));
+  const earlyDrop = start - series[third];
+  const earlyShare = drop > 0 ? earlyDrop / drop : 0;
+
+  if (drop < 10) {
+    return { name: 'Acceleration Posture', score: 2,
+      note: `Body angle barely changed (${start.toFixed(0)}° to ${end.toFixed(0)}°)`, start, end };
+  }
+  if (earlyShare > 0.7) {
+    return { name: 'Acceleration Posture', score: 3,
+      note: `Stood up too early -- most of the rise happened at once`, start, end };
+  }
+  if (smoothness >= 0.7) {
+    return { name: 'Acceleration Posture', score: 5,
+      note: `Smooth progressive rise (${start.toFixed(0)}° to ${end.toFixed(0)}°)`, start, end };
+  }
+  return { name: 'Acceleration Posture', score: 4,
+    note: `Rises overall but unevenly (${start.toFixed(0)}° to ${end.toFixed(0)}°)`, start, end };
+}
+
+// Speed endurance is the max-velocity shape plus whether it survives to the
+// end of the rep, so the scissor is compared early-half against late-half.
+function scoreConsistency(metrics) {
+  const values = metrics.map((m) => m.thighSeparation);
+  const half = Math.floor(values.length / 2);
+  const first = values.slice(0, half).filter((v) => v != null);
+  const second = values.slice(half).filter((v) => v != null);
+  if (!first.length || !second.length) return null;
+
+  const peakFirst = Math.max(...first);
+  const peakSecond = Math.max(...second);
+  const lost = peakFirst - peakSecond;
+
+  if (lost <= 3) {
+    return { name: 'Smoothness / Consistency', score: 5, note: 'Held form to the end of the rep' };
+  }
+  if (lost <= 8) {
+    return { name: 'Smoothness / Consistency', score: 4, note: `Slight fade late (-${lost.toFixed(0)}°)` };
+  }
+  return { name: 'Smoothness / Consistency', score: 2, note: `Form dropped off under fatigue (-${lost.toFixed(0)}°)` };
+}
+
+// Assembles the same JSON the AI path returns, so nothing downstream cares
+// which engine produced it.
+function buildLocalAnalysis(metrics, clipType) {
+  const usable = metrics.filter((m) => m.torsoFromVertical != null || m.thighSeparation != null);
+  if (usable.length < 3) {
+    return {
+      summary: 'Could not read the athlete clearly enough to score this clip.',
+      pinpoints: [],
+      flags: [],
+      filming_note: 'Film side-on with the whole body in frame and the athlete filling more of the shot.',
+    };
+  }
+
+  const pinpoints = [];
+  const flags = [];
+
+  if (clipType === 'Acceleration') {
+    const accel = scoreAcceleration(metrics);
+    if (accel) {
+      pinpoints.push({ name: accel.name, score: accel.score, note: accel.note });
+      if (accel.start < 30) flags.push('Already upright at the start -- little drive phase visible');
+    }
+  } else {
+    const maxv = scoreMaxVelocity(metrics);
+    if (maxv) {
+      pinpoints.push({ name: maxv.name, score: maxv.score, note: maxv.note });
+      if (maxv.peak < 72) flags.push('Insufficient thigh separation at top speed');
+      if (maxv.peak > 96) flags.push('Possible over-striding -- reaching in front of the hips');
+    }
+    if (clipType === 'Speed Endurance') {
+      const consistency = scoreConsistency(metrics);
+      if (consistency) pinpoints.push(consistency);
+    }
+  }
+
+  const posture = metrics.map((m) => m.torsoFromVertical).filter((v) => v != null);
+  if (clipType !== 'Acceleration' && posture.length) {
+    const avg = posture.reduce((a, b) => a + b, 0) / posture.length;
+    pinpoints.push({
+      name: 'Upright Posture',
+      score: avg <= 12 ? 5 : avg <= 20 ? 4 : 3,
+      note: `Torso averaged ${avg.toFixed(0)}° from vertical`,
+    });
+  }
+
+  const best = pinpoints.reduce((a, b) => (b.score > a.score ? b : a), pinpoints[0]);
+  const worst = pinpoints.reduce((a, b) => (b.score < a.score ? b : a), pinpoints[0]);
+  const summary = pinpoints.length
+    ? (best === worst
+        ? `${best.name.toLowerCase()} scored ${best.score}/5.`
+        : `Strongest: ${best.name.toLowerCase()}. Work on: ${worst.name.toLowerCase()}.`)
+    : 'No scoreable positions found in this clip.';
+
+  const readRate = usable.length / metrics.length;
+  return {
+    summary,
+    pinpoints,
+    flags,
+    filming_note: readRate < 0.6
+      ? 'Only part of the clip was readable -- film side-on with the full body in frame.'
+      : null,
+  };
+}
+
+// ---------- MediaPipe loader (device-side, downloaded once then cached) ----------
+const POSE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const POSE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+let poseLandmarkerPromise = null;
+
+function getPoseLandmarker() {
+  if (!poseLandmarkerPromise) {
+    poseLandmarkerPromise = (async () => {
+      const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+      const fileset = await vision.FilesetResolver.forVisionTasks(POSE_WASM_URL);
+      return vision.PoseLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate: 'GPU' },
+        runningMode: 'IMAGE',
+        numPoses: 1,
+      });
+    })().catch((err) => {
+      poseLandmarkerPromise = null; // let a later attempt retry
+      throw err;
+    });
+  }
+  return poseLandmarkerPromise;
+}
+
 // Stored clips are the app's dominant storage cost -- they're 20-30MB each
 // and accumulate forever, while an analysis is a few hundred bytes. After
 // the retention window the video file is dropped and the entry keeps its
@@ -511,6 +755,16 @@ async function readFunctionError(err) {
 }
 
 async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = () => {}) {
+  // The pose model is optional: if it can't load (offline, blocked CDN) the
+  // clip is still extracted, just without measurements.
+  let landmarker = null;
+  try {
+    onProgress('Loading pose model…');
+    landmarker = await getPoseLandmarker();
+  } catch (err) {
+    console.warn('Pose model unavailable, continuing without measurements:', err);
+  }
+
   const url = URL.createObjectURL(videoBlob);
   const video = document.createElement('video');
   video.src = url;
@@ -574,10 +828,30 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       const { detail, motion } = scoreThumbnail(gray, prevGray);
       prevGray = gray;
 
-      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion });
+      // Measure the pose while the frame is already on the canvas -- one
+      // pass over the clip covers both choosing frames and scoring them.
+      let metrics = { torsoFromVertical: null, thighSeparation: null };
+      if (landmarker) {
+        try {
+          const result = landmarker.detect(canvas);
+          if (result.landmarks && result.landmarks.length) {
+            metrics = frameMetrics(result.landmarks[0], canvas.width, canvas.height);
+          }
+        } catch (poseErr) {
+          console.warn('Pose detection failed on a frame:', poseErr);
+        }
+      }
+
+      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion, metrics });
     }
 
-    return chooseBestFrames(candidates, count).map((c) => c.dataUrl);
+    const chosen = chooseBestFrames(candidates, count);
+    return {
+      frames: chosen.map((c) => c.dataUrl),
+      // Every readable frame informs the measurements, not just the ones we
+      // would have sent to an API -- there's no per-frame cost locally.
+      metrics: candidates.map((c) => c.metrics),
+    };
   } finally {
     document.body.removeChild(video);
     URL.revokeObjectURL(url);
@@ -652,22 +926,41 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let analysis = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const frames = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
-      setAnalysisStatus(`Sending ${frames.length} frames to the AI…`);
-      const invokePromise = supabaseClient.functions.invoke('analyze-form', {
-        body: { clipType, distance, effort, frames },
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Analysis timed out after 45s')), 45000)
-      );
-      const { data: analysisData, error: analysisError } = await Promise.race([invokePromise, timeoutPromise]);
-      if (analysisError) throw new Error(await readFunctionError(analysisError));
-      analysis = analysisData;
+      const { frames, metrics } = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+
+      // Local measurement is the default engine: it runs on this device, so
+      // it costs nothing and works offline.
+      setAnalysisStatus('Measuring form…');
+      analysis = buildLocalAnalysis(metrics, clipType);
+
+      // The AI read is opt-in, because that's the part that costs money.
+      if (document.getElementById('aiAssist').checked) {
+        setAnalysisStatus(`Sending ${frames.length} frames to the AI…`);
+        const invokePromise = supabaseClient.functions.invoke('analyze-form', {
+          body: { clipType, distance, effort, frames },
+        });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Analysis timed out after 45s')), 45000)
+        );
+        const { data: aiData, error: analysisError } = await Promise.race([invokePromise, timeoutPromise]);
+        if (analysisError) throw new Error(await readFunctionError(analysisError));
+        // Kept alongside the measurements rather than replacing them, so the
+        // two engines can be compared on the same clip.
+        analysis.ai_summary = aiData.summary || null;
+        analysis.additional_observations = aiData.pinpoints || [];
+        analysis.flags = [...(analysis.flags || []), ...(aiData.flags || [])];
+      }
       setAnalysisStatus('Analysis complete.');
     } catch (analysisErr) {
       console.error('Analysis failed:', analysisErr);
-      setAnalysisStatus('Analysis failed: ' + (analysisErr.message || analysisErr));
-      alert('Clip saved, but AI analysis failed: ' + (analysisErr.message || analysisErr));
+      const detail = analysisErr.message || analysisErr;
+      // The local measurements may already have succeeded before the AI
+      // step failed -- don't tell the athlete they lost scores they have.
+      const gotLocal = analysis && (analysis.pinpoints || []).length;
+      setAnalysisStatus((gotLocal ? 'Measured, but the AI read failed: ' : 'Analysis failed: ') + detail);
+      alert(gotLocal
+        ? 'Your form measurements were saved. The AI coach notes failed: ' + detail
+        : 'Clip saved, but analysis failed: ' + detail);
     }
 
     setAnalysisStatus('Saving session…');
@@ -722,9 +1015,13 @@ function renderAnalysisHtml(analysis) {
   const filmingNote = analysis.filming_note
     ? `<div class="hint">🎥 ${escapeHtml(analysis.filming_note)}</div>`
     : '';
+  const aiSummary = analysis.ai_summary
+    ? `<div class="hint ai-note">🤖 ${escapeHtml(analysis.ai_summary)}</div>`
+    : '';
   return `
     ${analysis.summary ? `<div>${escapeHtml(analysis.summary)}</div>` : ''}
     ${rows}
+    ${aiSummary}
     ${flags}
     ${filmingNote}
   `;
