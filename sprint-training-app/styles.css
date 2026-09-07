@@ -592,6 +592,37 @@ textarea {
 .ex-name a { color: var(--muted); text-decoration: none; font-size: 0.85rem; margin-left: 0.5rem; }
 .ex-name a:hover { color: var(--text); }
 
+.ex-name-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.ex-name-link:hover { color: var(--muted); }
+
+.ex-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.ex-link-btn {
+  background: var(--surface-2);
+  border: none;
+  color: var(--muted);
+  border-radius: var(--r-pill);
+  padding: 0.35rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.79rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.ex-link-btn:hover { background: var(--surface-3); color: var(--text); }
+.ex-link-btn:active { transform: scale(0.96); }
+
 .explog-group-label {
   font-weight: 600;
   font-size: 0.86rem;
@@ -617,6 +648,10 @@ textarea {
   gap: 0;
 }
 #weightsList:empty { display: none; }
+/* The actions stay together as a group and drop to their own line when the
+   movement's name needs the room, rather than squeezing or splitting up. */
+#weightsList .ex-row { flex-wrap: wrap; row-gap: 0.4rem; }
+#weightsList .ex-name { flex: 1 1 50%; }
 
 /* ---------- Goals ---------- */
 .goal {

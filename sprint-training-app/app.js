@@ -1289,37 +1289,61 @@ document.getElementById('addCustomEx').addEventListener('click', async () => {
   renderWeights();
 });
 
+// Only http(s) links are rendered -- these come from a text box, so don't
+// hand the browser a `javascript:` href.
+function safeUrl(url) {
+  const trimmed = String(url || '').trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
+// Accepts what someone actually pastes ("youtube.com/watch?v=..."), not just
+// fully-qualified URLs. Empty input clears the link.
+function normalizeUrl(input) {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+// This is a reference list, not a checklist -- each row is a movement and
+// the form video you've linked for it.
 async function renderWeights() {
   await ensureDefaultExercises();
-  const weekKey = getWeekKey();
 
-  const [{ data: list, error: exError }, { data: checks, error: checkError }] = await Promise.all([
-    supabaseClient.from('exercises').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: true }),
-    supabaseClient.from('weight_checks').select('*').eq('user_id', currentUser.id).eq('week_key', weekKey),
-  ]);
-  if (exError || checkError) { console.error(exError || checkError); return; }
-
-  const checkMap = {};
-  checks.forEach((c) => { checkMap[c.exercise_id] = c.done; });
+  const { data: list, error } = await supabaseClient
+    .from('exercises')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: true });
+  if (error) { console.error(error); return; }
 
   const container = document.getElementById('weightsList');
   container.innerHTML = '';
   list.forEach((ex) => {
+    const url = safeUrl(ex.url);
     const row = document.createElement('div');
     row.className = 'ex-row';
+    // With a video linked the movement's name is the link -- tap it to watch.
     row.innerHTML = `
-      <input type="checkbox" ${checkMap[ex.id] ? 'checked' : ''} />
-      <span class="ex-name">${escapeHtml(ex.name)}${ex.url ? `<a href="${ex.url}" target="_blank" rel="noopener">▶ how-to</a>` : ''}</span>
-      ${ex.is_custom ? `<button class="delete-btn">Remove</button>` : ''}
+      ${url
+        ? `<a class="ex-name ex-name-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">▶ ${escapeHtml(ex.name)}</a>`
+        : `<span class="ex-name">${escapeHtml(ex.name)}</span>`}
+      <div class="ex-actions">
+        <button class="ex-link-btn">${url ? 'Edit link' : 'Add link'}</button>
+        ${ex.is_custom ? `<button class="delete-btn">Remove</button>` : ''}
+      </div>
     `;
-    row.querySelector('input').addEventListener('change', async (e) => {
-      await supabaseClient
-        .from('weight_checks')
-        .upsert(
-          { user_id: currentUser.id, exercise_id: ex.id, week_key: weekKey, done: e.target.checked },
-          { onConflict: 'user_id,exercise_id,week_key' }
-        );
+
+    row.querySelector('.ex-link-btn').addEventListener('click', async () => {
+      const entered = prompt(`Form video link for ${ex.name}\n(leave blank to remove)`, ex.url || '');
+      if (entered === null) return;
+      const { error: updateError } = await supabaseClient
+        .from('exercises')
+        .update({ url: normalizeUrl(entered) })
+        .eq('id', ex.id);
+      if (updateError) { alert('Could not save that link: ' + updateError.message); return; }
+      renderWeights();
     });
+
     const removeBtn = row.querySelector('.delete-btn');
     if (removeBtn) {
       removeBtn.addEventListener('click', async () => {
