@@ -523,6 +523,21 @@ function toPoints(landmarks, width, height) {
   return { pt, conf };
 }
 
+// How high one thigh is carried, and whether that leg is folded into the
+// figure-4. Both are scaled by thigh length so they don't change with how
+// big the athlete is in frame.
+function legMetrics(pt, conf, hipI, kneeI, heelI) {
+  if (![hipI, kneeI, heelI].every((i) => conf(i) >= MIN_LANDMARK_CONFIDENCE)) return null;
+  const hip = pt(hipI), knee = pt(kneeI), heel = pt(heelI);
+  const thighLen = Math.hypot(knee[0] - hip[0], knee[1] - hip[1]) || 1;
+  return {
+    // y grows downward, so knee above hip gives a positive rise.
+    rise: (hip[1] - knee[1]) / thighLen,
+    // Positive once the heel is tucked up above knee height -- the figure-4.
+    figure4: (knee[1] - heel[1]) / thighLen,
+  };
+}
+
 function frameMetrics(landmarks, width, height) {
   const { pt, conf } = toPoints(landmarks, width, height);
   const need = (...idx) => idx.every((i) => conf(i) >= MIN_LANDMARK_CONFIDENCE);
@@ -533,9 +548,19 @@ function frameMetrics(landmarks, width, height) {
   const torsoOk = need(POSE_LM.lHip, POSE_LM.rHip, POSE_LM.lSho, POSE_LM.rSho);
   const scissorOk = need(POSE_LM.lHip, POSE_LM.rHip, POSE_LM.lKnee, POSE_LM.rKnee);
 
+  // The figure-4 belongs to whichever leg is being carried highest -- that's
+  // the recovery leg, and it's the one the scissor should be read against.
+  const legs = [
+    legMetrics(pt, conf, POSE_LM.lHip, POSE_LM.lKnee, POSE_LM.lHeel),
+    legMetrics(pt, conf, POSE_LM.rHip, POSE_LM.rKnee, POSE_LM.rHeel),
+  ].filter(Boolean);
+  const lead = legs.length ? legs.reduce((a, b) => (b.rise > a.rise ? b : a)) : null;
+
   return {
     torsoFromVertical: torsoOk ? angleFromVertical(midHip, midSho) : null,
     thighSeparation: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
+    thighRise: lead ? lead.rise : null,
+    figure4: lead ? lead.figure4 : null,
   };
 }
 
@@ -543,20 +568,37 @@ function bandFor(value, bands) {
   return bands.find((b) => value >= b.min && value < b.max) || bands[bands.length - 1];
 }
 
-// Max velocity is scored on the best scissor the athlete reaches, not the
-// average -- the peak is the position the stride is built around, and most
-// sampled frames land somewhere mid-cycle.
-function scoreMaxVelocity(metrics) {
-  const values = metrics.map((m) => m.thighSeparation).filter((v) => v != null);
-  if (!values.length) return null;
-  const peak = Math.max(...values);
-  const band = bandFor(peak, SCISSOR_BANDS);
-  return {
-    name: 'Thigh Separation (scissor)',
-    score: band.score,
-    note: `${band.note} (peak ${peak.toFixed(0)}°)`,
-    peak,
-  };
+// The scissor is read at the instant the thigh is carried highest -- not
+// the widest split anywhere in the clip, which lands mid-cycle and reads
+// low. It's only trusted if the figure-4 is achieved (or close) at that
+// same instant: a wide split with a trailing, unfolded leg isn't the
+// position the number is meant to describe.
+const FIGURE4_ACHIEVED = 0;      // heel level with the knee
+const FIGURE4_CLOSE = -0.15;     // heel just under knee height
+
+function scoreMaxVelocity(metrics, surface) {
+  const usable = metrics.filter((m) => m.thighSeparation != null && m.thighRise != null);
+  if (!usable.length) return null;
+
+  const atPeakLift = usable.reduce((a, b) => (b.thighRise > a.thighRise ? b : a));
+  const scissor = atPeakLift.thighSeparation;
+  const fig4 = atPeakLift.figure4;
+
+  // Grass is slower and the split is genuinely smaller on it, so the bands
+  // shift rather than the athlete being marked down for the surface.
+  const shift = surface === 'Grass' ? 5 : 0;
+  const band = bandFor(scissor + shift, SCISSOR_BANDS);
+
+  let note = `${band.note} (${scissor.toFixed(0)}° at peak knee lift)`;
+  let score = band.score;
+  if (fig4 != null && fig4 < FIGURE4_CLOSE) {
+    // Cap the score: the reading isn't from the position it's meant to be.
+    score = Math.min(score, 3);
+    note += ' — heel trailing, figure-4 not reached';
+  }
+  if (surface === 'Grass') note += ' (grass — bands eased)';
+
+  return { name: 'Thigh Separation (scissor)', score, note, peak: scissor, figure4: fig4 };
 }
 
 // Acceleration isn't one target posture -- it's a progression. The torso
@@ -622,7 +664,7 @@ function scoreConsistency(metrics) {
 
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
-function buildLocalAnalysis(metrics, clipType) {
+function buildLocalAnalysis(metrics, clipType, surface) {
   const usable = metrics.filter((m) => m.torsoFromVertical != null || m.thighSeparation != null);
   if (usable.length < 3) {
     return {
@@ -643,11 +685,16 @@ function buildLocalAnalysis(metrics, clipType) {
       if (accel.start < 30) flags.push('Already upright at the start -- little drive phase visible');
     }
   } else {
-    const maxv = scoreMaxVelocity(metrics);
+    const maxv = scoreMaxVelocity(metrics, surface);
     if (maxv) {
       pinpoints.push({ name: maxv.name, score: maxv.score, note: maxv.note });
       if (maxv.peak < 72) flags.push('Insufficient thigh separation at top speed');
       if (maxv.peak > 96) flags.push('Possible over-striding -- reaching in front of the hips');
+      if (maxv.figure4 != null && maxv.figure4 < FIGURE4_CLOSE) {
+        flags.push('Figure-4 not achieved -- heel is not recovering up under the hip');
+      } else if (maxv.figure4 != null && maxv.figure4 < FIGURE4_ACHIEVED) {
+        flags.push('Figure-4 close but not complete -- heel just under knee height');
+      }
     }
     if (clipType === 'Speed Endurance') {
       const consistency = scoreConsistency(metrics);
@@ -931,7 +978,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       // Local measurement is the default engine: it runs on this device, so
       // it costs nothing and works offline.
       setAnalysisStatus('Measuring form…');
-      analysis = buildLocalAnalysis(metrics, clipType);
+      analysis = buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
 
       // The AI read is opt-in, because that's the part that costs money.
       if (document.getElementById('aiAssist').checked) {
