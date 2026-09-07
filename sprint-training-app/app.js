@@ -486,15 +486,56 @@ const POSE_LM = {
 // this is treated as missing rather than scored.
 const MIN_LANDMARK_CONFIDENCE = 0.5;
 
-// Max velocity: peak thigh separation (the scissor between the two thighs).
-// An elite reference clip measured 80.1 with this model.
-const SCISSOR_BANDS = [
-  { min: 85, max: 96, score: 5, note: 'Elite scissor -- full separation' },
-  { min: 78, max: 85, score: 4, note: 'Good separation, a touch under elite' },
-  { min: 72, max: 78, score: 3, note: 'Needs more front-side separation' },
-  { min: -Infinity, max: 72, score: 2, note: 'Legs not separating enough' },
-  { min: 96, max: Infinity, score: 3, note: 'Over-separated -- watch for reaching' },
+// All three band sets were calibrated by running elite reference clips
+// through this same model, so the numbers are in the units it reports.
+// An elite top-speed clip measured: hip 84.7-91.3 at peak lift, scissor
+// 107-119, tightest knee fold 47.3. An acceleration clip measured hip
+// ~117 and a fold of only 68.4, which is why fold is not scored there.
+
+// PRIMARY max-velocity metric: the angle between torso and front thigh at
+// peak knee lift. Closes to ~90 in elite sprinting and stops there.
+const HIP_BANDS = [
+  { min: 82, max: 95, score: 5, note: 'Textbook hip angle at peak lift' },
+  { min: 95, max: 105, score: 4, note: 'Hip slightly open -- thigh could come through more' },
+  { min: 75, max: 82, score: 4, note: 'Hip closing just past ideal' },
+  { min: 105, max: 118, score: 3, note: 'Hip staying open -- not enough front-side knee drive' },
+  { min: 72, max: 75, score: 3, note: 'Hip closing well past ideal' },
+  { min: 118, max: Infinity, score: 2, note: 'Thigh barely coming through at top speed' },
+  { min: -Infinity, max: 72, score: 2, note: 'Hip over-closed at peak lift' },
 ];
+
+// Secondary: how wide the legs split at that same instant.
+const SCISSOR_BANDS = [
+  { min: 105, max: 125, score: 5, note: 'Full scissor' },
+  { min: 95, max: 105, score: 4, note: 'Good separation, a touch under elite' },
+  { min: 85, max: 95, score: 3, note: 'Needs more front-side separation' },
+  { min: -Infinity, max: 85, score: 2, note: 'Legs not separating enough' },
+  { min: 125, max: Infinity, score: 3, note: 'Over-separated -- watch for reaching' },
+];
+
+// How tightly the heel folds under during recovery. Measured at its own
+// instant -- the tightest fold anywhere in the swing -- NOT at peak lift,
+// where the knee is high and the shin necessarily hangs below it.
+const FOLD_BANDS = [
+  { min: -Infinity, max: 55, score: 5, note: 'Heel folds tight to the glute' },
+  { min: 55, max: 65, score: 4, note: 'Good heel recovery' },
+  { min: 65, max: 75, score: 3, note: 'Heel recovery a little lazy' },
+  { min: 75, max: Infinity, score: 2, note: 'Heel trailing -- long lever swinging through' },
+];
+
+// A frame reporting one of these is a tracking failure, not a position any
+// athlete reaches. Clip 2's highest-lift frame returned a 164 degree
+// scissor, which would otherwise have set the whole grade.
+function plausibleFrame(m) {
+  return m.scissor != null && m.scissor < 150
+    && m.hipAngle != null && m.hipAngle < 175
+    && m.leadKnee != null && m.leadKnee < 175;
+}
+
+function median(values) {
+  const s = [...values].sort((a, b) => a - b);
+  return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+}
 
 function angleAt(a, b, c) {
   const ba = [a[0] - b[0], a[1] - b[1]];
@@ -526,15 +567,18 @@ function toPoints(landmarks, width, height) {
 // How high one thigh is carried, and whether that leg is folded into the
 // figure-4. Both are scaled by thigh length so they don't change with how
 // big the athlete is in frame.
-function legMetrics(pt, conf, hipI, kneeI, heelI) {
-  if (![hipI, kneeI, heelI].every((i) => conf(i) >= MIN_LANDMARK_CONFIDENCE)) return null;
-  const hip = pt(hipI), knee = pt(kneeI), heel = pt(heelI);
+function legMetrics(pt, conf, midSho, hipI, kneeI, ankI) {
+  if (![hipI, kneeI, ankI].every((i) => conf(i) >= MIN_LANDMARK_CONFIDENCE)) return null;
+  const hip = pt(hipI), knee = pt(kneeI), ank = pt(ankI);
   const thighLen = Math.hypot(knee[0] - hip[0], knee[1] - hip[1]) || 1;
   return {
-    // y grows downward, so knee above hip gives a positive rise.
+    // y grows downward, so knee above hip gives a positive rise. Used only
+    // to find which frame is the peak, never scored on its own.
     rise: (hip[1] - knee[1]) / thighLen,
-    // Positive once the heel is tucked up above knee height -- the figure-4.
-    figure4: (knee[1] - heel[1]) / thighLen,
+    // The angle the athlete described: torso against the front thigh.
+    hipAngle: angleAt(midSho, hip, knee),
+    // Thigh against shin. Its minimum across the swing is the heel fold.
+    knee: angleAt(hip, knee, ank),
   };
 }
 
@@ -548,19 +592,22 @@ function frameMetrics(landmarks, width, height) {
   const torsoOk = need(POSE_LM.lHip, POSE_LM.rHip, POSE_LM.lSho, POSE_LM.rSho);
   const scissorOk = need(POSE_LM.lHip, POSE_LM.rHip, POSE_LM.lKnee, POSE_LM.rKnee);
 
-  // The figure-4 belongs to whichever leg is being carried highest -- that's
-  // the recovery leg, and it's the one the scissor should be read against.
+  // The lead leg is whichever thigh is carried highest -- that's the one the
+  // hip angle and scissor are read against.
   const legs = [
-    legMetrics(pt, conf, POSE_LM.lHip, POSE_LM.lKnee, POSE_LM.lHeel),
-    legMetrics(pt, conf, POSE_LM.rHip, POSE_LM.rKnee, POSE_LM.rHeel),
+    legMetrics(pt, conf, midSho, POSE_LM.lHip, POSE_LM.lKnee, POSE_LM.lAnk),
+    legMetrics(pt, conf, midSho, POSE_LM.rHip, POSE_LM.rKnee, POSE_LM.rAnk),
   ].filter(Boolean);
   const lead = legs.length ? legs.reduce((a, b) => (b.rise > a.rise ? b : a)) : null;
 
   return {
     torsoFromVertical: torsoOk ? angleFromVertical(midHip, midSho) : null,
-    thighSeparation: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
+    scissor: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
     thighRise: lead ? lead.rise : null,
-    figure4: lead ? lead.figure4 : null,
+    hipAngle: lead ? lead.hipAngle : null,
+    leadKnee: lead ? lead.knee : null,
+    // The tightest fold available this frame, across both legs.
+    kneeFold: legs.length ? Math.min(...legs.map((l) => l.knee)) : null,
   };
 }
 
@@ -573,32 +620,49 @@ function bandFor(value, bands) {
 // low. It's only trusted if the figure-4 is achieved (or close) at that
 // same instant: a wide split with a trailing, unfolded leg isn't the
 // position the number is meant to describe.
-const FIGURE4_ACHIEVED = 0;      // heel level with the knee
-const FIGURE4_CLOSE = -0.15;     // heel just under knee height
+// Reads the top-speed position from the three highest thigh-carry frames
+// rather than the single highest -- one bad detection shouldn't decide a
+// grade. Implausible frames are dropped before the peak is chosen at all.
+function peakLiftFrames(metrics, howMany = 3) {
+  const usable = metrics.filter((m) => m.thighRise != null && plausibleFrame(m));
+  if (!usable.length) return [];
+  return [...usable].sort((a, b) => b.thighRise - a.thighRise).slice(0, howMany);
+}
 
 function scoreMaxVelocity(metrics, surface) {
-  const usable = metrics.filter((m) => m.thighSeparation != null && m.thighRise != null);
-  if (!usable.length) return null;
+  const peak = peakLiftFrames(metrics);
+  if (!peak.length) return null;
 
-  const atPeakLift = usable.reduce((a, b) => (b.thighRise > a.thighRise ? b : a));
-  const scissor = atPeakLift.thighSeparation;
-  const fig4 = atPeakLift.figure4;
+  const hip = median(peak.map((m) => m.hipAngle));
+  const scissor = median(peak.map((m) => m.scissor));
+  // Grass is slower and the angles are genuinely smaller on it, so the
+  // bands ease rather than the athlete being marked down for the ground.
+  const ease = surface === 'Grass' ? 4 : 0;
 
-  // Grass is slower and the split is genuinely smaller on it, so the bands
-  // shift rather than the athlete being marked down for the surface.
-  const shift = surface === 'Grass' ? 5 : 0;
-  const band = bandFor(scissor + shift, SCISSOR_BANDS);
+  const hipBand = bandFor(hip, HIP_BANDS);
+  const scissorBand = bandFor(scissor + ease, SCISSOR_BANDS);
+  const suffix = surface === 'Grass' ? ' (grass — eased)' : '';
 
-  let note = `${band.note} (${scissor.toFixed(0)}° at peak knee lift)`;
-  let score = band.score;
-  if (fig4 != null && fig4 < FIGURE4_CLOSE) {
-    // Cap the score: the reading isn't from the position it's meant to be.
-    score = Math.min(score, 3);
-    note += ' — heel trailing, figure-4 not reached';
-  }
-  if (surface === 'Grass') note += ' (grass — bands eased)';
+  return {
+    hip: { name: 'Torso-to-Thigh at Peak Lift', score: hipBand.score,
+           note: `${hipBand.note} (${hip.toFixed(0)}°)${suffix}` },
+    scissor: { name: 'Thigh Separation (scissor)', score: scissorBand.score,
+               note: `${scissorBand.note} (${scissor.toFixed(0)}°)${suffix}` },
+    hipValue: hip,
+    scissorValue: scissor,
+  };
+}
 
-  return { name: 'Thigh Separation (scissor)', score, note, peak: scissor, figure4: fig4 };
+// The heel fold is read at its own instant -- the tightest knee angle
+// anywhere in the swing. Reading it at peak lift (as this used to) fails
+// every athlete, because a high knee necessarily hangs the shin below it.
+function scoreKneeFold(metrics) {
+  const folds = metrics.map((m) => m.kneeFold).filter((v) => v != null && v > 15);
+  if (folds.length < 3) return null;
+  const tightest = Math.min(...folds);
+  const band = bandFor(tightest, FOLD_BANDS);
+  return { name: 'Heel Recovery (knee fold)', score: band.score,
+           note: `${band.note} (${tightest.toFixed(0)}° tightest)`, tightest };
 }
 
 // Acceleration isn't one target posture -- it's a progression. The torso
@@ -643,7 +707,7 @@ function scoreAcceleration(metrics) {
 // Speed endurance is the max-velocity shape plus whether it survives to the
 // end of the rep, so the scissor is compared early-half against late-half.
 function scoreConsistency(metrics) {
-  const values = metrics.map((m) => m.thighSeparation);
+  const values = metrics.map((m) => m.scissor);
   const half = Math.floor(values.length / 2);
   const first = values.slice(0, half).filter((v) => v != null);
   const second = values.slice(half).filter((v) => v != null);
@@ -665,7 +729,7 @@ function scoreConsistency(metrics) {
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
 function buildLocalAnalysis(metrics, clipType, surface) {
-  const usable = metrics.filter((m) => m.torsoFromVertical != null || m.thighSeparation != null);
+  const usable = metrics.filter((m) => m.torsoFromVertical != null || m.scissor != null);
   if (usable.length < 3) {
     return {
       summary: 'Could not read the athlete clearly enough to score this clip.',
@@ -687,14 +751,15 @@ function buildLocalAnalysis(metrics, clipType, surface) {
   } else {
     const maxv = scoreMaxVelocity(metrics, surface);
     if (maxv) {
-      pinpoints.push({ name: maxv.name, score: maxv.score, note: maxv.note });
-      if (maxv.peak < 72) flags.push('Insufficient thigh separation at top speed');
-      if (maxv.peak > 96) flags.push('Possible over-striding -- reaching in front of the hips');
-      if (maxv.figure4 != null && maxv.figure4 < FIGURE4_CLOSE) {
-        flags.push('Figure-4 not achieved -- heel is not recovering up under the hip');
-      } else if (maxv.figure4 != null && maxv.figure4 < FIGURE4_ACHIEVED) {
-        flags.push('Figure-4 close but not complete -- heel just under knee height');
-      }
+      pinpoints.push(maxv.hip, maxv.scissor);
+      if (maxv.hipValue > 118) flags.push('Thigh is not coming through at top speed');
+      if (maxv.scissorValue < 85) flags.push('Insufficient thigh separation at top speed');
+      if (maxv.scissorValue > 125) flags.push('Possible over-striding -- reaching in front of the hips');
+    }
+    const fold = scoreKneeFold(metrics);
+    if (fold) {
+      pinpoints.push({ name: fold.name, score: fold.score, note: fold.note });
+      if (fold.tightest > 75) flags.push('Heel is not recovering up under the hip');
     }
     if (clipType === 'Speed Endurance') {
       const consistency = scoreConsistency(metrics);
@@ -877,7 +942,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
 
       // Measure the pose while the frame is already on the canvas -- one
       // pass over the clip covers both choosing frames and scoring them.
-      let metrics = { torsoFromVertical: null, thighSeparation: null };
+      let metrics = { torsoFromVertical: null, scissor: null, thighRise: null, hipAngle: null, leadKnee: null, kneeFold: null };
       if (landmarker) {
         try {
           const result = landmarker.detect(canvas);
