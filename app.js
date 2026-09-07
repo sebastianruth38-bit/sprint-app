@@ -399,7 +399,118 @@ function videoFramePainted(video, timeoutMs = 1500) {
   });
 }
 
-async function extractFrames(videoBlob, count = 8, maxWidth = 480, onProgress = () => {}) {
+// Scores a small greyscale thumbnail of a frame so we can tell "the athlete
+// is running through this frame" from "empty track" or "black frame".
+//   detail = how much is in the shot at all (a blank/blown-out frame is ~0)
+//   motion = how much changed since the previous candidate (the athlete is
+//            the thing that moves, so this is the strongest signal we get
+//            without running a pose model)
+function scoreThumbnail(gray, prevGray) {
+  let sum = 0;
+  for (let i = 0; i < gray.length; i++) sum += gray[i];
+  const mean = sum / gray.length;
+
+  let variance = 0;
+  for (let i = 0; i < gray.length; i++) variance += (gray[i] - mean) ** 2;
+  const detail = Math.sqrt(variance / gray.length);
+
+  let motion = 0;
+  if (prevGray) {
+    let diff = 0;
+    for (let i = 0; i < gray.length; i++) diff += Math.abs(gray[i] - prevGray[i]);
+    motion = diff / gray.length;
+  }
+  return { detail, motion };
+}
+
+function toGrayscale(ctx, w, h) {
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const gray = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  return gray;
+}
+
+// Samples more frames than we need, then keeps the best one from each slice
+// of the clip -- so we send frames with the athlete actually in them rather
+// than the empty track at the start and the walk-back at the end. Frames
+// stay in chronological order and spread across the clip; a frame with no
+// content at all is dropped rather than sent.
+function chooseBestFrames(candidates, count) {
+  // Drop frames with nothing in them at all -- black, or blown out.
+  let pool = candidates.filter((c) => c.detail > 8);
+  if (pool.length < 3) pool = candidates.slice();
+
+  // Then drop the static stretches: the empty track before the athlete
+  // enters and after they've gone. Those frames are a real scene, so they
+  // survive the detail check, but nothing moves in them. Keeping them
+  // would spend tokens on pictures of an empty track.
+  const peakMotion = pool.reduce((m, c) => Math.max(m, c.motion), 0);
+  if (peakMotion > 0) {
+    const active = pool.filter((c) => c.motion >= peakMotion * 0.25);
+    if (active.length >= Math.min(count, 3)) pool = active;
+  }
+
+  if (pool.length <= count) return pool;
+
+  const chosen = [];
+  const bucketSize = pool.length / count;
+  for (let b = 0; b < count; b++) {
+    const slice = pool.slice(Math.floor(b * bucketSize), Math.floor((b + 1) * bucketSize));
+    if (!slice.length) continue;
+    chosen.push(slice.reduce((best, c) => (c.motion > best.motion ? c : best), slice[0]));
+  }
+  return chosen;
+}
+
+// Stored clips are the app's dominant storage cost -- they're 20-30MB each
+// and accumulate forever, while an analysis is a few hundred bytes. After
+// the retention window the video file is dropped and the entry keeps its
+// scores, so history survives and storage stops growing without bound.
+const VIDEO_RETENTION_DAYS = 60;
+
+async function purgeExpiredVideos() {
+  if (!currentUser) return;
+  const cutoff = new Date(Date.now() - VIDEO_RETENTION_DAYS * 86400000).toISOString();
+  const { data, error } = await supabaseClient
+    .from('diagnosis_entries')
+    .select('id, video_path')
+    .eq('user_id', currentUser.id)
+    .not('video_path', 'is', null)
+    .lt('created_at', cutoff);
+  if (error || !data || !data.length) return;
+
+  const { error: removeError } = await supabaseClient.storage
+    .from('diagnosis-videos')
+    .remove(data.map((e) => e.video_path));
+  // Only forget the path once the file is actually gone, so a failed
+  // delete doesn't orphan the file with nothing left pointing at it.
+  if (removeError) { console.error('Could not expire old clips:', removeError); return; }
+
+  await supabaseClient
+    .from('diagnosis_entries')
+    .update({ video_path: null })
+    .in('id', data.map((e) => e.id));
+}
+
+// supabase-js reports any non-2xx from an Edge Function as the same opaque
+// "non-2xx status code" message, with the real body hidden on .context.
+// Dig the server's own message out so the athlete sees "Daily limit
+// reached" rather than an HTTP grumble.
+async function readFunctionError(err) {
+  try {
+    if (err && err.context && typeof err.context.json === 'function') {
+      const body = await err.context.json();
+      if (body && body.error) return body.error;
+    }
+  } catch {
+    // fall through to the generic message
+  }
+  return (err && err.message) || String(err);
+}
+
+async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = () => {}) {
   const url = URL.createObjectURL(videoBlob);
   const video = document.createElement('video');
   video.src = url;
@@ -426,26 +537,47 @@ async function extractFrames(videoBlob, count = 8, maxWidth = 480, onProgress = 
       throw new Error('Video has no readable duration (readyState=' + video.readyState + ')');
     }
 
-    const scale = Math.min(1, maxWidth / video.videoWidth);
+    // Scale by the LONGEST edge, not the width. Scaling by width alone left
+    // a portrait phone clip at 480x853 -- more than 3x the pixels of the
+    // same cap applied to landscape, and image cost scales with pixel area.
+    const longestEdge = Math.max(video.videoWidth, video.videoHeight) || maxEdge;
+    const scale = Math.min(1, maxEdge / longestEdge);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(video.videoWidth * scale) || maxWidth;
-    canvas.height = Math.round(video.videoHeight * scale) || maxWidth;
-    const ctx = canvas.getContext('2d');
+    canvas.width = Math.round(video.videoWidth * scale) || maxEdge;
+    canvas.height = Math.round(video.videoHeight * scale) || maxEdge;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    const frames = [];
-    for (let i = 0; i < count; i++) {
-      onProgress(`Extracting frame ${i + 1}/${count}…`);
+    // A tiny greyscale copy of each frame, used only for scoring.
+    const thumb = document.createElement('canvas');
+    thumb.width = 48;
+    thumb.height = Math.max(1, Math.round(48 * (canvas.height / canvas.width)));
+    const thumbCtx = thumb.getContext('2d', { willReadFrequently: true });
+
+    // Sample well past what we need so there's something to choose between.
+    const candidateCount = Math.min(16, count * 2 + 2);
+    const candidates = [];
+    let prevGray = null;
+
+    for (let i = 0; i < candidateCount; i++) {
+      onProgress(`Scanning clip ${i + 1}/${candidateCount}…`);
       // Nudge the very first timestamp off zero -- setting currentTime to
       // the value it's already at can silently no-op the seek.
-      const raw = (duration * i) / Math.max(count - 1, 1);
+      const raw = (duration * i) / Math.max(candidateCount - 1, 1);
       const t = Math.min(Math.max(raw, 0.05), Math.max(duration - 0.05, 0));
       video.currentTime = t;
       await waitForEvent(video, 'seeked', 2000);
       await videoFramePainted(video);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      frames.push(canvas.toDataURL('image/jpeg', 0.7));
+
+      thumbCtx.drawImage(canvas, 0, 0, thumb.width, thumb.height);
+      const gray = toGrayscale(thumbCtx, thumb.width, thumb.height);
+      const { detail, motion } = scoreThumbnail(gray, prevGray);
+      prevGray = gray;
+
+      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion });
     }
-    return frames;
+
+    return chooseBestFrames(candidates, count).map((c) => c.dataUrl);
   } finally {
     document.body.removeChild(video);
     URL.revokeObjectURL(url);
@@ -520,7 +652,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let analysis = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const frames = await extractFrames(pendingBlob, 8, 480, setAnalysisStatus);
+      const frames = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
       setAnalysisStatus(`Sending ${frames.length} frames to the AI…`);
       const invokePromise = supabaseClient.functions.invoke('analyze-form', {
         body: { clipType, distance, effort, frames },
@@ -529,7 +661,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         setTimeout(() => reject(new Error('Analysis timed out after 45s')), 45000)
       );
       const { data: analysisData, error: analysisError } = await Promise.race([invokePromise, timeoutPromise]);
-      if (analysisError) throw analysisError;
+      if (analysisError) throw new Error(await readFunctionError(analysisError));
       analysis = analysisData;
       setAnalysisStatus('Analysis complete.');
     } catch (analysisErr) {
@@ -599,6 +731,7 @@ function renderAnalysisHtml(analysis) {
 }
 
 async function renderDiagnosis() {
+  await purgeExpiredVideos();
   const { data, error } = await supabaseClient
     .from('diagnosis_entries')
     .select('*')
