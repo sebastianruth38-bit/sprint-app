@@ -523,6 +523,110 @@ const FOLD_BANDS = [
   { min: 75, max: Infinity, score: 2, note: 'Heel trailing -- long lever swinging through' },
 ];
 
+// ---------- Who to grade, and when to refuse ----------
+// Calibrated on reference clips sampled at ~13fps, then expressed per
+// second so a different sample rate doesn't move the thresholds. Measured:
+// a sprinting athlete 2.9/s, a standing bystander 1.2/s, and a skeleton
+// jumping between runners in a pack 4.9/s -- limbs cannot really move that
+// fast, so anything above the ceiling means the tracker lost the plot.
+const MAX_PEOPLE_IN_FRAME = 3;
+const MIN_TRACK_FRAMES = 8;
+const ATHLETE_MOTION_MIN = 1.8;
+const ATHLETE_MOTION_MAX = 4.0;
+
+const SIG_JOINTS = ['lSho', 'rSho', 'lHip', 'rHip', 'lKnee', 'rKnee', 'lAnk', 'rAnk'];
+
+// A pose reduced to joint positions relative to its own hips and body size,
+// so it can be compared across frames regardless of where the athlete is on
+// screen or how far away they are. That's what makes this survive a camera
+// panning with the runner, which defeats any position-based approach.
+function poseSignature(landmarks, width, height) {
+  const { pt } = toPoints(landmarks, width, height);
+  const p = SIG_JOINTS.map((k) => pt(POSE_LM[k]));
+  const hip = midpoint(p[2], p[3]);
+  const sho = midpoint(p[0], p[1]);
+  const size = Math.hypot(sho[0] - hip[0], sho[1] - hip[1]) || 1;
+  return { hip, size, norm: p.map((q) => [(q[0] - hip[0]) / size, (q[1] - hip[1]) / size]) };
+}
+
+function signatureDistance(a, b) {
+  let total = 0;
+  for (let i = 0; i < a.length; i++) total += Math.hypot(a[i][0] - b[i][0], a[i][1] - b[i][1]);
+  return total / a.length;
+}
+
+// Greedy nearest-neighbour association. The gate is scaled by body size, so
+// it behaves the same whether the athlete fills the frame or is distant.
+function buildTracks(framePoses) {
+  const tracks = [];
+  framePoses.forEach((poses, fi) => {
+    poses.forEach((pose) => {
+      let best = null;
+      let bestD = Infinity;
+      for (const t of tracks) {
+        if (fi - t.lastFrame > 3) continue;
+        const d = Math.hypot(t.hip[0] - pose.sig.hip[0], t.hip[1] - pose.sig.hip[1]) / pose.sig.size;
+        if (d < bestD) { bestD = d; best = t; }
+      }
+      if (best && bestD < 2.5) {
+        best.motion.push(signatureDistance(best.norm, pose.sig.norm));
+        best.hip = pose.sig.hip;
+        best.norm = pose.sig.norm;
+        best.lastFrame = fi;
+        best.metrics.push(pose.metrics);
+      } else {
+        tracks.push({
+          hip: pose.sig.hip, norm: pose.sig.norm, lastFrame: fi,
+          motion: [], metrics: [pose.metrics],
+        });
+      }
+    });
+  });
+  return tracks;
+}
+
+// Returns the frames belonging to the one athlete worth grading, or a
+// reason to refuse. Refusing beats grading merged skeletons: a race clip
+// produces a confident score built from one runner's torso and another's
+// legs, and the athlete has no way to know it's nonsense.
+function selectSubject(framePoses, secondsPerFrame) {
+  const counts = framePoses.map((p) => p.length).filter((n) => n > 0);
+  if (!counts.length) {
+    return { metrics: [], rejection: 'No athlete detected in this clip.' };
+  }
+  if (median(counts) > MAX_PEOPLE_IN_FRAME) {
+    return { metrics: [], rejection: 'Too many people in frame to tell who to grade — film the athlete on their own.' };
+  }
+
+  const perSecond = secondsPerFrame > 0 ? 1 / secondsPerFrame : 1;
+  const tracks = buildTracks(framePoses)
+    .filter((t) => t.metrics.length >= MIN_TRACK_FRAMES && t.motion.length)
+    .map((t) => ({
+      metrics: t.metrics,
+      motionPerSec: (t.motion.reduce((a, b) => a + b, 0) / t.motion.length) * perSecond,
+    }));
+  if (!tracks.length) {
+    return { metrics: [], rejection: 'Could not follow anyone through this clip.' };
+  }
+
+  const running = tracks.filter((t) => t.motionPerSec >= ATHLETE_MOTION_MIN && t.motionPerSec <= ATHLETE_MOTION_MAX);
+  if (running.length > 1) {
+    return { metrics: [], rejection: 'More than one athlete is running here — grade one at a time.' };
+  }
+  if (!running.length) {
+    const scrambled = tracks.some((t) => t.motionPerSec > ATHLETE_MOTION_MAX);
+    return {
+      metrics: [],
+      rejection: scrambled
+        ? 'Tracking jumped between overlapping people — film one athlete alone, side-on.'
+        : 'Nobody in this clip is moving like a sprinter.',
+    };
+  }
+
+  const subject = running.reduce((a, b) => (b.metrics.length > a.metrics.length ? b : a));
+  return { metrics: subject.metrics, rejection: null };
+}
+
 // A frame reporting one of these is a tracking failure, not a position any
 // athlete reaches. Clip 2's highest-lift frame returned a 164 degree
 // scissor, which would otherwise have set the whole grade.
@@ -810,7 +914,7 @@ function getPoseLandmarker() {
       return vision.PoseLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate: 'GPU' },
         runningMode: 'IMAGE',
-        numPoses: 1,
+        numPoses: 4,
       });
     })().catch((err) => {
       poseLandmarkerPromise = null; // let a later attempt retry
@@ -919,9 +1023,16 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     thumb.height = Math.max(1, Math.round(48 * (canvas.height / canvas.width)));
     const thumbCtx = thumb.getContext('2d', { willReadFrequently: true });
 
-    // Sample well past what we need so there's something to choose between.
-    const candidateCount = Math.min(16, count * 2 + 2);
+    // Sampled at a roughly fixed rate (~10fps) rather than a fixed count:
+    // the tracking thresholds are per-second, and a fixed count would give
+    // a 2s clip and a 10s clip wildly different sample rates. Capped so a
+    // long clip doesn't grind on a phone.
+    const candidateCount = landmarker
+      ? Math.max(16, Math.min(60, Math.round(duration * 10)))
+      : Math.min(16, count * 2 + 2);
+    const secondsPerFrame = duration / Math.max(candidateCount - 1, 1);
     const candidates = [];
+    const framePoses = [];
     let prevGray = null;
 
     for (let i = 0; i < candidateCount; i++) {
@@ -940,29 +1051,38 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       const { detail, motion } = scoreThumbnail(gray, prevGray);
       prevGray = gray;
 
-      // Measure the pose while the frame is already on the canvas -- one
-      // pass over the clip covers both choosing frames and scoring them.
-      let metrics = { torsoFromVertical: null, scissor: null, thighRise: null, hipAngle: null, leadKnee: null, kneeFold: null };
+      // Measure every person in the frame while it's already on the canvas
+      // -- one pass covers choosing frames, working out who to grade, and
+      // scoring them.
+      const poses = [];
       if (landmarker) {
         try {
           const result = landmarker.detect(canvas);
-          if (result.landmarks && result.landmarks.length) {
-            metrics = frameMetrics(result.landmarks[0], canvas.width, canvas.height);
-          }
+          (result.landmarks || []).forEach((lms) => {
+            poses.push({
+              sig: poseSignature(lms, canvas.width, canvas.height),
+              metrics: frameMetrics(lms, canvas.width, canvas.height),
+            });
+          });
         } catch (poseErr) {
           console.warn('Pose detection failed on a frame:', poseErr);
         }
       }
+      framePoses.push(poses);
 
-      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion, metrics });
+      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion });
     }
 
     const chosen = chooseBestFrames(candidates, count);
+    const subject = landmarker
+      ? selectSubject(framePoses, secondsPerFrame)
+      : { metrics: [], rejection: null };
     return {
       frames: chosen.map((c) => c.dataUrl),
-      // Every readable frame informs the measurements, not just the ones we
-      // would have sent to an API -- there's no per-frame cost locally.
-      metrics: candidates.map((c) => c.metrics),
+      // Only the chosen athlete's frames inform the score. Every frame they
+      // appear in counts -- there's no per-frame cost locally.
+      metrics: subject.metrics,
+      rejection: subject.rejection,
     };
   } finally {
     document.body.removeChild(video);
@@ -1038,12 +1158,14 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let analysis = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const { frames, metrics } = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+      const { frames, metrics, rejection } = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
 
       // Local measurement is the default engine: it runs on this device, so
       // it costs nothing and works offline.
       setAnalysisStatus('Measuring form…');
-      analysis = buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
+      analysis = rejection
+        ? { summary: 'This clip could not be graded.', pinpoints: [], flags: [], filming_note: rejection }
+        : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
 
       // The AI read is opt-in, because that's the part that costs money.
       if (document.getElementById('aiAssist').checked) {
