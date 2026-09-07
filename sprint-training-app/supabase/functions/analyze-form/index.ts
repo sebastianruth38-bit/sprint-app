@@ -2,15 +2,26 @@
 //
 // Scores a sprint clip's form against a rubric that depends on clip type.
 // Runs server-side so the Anthropic API key never reaches the browser.
-// Deployed with JWT verification on (the default), so only signed-in
-// users of this app can call it -- supabaseClient.functions.invoke()
-// attaches the caller's session token automatically.
+//
+// Everything in the request comes from a browser we don't control, so the
+// cost of a call is bounded here rather than trusted from the client:
+// frame count, frame size, total payload, and a per-user daily quota are
+// all enforced before the Anthropic call is made.
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// Cost ceilings. A 480px-wide JPEG at q0.7 is ~25-50KB, so ~70K base64
+// chars; the per-frame cap is generous but finite. Without these, a client
+// could post 500 full-resolution frames and turn a 2c call into a $5 one.
+const MAX_FRAMES = 10;
+const MAX_FRAME_CHARS = 300_000;   // ~225KB decoded per frame
+const MAX_TOTAL_CHARS = 2_500_000; // ~1.9MB of image data per request
+const MAX_BODY_BYTES = 8_000_000;
+const DAILY_ANALYSIS_LIMIT = Number(Deno.env.get("DAILY_ANALYSIS_LIMIT") ?? "10");
 
 const RUBRICS: Record<string, string> = {
   Acceleration: `
@@ -39,7 +50,7 @@ Ground contact time is not scored here. Add anything else relevant to additional
 `.trim(),
 };
 
-const SYSTEM_PROMPT = `You're an expert sprint coach scoring still frames sampled evenly from one clip.
+const SYSTEM_PROMPT = `You're an expert sprint coach scoring still frames sampled from one clip.
 
 Judge only the athlete's body and mechanics -- never the filming (distance, angle, blur, lighting). Commit to your best read from whatever's visible every time. Never hedge about frame count or data limitations (e.g. "not enough frames to assess ground contact") -- work with what you're given. Use "filming_note" only for a genuine visibility problem (subject out of frame, extreme blur), never as a general disclaimer.
 
@@ -54,6 +65,13 @@ Respond with ONLY valid JSON, no markdown fences, no code block, no text before 
   "filming_note": string | null
 }
 score is an integer 1-5. Omit a pinpoint only if truly unassessable.`;
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
 
 // Verifies the caller is a signed-in user of this app. Done manually here
 // (rather than relying on the platform's "Enforce JWT Verification" toggle)
@@ -77,31 +95,119 @@ async function getAuthedUser(req: Request) {
   return data.user;
 }
 
+// Spends one unit of the caller's daily quota. Uses the service role
+// because the counter must not be writable by the user it limits -- the
+// table has no client-facing write policy at all.
+async function consumeQuota(userId: string) {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) {
+    // Fail closed: a missing key means the cap can't be enforced, and an
+    // unenforceable cap on a paid API is worse than a rejected request.
+    console.error("SUPABASE_SERVICE_ROLE_KEY is not set -- refusing to run unmetered");
+    return { allowed: false, used: 0, quota: DAILY_ANALYSIS_LIMIT, misconfigured: true };
+  }
+  const { createClient } = await import("npm:@supabase/supabase-js@2");
+  const admin = createClient(Deno.env.get("SUPABASE_URL") ?? "", serviceKey);
+  const { data, error } = await admin.rpc("consume_analysis_quota", {
+    p_user_id: userId,
+    p_limit: DAILY_ANALYSIS_LIMIT,
+  });
+  if (error) {
+    console.error("quota check failed:", error.message);
+    return { allowed: false, used: 0, quota: DAILY_ANALYSIS_LIMIT, misconfigured: true };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    allowed: !!row?.allowed,
+    used: row?.used ?? 0,
+    quota: row?.quota ?? DAILY_ANALYSIS_LIMIT,
+    misconfigured: false,
+  };
+}
+
+// Frames are the only thing here that costs real money, so they're checked
+// hard: how many, how big each, and how big in total.
+function validateFrames(frames: unknown): { ok: true; frames: string[] } | { ok: false; error: string } {
+  if (!Array.isArray(frames) || frames.length === 0) {
+    return { ok: false, error: "No frames provided" };
+  }
+  if (frames.length > MAX_FRAMES) {
+    return { ok: false, error: `Too many frames (max ${MAX_FRAMES})` };
+  }
+  let total = 0;
+  for (const frame of frames) {
+    if (typeof frame !== "string" || !frame.startsWith("data:image/")) {
+      return { ok: false, error: "Frames must be image data URLs" };
+    }
+    if (frame.length > MAX_FRAME_CHARS) {
+      return { ok: false, error: "A frame exceeds the size limit -- downscale before sending" };
+    }
+    total += frame.length;
+    if (total > MAX_TOTAL_CHARS) {
+      return { ok: false, error: "Frames exceed the total size limit" };
+    }
+  }
+  return { ok: true, frames: frames as string[] };
+}
+
+// Claude sometimes wraps the JSON in ```fences``` or adds a stray sentence
+// despite the instruction not to -- pull out the {...} object itself rather
+// than assuming the reply is already pure JSON.
+function extractJsonObject(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) return fenced[1].trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end > start) return text.slice(start, end + 1);
+  return text.trim();
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
   }
 
-  const user = await getAuthedUser(req);
-  if (!user) {
-    return new Response(JSON.stringify({ error: "Not signed in" }), {
-      status: 401,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+  const declaredLength = Number(req.headers.get("content-length") ?? "0");
+  if (declaredLength > MAX_BODY_BYTES) {
+    return json({ error: "Request too large" }, 413);
   }
 
-  try {
-    const { clipType, distance, effort, frames } = await req.json();
+  const user = await getAuthedUser(req);
+  if (!user) return json({ error: "Not signed in" }, 401);
 
-    if (!Array.isArray(frames) || frames.length === 0) {
-      return new Response(JSON.stringify({ error: "No frames provided" }), {
-        status: 400,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      });
+  try {
+    const body = await req.json();
+    const check = validateFrames(body?.frames);
+    if (!check.ok) return json({ error: check.error }, 400);
+    const frames = check.frames;
+
+    // Clamp the free-text fields: they're interpolated into the prompt, so
+    // an unbounded string is both a cost and an instruction-injection vector.
+    const clipType = Object.prototype.hasOwnProperty.call(RUBRICS, body?.clipType)
+      ? String(body.clipType)
+      : "Max Velocity";
+    const distance = String(body?.distance ?? "").slice(0, 40);
+    const effort = String(body?.effort ?? "").slice(0, 40);
+
+    // Quota is spent only after the request is known to be well-formed, so
+    // a malformed call doesn't cost the athlete one of their analyses.
+    const quota = await consumeQuota(user.id);
+    if (!quota.allowed) {
+      return json(
+        {
+          error: quota.misconfigured
+            ? "Analysis is temporarily unavailable. Please try again later."
+            : `Daily limit reached (${quota.quota} analyses). Try again tomorrow.`,
+          quota_exceeded: !quota.misconfigured,
+          used: quota.used,
+          quota: quota.quota,
+        },
+        429
+      );
     }
 
     const rubric = RUBRICS[clipType] ?? RUBRICS["Max Velocity"];
-    const contextLine = `Clip type: ${clipType || "unspecified"}. Distance: ${distance || "unspecified"}. Effort: ${effort || "unspecified"}.`;
+    const contextLine = `Clip type: ${clipType}. Distance: ${distance || "unspecified"}. Effort: ${effort || "unspecified"}.`;
 
     const imageBlocks = frames.map((dataUrl: string) => ({
       type: "image",
@@ -129,7 +235,7 @@ Deno.serve(async (req: Request) => {
             content: [
               {
                 type: "text",
-                text: `${contextLine}\n\n${rubric}\n\nFrames are attached in chronological order, evenly sampled across the clip.`,
+                text: `${contextLine}\n\n${rubric}\n\nFrames are attached in chronological order, sampled across the clip.`,
               },
               ...imageBlocks,
             ],
@@ -140,10 +246,8 @@ Deno.serve(async (req: Request) => {
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      return new Response(JSON.stringify({ error: `Anthropic API error: ${errText}` }), {
-        status: 502,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      });
+      console.error("Anthropic API error:", errText);
+      return json({ error: "The analysis service is unavailable right now." }, 502);
     }
 
     const result = await anthropicRes.json();
@@ -153,18 +257,6 @@ Deno.serve(async (req: Request) => {
     const textBlock = (result.content || []).find((block: { type: string }) => block.type === "text");
     const rawText = (textBlock as { text?: string } | undefined)?.text ?? "";
 
-    // Claude sometimes wraps the JSON in ```fences``` or adds a stray
-    // sentence despite the instruction not to -- pull out the {...} object
-    // itself rather than assuming rawText is already pure JSON.
-    function extractJsonObject(text: string): string {
-      const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-      if (fenced) return fenced[1].trim();
-      const start = text.indexOf("{");
-      const end = text.lastIndexOf("}");
-      if (start !== -1 && end > start) return text.slice(start, end + 1);
-      return text.trim();
-    }
-
     let parsed;
     try {
       parsed = JSON.parse(extractJsonObject(rawText));
@@ -172,13 +264,9 @@ Deno.serve(async (req: Request) => {
       parsed = { summary: rawText, pinpoints: [], additional_observations: [], flags: [] };
     }
 
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+    return json({ ...parsed, usage: { used: quota.used, quota: quota.quota } });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+    console.error("analyze-form failed:", err);
+    return json({ error: "Something went wrong analyzing that clip." }, 500);
   }
 });

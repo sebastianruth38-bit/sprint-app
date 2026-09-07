@@ -81,6 +81,52 @@ create table if not exists public.form_criteria (
   created_at timestamptz not null default now()
 );
 
+-- ---------- AI analysis quota (per user, per day) ----------
+-- Caps what a single account can spend on the Anthropic API. Deliberately
+-- has no client-facing write policy: the counter is only ever changed by
+-- consume_analysis_quota() below, called by the Edge Function with the
+-- service role. If the user it limits could write it, it wouldn't be a limit.
+create table if not exists public.analysis_usage (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  day date not null default current_date,
+  count int not null default 0,
+  primary key (user_id, day)
+);
+
+-- Atomic check-and-increment. The `where count < p_limit` guard lives on the
+-- ON CONFLICT update, so two concurrent requests can't both slip past the
+-- limit -- the loser updates zero rows and RETURNING yields nothing.
+create or replace function public.consume_analysis_quota(p_user_id uuid, p_limit int)
+returns table (allowed boolean, used int, quota int)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_used int;
+begin
+  insert into public.analysis_usage as au (user_id, day, count)
+  values (p_user_id, current_date, 1)
+  on conflict (user_id, day) do update
+    set count = au.count + 1
+    where au.count < p_limit
+  returning au.count into v_used;
+
+  if v_used is null then
+    select au.count into v_used
+    from public.analysis_usage au
+    where au.user_id = p_user_id and au.day = current_date;
+    return query select false, coalesce(v_used, p_limit), p_limit;
+    return; -- `return query` alone falls through and would also emit the allowed row
+  end if;
+
+  return query select true, v_used, p_limit;
+end;
+$$;
+
+revoke all on function public.consume_analysis_quota(uuid, int) from public, anon, authenticated;
+grant execute on function public.consume_analysis_quota(uuid, int) to service_role;
+
 -- ---------- Motivation favorites ----------
 create table if not exists public.favorites (
   id uuid primary key default gen_random_uuid(),
@@ -134,6 +180,7 @@ alter table public.competition_seasons enable row level security;
 alter table public.availability enable row level security;
 alter table public.athlete_settings enable row level security;
 alter table public.form_criteria enable row level security;
+alter table public.analysis_usage enable row level security;
 do $$
 declare
   t text;
@@ -148,6 +195,10 @@ begin
     ', t, t, t, t);
   end loop;
 end $$;
+
+-- analysis_usage gets SELECT only -- see the note on the table above.
+create policy "owner_select" on public.analysis_usage
+  for select using (auth.uid() = user_id);
 
 -- ---------- Storage bucket for diagnosis video clips ----------
 insert into storage.buckets (id, name, public)
