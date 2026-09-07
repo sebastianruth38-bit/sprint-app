@@ -436,8 +436,9 @@ textarea {
 }
 .day-card h4 { margin: 0 0 0.4rem; }
 .day-card .type { color: var(--accent); font-weight: 600; font-size: 0.9rem; }
-.day-card .details { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+.day-card .details { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; overflow-wrap: anywhere; }
 .day-card.empty { opacity: 0.5; }
+.day-card .hint { overflow-wrap: anywhere; }
 
 .ex-row {
   display: flex;
@@ -448,8 +449,19 @@ textarea {
 }
 .ex-row:last-child { border-bottom: none; }
 .ex-row input[type="checkbox"] { width: auto; }
-.ex-name { flex: 1; }
+.ex-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ex-name a { color: var(--accent); text-decoration: none; font-size: 0.85rem; margin-left: 0.5rem; }
+
+.explog-group-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin: 0.6rem 0 0.15rem;
+  overflow-wrap: anywhere;
+}
+.explog-input {
+  width: 90px;
+  flex: 0 0 auto;
+}
 
 .goal {
   background: var(--surface);
@@ -546,6 +558,17 @@ blockquote {
 
   .row { flex-direction: column; }
   .row .btn { width: 100%; }
+
+  .explog-row {
+    flex-wrap: wrap;
+  }
+  .explog-row .ex-name {
+    flex-basis: 100%;
+  }
+  .explog-input {
+    flex: 1 1 auto;
+    width: 100%;
+  }
 
   .file-label {
     flex-direction: column;
