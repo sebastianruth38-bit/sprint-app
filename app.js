@@ -1449,19 +1449,38 @@ document.getElementById('saveTrainingSetup').addEventListener('click', async () 
 // =====================================================
 // WEIGHT ROOM
 // =====================================================
+// Every movement buildLiftDetails() can prescribe, in the order the week
+// works through them, each with a form video. Keep this in step with
+// buildLiftDetails -- if a lift is added there, it belongs here too.
 const DEFAULT_EXERCISES = [
-  { name: 'Back Squat', url: ytSearch('how to back squat proper form') },
-  { name: 'Trap Bar Deadlift', url: ytSearch('trap bar deadlift technique') },
-  { name: 'Bulgarian Split Squat', url: ytSearch('bulgarian split squat form') },
-  { name: 'Hip Thrust', url: ytSearch('barbell hip thrust form') },
-  { name: 'Power Clean', url: ytSearch('power clean technique for sprinters') },
-  { name: 'Nordic Hamstring Curl', url: ytSearch('nordic hamstring curl technique') },
-  { name: 'Broad Jump', url: ytSearch('standing broad jump technique') },
-  { name: 'Box Jump', url: ytSearch('box jump technique') },
-  { name: 'Medicine Ball Rotational Throw', url: ytSearch('medicine ball rotational throw for sprinters') },
-  { name: 'Weighted Sled Push', url: ytSearch('sled push for sprint speed') },
-  { name: 'Calf Raise', url: ytSearch('standing calf raise proper form') },
-  { name: 'Copenhagen Plank', url: ytSearch('copenhagen plank groin exercise') },
+  // Olympic lifts -- acceleration and max-velocity days
+  { name: 'Power Clean', url: 'https://www.youtube.com/watch?v=ORGBFvyUwGs' },
+  { name: 'Hang Power Clean', url: 'https://www.youtube.com/watch?v=G4uPAxxJOAs' },
+  { name: 'Hang Snatch', url: 'https://www.youtube.com/watch?v=JzOOEs-NyIE' },
+
+  // Jumps and throws
+  { name: 'Broad Jump', url: 'https://www.youtube.com/watch?v=q7851uL2M8c' },
+  { name: 'Hurdle Hops', url: 'https://www.youtube.com/watch?v=6lj6jIszCgM' },
+  { name: 'Med Ball Throw', url: 'https://www.youtube.com/watch?v=IAgyLUdva_c' },
+
+  // Legs
+  { name: 'Bulgarian Split Squat', url: 'https://www.youtube.com/watch?v=yewlXtRs3K4' },
+  { name: 'Quarter Squat', url: 'https://www.youtube.com/watch?v=-mNpHNEXvFQ' },
+  { name: 'Step Up', url: 'https://www.youtube.com/watch?v=tqECKZxlCKE' },
+  { name: 'Back Squat', url: 'https://www.youtube.com/watch?v=8PMjqgR8Wa8' },
+
+  // Upper body -- tempo days
+  { name: 'Flat Bench Press', url: 'https://www.youtube.com/watch?v=gRVjAtPip0Y' },
+  { name: 'Incline Bench Press', url: 'https://www.youtube.com/watch?v=O9x7xRhtA9Q' },
+  { name: 'Shoulder Press', url: 'https://www.youtube.com/watch?v=F3QY5vMz_6I' },
+  { name: 'Barbell Back Row', url: 'https://www.youtube.com/watch?v=rqTOAM8WoeM' },
+  { name: 'Pull-Up', url: 'https://www.youtube.com/watch?v=vw5Xmu5CIew' },
+  { name: 'Tricep Pushdown', url: 'https://www.youtube.com/watch?v=-zLyUAo1gMw' },
+  { name: 'Tricep Overhead Extension', url: 'https://www.youtube.com/watch?v=W6h3t9mkRrY' },
+  { name: 'Lateral Raise', url: 'https://www.youtube.com/watch?v=Y29xKcze8Ik' },
+
+  // Core -- paired with every lift day
+  { name: 'Core Circuit', url: 'https://www.youtube.com/watch?v=wa_GXttvWLY' },
 ];
 
 function getWeekKey() {
@@ -1492,7 +1511,7 @@ document.getElementById('addCustomEx').addEventListener('click', async () => {
   if (!name) return;
   await supabaseClient
     .from('exercises')
-    .insert({ user_id: currentUser.id, name, url: url || null, is_custom: true });
+    .insert({ user_id: currentUser.id, name, url: normalizeUrl(url), is_custom: true });
   document.getElementById('customExName').value = '';
   document.getElementById('customExUrl').value = '';
   renderWeights();
@@ -1538,7 +1557,7 @@ async function renderWeights() {
         : `<span class="ex-name">${escapeHtml(ex.name)}</span>`}
       <div class="ex-actions">
         <button class="ex-link-btn">${url ? 'Edit link' : 'Add link'}</button>
-        ${ex.is_custom ? `<button class="delete-btn">Remove</button>` : ''}
+        <button class="delete-btn">Remove</button>
       </div>
     `;
 
