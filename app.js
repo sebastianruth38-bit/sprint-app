@@ -752,6 +752,18 @@ function reschedulePlan(plan, sprintDays, gymDays, locked = new Set()) {
 // Set whenever a plan is placed, so the board can say what didn't fit.
 let lastPlanNote = '';
 
+// Once a week is on the board, regenerating throws it away -- so the button
+// stops being the obvious primary action and starts looking like something
+// you only press deliberately. It stays enabled; the confirm still guards it.
+function setGenerateButtonState(hasPlan) {
+  const btn = document.getElementById('generateWeekPlan');
+  const note = document.getElementById('regenNote');
+  btn.textContent = hasPlan ? 'Regenerate week' : "Generate This Week's Plan";
+  btn.classList.toggle('primary', !hasPlan);
+  btn.classList.toggle('regen', hasPlan);
+  note.textContent = hasPlan ? 'Erases this week and builds a new one.' : '';
+}
+
 // Counts matter here: the week can carry two tempo sessions, so "Tempo was
 // cut" would be misleading when one of them is still on the board.
 function describeDropped(dropped) {
@@ -1290,6 +1302,7 @@ async function renderWeekBoard() {
   badge.textContent = phase.label;
   badge.className = 'phase-badge' + (phase.className ? ' ' + phase.className : '');
   document.getElementById('planNote').textContent = lastPlanNote;
+  setGenerateButtonState(data.length > 0);
 
   const byDay = {};
   data.forEach((w) => { byDay[w.day] = w; });
@@ -1557,7 +1570,7 @@ async function renderWeights() {
         : `<span class="ex-name">${escapeHtml(ex.name)}</span>`}
       <div class="ex-actions">
         <button class="ex-link-btn">${url ? 'Edit link' : 'Add link'}</button>
-        <button class="delete-btn">Remove</button>
+        ${ex.is_custom ? '<button class="delete-btn">Remove</button>' : ''}
       </div>
     `;
 
