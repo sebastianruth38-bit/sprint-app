@@ -620,13 +620,101 @@ function splitExercises(str) {
   return parts.filter(Boolean);
 }
 
-// Renders a plan description with each exercise's logged value appended in
-// parentheses where one was logged, e.g. "Power Cleans 3x3-5 (135lbs), Broad Jumps 3x3".
-function withLoggedValues(planText, log) {
+// Breaks one sprint item down into its individual reps, each getting its
+// own stable key (tied to the item's text) and a short display label --
+// e.g. "8x200" becomes 8 rows, "(2x20,2x25,2x30,1x40)" becomes 6. Falls
+// back to a single row when no rep count is recognized (a single ladder
+// rung like "150", or free text).
+function expandSprintItem(item) {
+  const trimmed = item.trim();
+
+  // "3x3x100" -- sets x reps x distance.
+  let m = /^(\d+)\s*x\s*(\d+)\s*x\s*(.+)$/i.exec(trimmed);
+  if (m) {
+    const sets = parseInt(m[1], 10);
+    const reps = parseInt(m[2], 10);
+    const rows = [];
+    for (let s = 1; s <= sets; s++) {
+      for (let r = 1; r <= reps; r++) rows.push({ key: `${item} :: set ${s} rep ${r}`, display: `Set ${s}, rep ${r}` });
+    }
+    return rows;
+  }
+
+  // "2x(10,20,30)" -- repeat an inner ladder N times.
+  m = /^(\d+)\s*x\s*\((.+)\)$/i.exec(trimmed);
+  if (m) {
+    const rounds = parseInt(m[1], 10);
+    const legs = m[2].split(',').map((s) => s.trim()).filter(Boolean);
+    const rows = [];
+    for (let r = 1; r <= rounds; r++) {
+      legs.forEach((leg) => rows.push({ key: `${item} :: round ${r} - ${leg}`, display: `Round ${r}, ${leg}` }));
+    }
+    return rows;
+  }
+
+  // A trailing parenthesized ladder, with or without a name prefix --
+  // "(2x20,2x25,2x30,1x40)" or "Sleds (2x10,20,30)". Only treated as a
+  // ladder when the parenthesized part actually looks like one (multiple
+  // comma legs, or a single "NxM" leg) -- otherwise it's just a
+  // descriptive suffix like "4x float sprint (40-60-90)" and falls
+  // through to the simple leading-multiplier case below.
+  m = /^(.*?)\(([^()]+)\)\s*$/.exec(trimmed);
+  if (m) {
+    const prefix = m[1].trim();
+    const legs = m[2].split(',').map((s) => s.trim()).filter(Boolean);
+    const looksLikeLadder = legs.length > 1 || /^\d+\s*x/i.test(legs[0] || '');
+    if (looksLikeLadder) {
+      const rows = [];
+      legs.forEach((leg) => {
+        const lm = /^(\d+)\s*x\s*(.+)$/i.exec(leg);
+        if (lm) {
+          const reps = parseInt(lm[1], 10);
+          for (let r = 1; r <= reps; r++) rows.push({ key: `${item} :: ${leg} rep ${r}`, display: `${prefix ? prefix + ' ' : ''}${lm[2]} rep ${r}` });
+        } else {
+          rows.push({ key: `${item} :: ${leg}`, display: `${prefix ? prefix + ' ' : ''}${leg}` });
+        }
+      });
+      return rows;
+    }
+  }
+
+  // Simple "8x200" -- N reps of one distance.
+  m = /^(\d+)\s*x\s*(.+)$/i.exec(trimmed);
+  if (m) {
+    const reps = parseInt(m[1], 10);
+    const rows = [];
+    for (let r = 1; r <= reps; r++) rows.push({ key: `${item} :: rep ${r}`, display: `Rep ${r}` });
+    return rows;
+  }
+
+  return [{ key: item, display: item }];
+}
+
+// Breaks one lift item down into its individual sets -- e.g.
+// "Power Cleans 3x3-5" becomes 3 rows so each set can carry its own weight.
+// A range on the set count ("2-3x6") uses the low end. Falls back to a
+// single row when no set count is recognized (e.g. free-typed text).
+function expandLiftItem(item) {
+  const m = /^(.*?)\s+(\d+)(?:-\d+)?\s*x/i.exec(item.trim());
+  if (m) {
+    const sets = parseInt(m[2], 10);
+    const rows = [];
+    for (let s = 1; s <= sets; s++) rows.push({ key: `${item} :: Set ${s}`, display: `Set ${s}` });
+    return rows;
+  }
+  return [{ key: item, display: item }];
+}
+
+// Renders a plan description with each set/rep's logged value appended in
+// parentheses where any were logged, e.g. "Power Cleans 3x3-5 (135, 145, 155)".
+function withLoggedValues(planText, log, expandFn) {
   const items = splitExercises(planText);
   if (!items.length) return escapeHtml(planText || '');
   const log2 = log || {};
-  return items.map((label) => (log2[label] ? `${escapeHtml(label)} (${escapeHtml(log2[label])})` : escapeHtml(label))).join(', ');
+  return items.map((item) => {
+    const values = expandFn(item).map((row) => log2[row.key]).filter(Boolean);
+    return values.length ? `${escapeHtml(item)} (${values.map(escapeHtml).join(', ')})` : escapeHtml(item);
+  }).join(', ');
 }
 
 // Reads whatever's currently in the exercise-log inputs of one kind
@@ -648,19 +736,25 @@ function renderExerciseLog(sprintLog, liftLog) {
   sprintLog = sprintLog || {};
   liftLog = liftLog || {};
 
-  const rowsHtml = (items, log, kind, placeholder) => items.map((label) => `
-    <div class="ex-row">
-      <span class="ex-name">${escapeHtml(label)}</span>
-      <input type="text" class="explog-input" data-kind="${kind}" data-key="${escapeHtml(label)}" placeholder="${placeholder}" value="${escapeHtml(log[label] || '')}" style="width:100px" />
-    </div>
-  `).join('');
+  const groupHtml = (items, expandFn, log, kind, placeholder) => items.map((item) => {
+    const rows = expandFn(item);
+    const header = (rows.length > 1 || rows[0].display !== item)
+      ? `<p class="explog-group-label">${escapeHtml(item)}</p>` : '';
+    const rowsHtml = rows.map((row) => `
+      <div class="ex-row explog-row">
+        <span class="ex-name">${escapeHtml(row.display)}</span>
+        <input type="text" class="explog-input" data-kind="${kind}" data-key="${escapeHtml(row.key)}" placeholder="${placeholder}" value="${escapeHtml(log[row.key] || '')}" />
+      </div>
+    `).join('');
+    return header + rowsHtml;
+  }).join('');
 
   let html = '';
   if (sprintItems.length) {
-    html += `<p class="hint" style="margin-bottom:0.2rem">⏱️ Log each rep's time</p>${rowsHtml(sprintItems, sprintLog, 'sprint', 'time')}`;
+    html += `<p class="hint" style="margin-bottom:0.2rem">⏱️ Log each rep's time</p>${groupHtml(sprintItems, expandSprintItem, sprintLog, 'sprint', 'time')}`;
   }
   if (liftItems.length) {
-    html += `<p class="hint" style="margin:0.6rem 0 0.2rem">🏋️ Log each lift's weight</p>${rowsHtml(liftItems, liftLog, 'lift', 'weight')}`;
+    html += `<p class="hint" style="margin:0.6rem 0 0.2rem">🏋️ Log each set's weight</p>${groupHtml(liftItems, expandLiftItem, liftLog, 'lift', 'weight')}`;
   }
   document.getElementById('exerciseLog').innerHTML = html;
 }
@@ -1002,8 +1096,8 @@ async function renderWeekBoard() {
       <h4>${day}</h4>
       ${w ? `<div class="type">${escapeHtml(w.type)}${w.timed ? ` <span class="score-pill">${escapeHtml(w.timed)}</span>` : ''}</div><div class="details">${escapeHtml(w.details || '')}</div>`
           : `<div class="details">No session set</div>`}
-      ${w && w.lift_details ? `<div class="hint">🏋️ ${withLoggedValues(w.lift_details, w.lift_log)}</div>` : ''}
-      ${w && w.logged_result && Object.keys(w.logged_result).length ? `<div class="hint">⏱️ Ran: ${withLoggedValues(w.details, w.logged_result)}</div>` : ''}
+      ${w && w.lift_details ? `<div class="hint">🏋️ ${withLoggedValues(w.lift_details, w.lift_log, expandLiftItem)}</div>` : ''}
+      ${w && w.logged_result && Object.keys(w.logged_result).length ? `<div class="hint">⏱️ Ran: ${withLoggedValues(w.details, w.logged_result, expandSprintItem)}</div>` : ''}
       ${badges.length ? `<div class="day-badges">${badges.join('')}</div>` : ''}
       ${w ? `<button class="delete-btn">Clear</button>` : ''}
     `;
