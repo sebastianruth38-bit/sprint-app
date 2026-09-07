@@ -717,12 +717,23 @@ function withLoggedValues(planText, log, expandFn) {
   }).join(', ');
 }
 
-// Reads whatever's currently in the exercise-log inputs of one kind
-// ('sprint' or 'lift') into a { exerciseLabel: value } map, skipping blanks.
+// Lifts that don't take an external load -- no weight box is offered for these.
+const BODYWEIGHT_LIFT_KEYWORDS = ['core', 'broad jump', 'hurdle hop', 'pull-up', 'pull up'];
+function isBodyweightExercise(item) {
+  const name = item.toLowerCase();
+  return BODYWEIGHT_LIFT_KEYWORDS.some((kw) => name.includes(kw));
+}
+
+// Reads whatever's currently logged for one kind ('sprint' or 'lift'), from
+// both simple single-value rows (data-key directly on the input) and
+// compact dropdown rows (each set/rep's value lives on its <option>).
 function getCurrentLog(kind) {
   const log = {};
-  document.querySelectorAll(`#exerciseLog .explog-input[data-kind="${kind}"]`).forEach((input) => {
+  document.querySelectorAll(`#exerciseLog .explog-input[data-kind="${kind}"][data-key]`).forEach((input) => {
     if (input.value.trim()) log[input.dataset.key] = input.value.trim();
+  });
+  document.querySelectorAll(`#exerciseLog select.explog-set-select[data-kind="${kind}"] option`).forEach((option) => {
+    if (option.dataset.value && option.dataset.value.trim()) log[option.dataset.key] = option.dataset.value.trim();
   });
   return log;
 }
@@ -730,9 +741,12 @@ function getCurrentLog(kind) {
 // Rebuilds the per-exercise log rows from the current plan text in
 // workoutDetails/workoutLift, prefilling from the given saved logs (or from
 // whatever's already in the inputs, when called to preserve in-progress edits).
+// An exercise with 2+ sets/reps gets ONE compact row -- a dropdown to pick
+// which set/rep, plus a single input that saves back to whichever is
+// selected -- instead of a separate row per set/rep.
 function renderExerciseLog(sprintLog, liftLog) {
   const sprintItems = splitExercises(document.getElementById('workoutDetails').value);
-  const liftItems = splitExercises(document.getElementById('workoutLift').value);
+  const liftItems = splitExercises(document.getElementById('workoutLift').value).filter((item) => !isBodyweightExercise(item));
   sprintLog = sprintLog || {};
   liftLog = liftLog || {};
 
@@ -740,13 +754,24 @@ function renderExerciseLog(sprintLog, liftLog) {
     const rows = expandFn(item);
     const header = (rows.length > 1 || rows[0].display !== item)
       ? `<p class="explog-group-label">${escapeHtml(item)}</p>` : '';
-    const rowsHtml = rows.map((row) => `
-      <div class="ex-row explog-row">
-        <span class="ex-name">${escapeHtml(row.display)}</span>
-        <input type="text" class="explog-input" data-kind="${kind}" data-key="${escapeHtml(row.key)}" placeholder="${placeholder}" value="${escapeHtml(log[row.key] || '')}" />
+
+    if (rows.length === 1) {
+      const row = rows[0];
+      return header + `
+        <div class="ex-row explog-row">
+          <span class="ex-name">${escapeHtml(row.display)}</span>
+          <input type="text" class="explog-input" data-kind="${kind}" data-key="${escapeHtml(row.key)}" placeholder="${placeholder}" value="${escapeHtml(log[row.key] || '')}" />
+        </div>
+      `;
+    }
+
+    const options = rows.map((row, i) => `<option value="${i}" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(log[row.key] || '')}">${escapeHtml(row.display)}</option>`).join('');
+    return header + `
+      <div class="ex-row explog-row explog-combo-row">
+        <select class="explog-set-select" data-kind="${kind}">${options}</select>
+        <input type="text" class="explog-input" data-kind="${kind}" placeholder="${placeholder}" value="${escapeHtml(log[rows[0].key] || '')}" />
       </div>
-    `).join('');
-    return header + rowsHtml;
+    `;
   }).join('');
 
   let html = '';
@@ -757,6 +782,20 @@ function renderExerciseLog(sprintLog, liftLog) {
     html += `<p class="hint" style="margin:0.6rem 0 0.2rem">🏋️ Log each set's weight</p>${groupHtml(liftItems, expandLiftItem, liftLog, 'lift', 'weight')}`;
   }
   document.getElementById('exerciseLog').innerHTML = html;
+
+  // Wire up the compact dropdown+input combos: switching the dropdown loads
+  // that set/rep's stored value into the input, and typing saves back into
+  // whichever option is currently selected -- so nothing is lost switching.
+  document.querySelectorAll('.explog-combo-row').forEach((row) => {
+    const select = row.querySelector('.explog-set-select');
+    const input = row.querySelector('.explog-input');
+    select.addEventListener('change', () => {
+      input.value = select.options[select.selectedIndex].dataset.value || '';
+    });
+    input.addEventListener('input', () => {
+      select.options[select.selectedIndex].dataset.value = input.value;
+    });
+  });
 }
 
 function refreshExerciseLog() {

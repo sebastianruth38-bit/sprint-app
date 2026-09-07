@@ -462,6 +462,10 @@ textarea {
   width: 90px;
   flex: 0 0 auto;
 }
+.explog-set-select {
+  flex: 1;
+  min-width: 0;
+}
 
 .goal {
   background: var(--surface);
@@ -563,6 +567,9 @@ blockquote {
     flex-wrap: wrap;
   }
   .explog-row .ex-name {
+    flex-basis: 100%;
+  }
+  .explog-combo-row .explog-set-select {
     flex-basis: 100%;
   }
   .explog-input {
