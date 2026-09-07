@@ -143,9 +143,9 @@
 
     <!-- WORKOUTS -->
     <section class="tab-panel" id="panel-workouts">
-      <h2>Weekly Sprint Workouts</h2>
+      <h2>Workout Plan</h2>
       <div id="phaseBadge" class="phase-badge"></div>
-      <p class="hint">Plan what type of sprint session lands on each day.</p>
+      <p class="hint">Each day's sprint session and the lifts that go with it.</p>
 
       <button id="generateWeekPlan" class="btn primary" style="width:100%;margin-bottom:1rem">Generate This Week's Plan</button>
 
@@ -188,11 +188,11 @@
 
     <!-- WEIGHT ROOM -->
     <section class="tab-panel" id="panel-weights">
-      <h2>Weight Room (Sprint-Complementary)</h2>
-      <p class="hint">Strength work that supports sprinting. Check off what you complete this week; add your own lifts too.</p>
+      <h2>Form Reference</h2>
+      <p class="hint">Look up how a movement should be performed before you train it. Your lifts themselves live in the workout plan.</p>
 
       <div class="card">
-        <h3>Add a custom exercise</h3>
+        <h3>Add an exercise</h3>
         <div class="form-grid">
           <input type="text" id="customExName" placeholder="Exercise name" />
           <input type="text" id="customExUrl" placeholder="YouTube link (optional)" />
@@ -261,7 +261,7 @@
 
   <nav class="bottom-nav" id="tabs">
     <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📋</span><span class="tab-label">Workouts</span></button>
-    <button class="tab-btn" data-tab="weights"><span class="tab-icon">💪</span><span class="tab-label">Weights</span></button>
+    <button class="tab-btn" data-tab="weights"><span class="tab-icon">💪</span><span class="tab-label">Reference</span></button>
     <button class="tab-btn tab-btn-center active" data-tab="diagnosis">
       <span class="tab-center-icon">🐆</span>
       <span class="tab-label">Form Analysis</span>
