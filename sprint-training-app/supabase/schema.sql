@@ -13,6 +13,8 @@ create table if not exists public.workouts (
   type text not null,
   details text,
   timed text, -- 'Timed' | 'Untimed' | null
+  lift_details text,
+  logged_result text, -- what the athlete actually ran/lifted, e.g. "11.4, 11.3, 11.5"
   updated_at timestamptz not null default now(),
   unique (user_id, day)
 );

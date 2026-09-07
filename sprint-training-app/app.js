@@ -602,11 +602,18 @@ document.getElementById('saveWorkout').addEventListener('click', async () => {
   const type = document.getElementById('workoutType').value;
   const details = document.getElementById('workoutDetails').value.trim();
   const timed = document.getElementById('workoutTimed').value || null;
+  const liftDetails = document.getElementById('workoutLift').value.trim();
+  const loggedResult = document.getElementById('workoutLoggedResult').value.trim();
   const { error } = await supabaseClient
     .from('workouts')
-    .upsert({ user_id: currentUser.id, day, type, details, timed }, { onConflict: 'user_id,day' });
+    .upsert(
+      { user_id: currentUser.id, day, type, details, timed, lift_details: liftDetails || null, logged_result: loggedResult || null },
+      { onConflict: 'user_id,day' }
+    );
   if (error) { alert('Save failed: ' + error.message); return; }
   document.getElementById('workoutDetails').value = '';
+  document.getElementById('workoutLift').value = '';
+  document.getElementById('workoutLoggedResult').value = '';
   renderWeekBoard();
 });
 
@@ -782,6 +789,37 @@ document.getElementById('suggestWorkout').addEventListener('click', async () => 
 // ---------- Full week plan: fixed weekday mapping per phase ----------
 // Off-season and pre-season are identical. Competition week assumes the
 // meet falls on Saturday. "lift"/"noLift" drive gym pairing below.
+// ---------- Lift pairing ----------
+// Off/pre-season: 3x per exercise. In-season: 2-3x, lower-fatigue variants
+// (quarter squats instead of full squats, hang power clean instead of hang
+// snatch), plus med ball throws added on the two high-CNS speed days.
+function buildLiftDetails(role, phase) {
+  const inSeason = phase.seasonPhase === 'in';
+
+  if (role === 'accel') {
+    return inSeason
+      ? 'Power Cleans 3x3-5, Broad Jumps 3x3, Bulgarian Split Squats 2-3x6, Med Ball Throws 2x5, Core 2x'
+      : 'Power Cleans 3x3-5, Broad Jumps 3x3, Bulgarian Split Squats 3x6-8, Core 3x';
+  }
+  if (role === 'maxv') {
+    const oly = inSeason ? 'Hang Power Cleans' : 'Hang Snatches';
+    const legs = inSeason ? 'Quarter Squats 2-3x6' : 'Step Ups & Squats 3x6-8';
+    return inSeason
+      ? `${oly} 3x3-5, Hurdle Hops 2-3x5, ${legs}, Med Ball Throws 2x5, Core 2x`
+      : `${oly} 3x3-5, Hurdle Hops 3x5, ${legs}, Core 3x`;
+  }
+  if (role === 'tempo1') {
+    return 'Flat Bench 3x8, Back Row 3x8, Pull-Ups 3x, Tricep Pushdowns 3x12, Lateral Raises 3x12';
+  }
+  if (role === 'tempo2') {
+    return 'Incline Bench 3x8, Barbell Back Row 3x8, Shoulder Press 3x8, Tricep Overhead Extensions 3x12';
+  }
+  if (role === 'competitionLight') {
+    return 'Core 2x, Med Ball Throws 2x5, Hang Cleans 2x3 @ ~half normal load, Quarter Squats 2x5 @ ~half normal load';
+  }
+  return null;
+}
+
 function buildWeekPlan(phase, equipment, primaryEvents) {
   const accel = () => pickTemplateText('Acceleration (0-30m)', equipment, phase) || '';
   const maxV = () => pickTemplateText('Max Velocity (flys/build-ups)', equipment, phase) || '';
@@ -790,8 +828,11 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
   const tempoPlusMobility = () => `${shortenTempo(tempo())} + mobility`;
 
   if (phase.modifier === 'competition') {
+    // Meet assumed Saturday (end of week) -- competition is "towards the
+    // end of the week", so Monday gets one light lift; every other day
+    // stays lift-free.
     return [
-      { day: 'Monday', type: 'Max Velocity (flys/build-ups)', details: maxV() },
+      { day: 'Monday', type: 'Max Velocity (flys/build-ups)', details: maxV(), liftDetails: buildLiftDetails('competitionLight', phase) },
       { day: 'Tuesday', type: 'Recovery / Mobility', details: 'Rest + light mobility' },
       { day: 'Wednesday', type: 'Race Modeling', details: pickRaceModelingText(primaryEvents), timed: 'Timed' },
       { day: 'Thursday', type: 'Recovery / Mobility', details: 'Rest + light mobility' },
@@ -803,11 +844,11 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
 
   if (phase.seasonPhase === 'in') {
     return [
-      { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', lift: true },
+      { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase) },
       { day: 'Tuesday', type: 'Speed Endurance (60-150m)', details: speedEnd(), timed: 'Timed' },
       { day: 'Wednesday', type: 'Recovery / Mobility', details: 'Mobility + foam roll' },
-      { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', lift: true },
-      { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), noLift: true },
+      { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase) },
+      { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: buildLiftDetails('tempo2', phase) },
       { day: 'Saturday', type: 'Rest Day', details: '' },
       { day: 'Sunday', type: 'Rest Day', details: '' },
     ];
@@ -815,35 +856,19 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
 
   // Off-season and pre-season: identical.
   return [
-    { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', lift: true },
-    { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo() },
+    { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase) },
+    { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo(), liftDetails: buildLiftDetails('tempo1', phase) },
     { day: 'Wednesday', type: 'Rest Day', details: '' },
-    { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', lift: true },
-    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), noLift: true },
+    { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase) },
+    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: buildLiftDetails('tempo2', phase) },
     { day: 'Saturday', type: 'Rest Day', details: '' },
     { day: 'Sunday', type: 'Rest Day', details: '' },
   ];
 }
 
-// A lift always accompanies a speed day, same day if the gym's available
-// then. If not, it shifts to the next day -- unless that day is flagged
-// noLift (the Mobility/Tempo day never gets the gym added to it).
-function pairLiftDays(plan, gymDays) {
-  const liftIdx = new Set();
-  plan.forEach((entry, i) => {
-    if (!entry.lift) return;
-    if (gymDays.has(entry.day)) { liftIdx.add(i); return; }
-    const nextI = (i + 1) % 7;
-    if (!plan[nextI].noLift && gymDays.has(plan[nextI].day)) liftIdx.add(nextI);
-  });
-  return liftIdx;
-}
-
 document.getElementById('generateWeekPlan').addEventListener('click', async () => {
   if (!currentUser) return;
-  const weekKey = getWeekKey();
-  const [{ data: avail }, equipment, primaryEvents, seasonAndMeet, { data: existing }] = await Promise.all([
-    supabaseClient.from('availability').select('gym_days').eq('user_id', currentUser.id).eq('week_key', weekKey).maybeSingle(),
+  const [equipment, primaryEvents, seasonAndMeet, { data: existing }] = await Promise.all([
     getEquipment(),
     getPrimaryEvents(),
     getSeasonAndMeet(),
@@ -854,18 +879,17 @@ document.getElementById('generateWeekPlan').addEventListener('click', async () =
     return;
   }
 
-  const gymDays = new Set((avail && avail.gym_days) || []);
   const phase = computeTrainingPhase(seasonAndMeet.season, seasonAndMeet.nextMeetDate);
   const plan = buildWeekPlan(phase, equipment, primaryEvents);
-  const liftIdx = pairLiftDays(plan, gymDays);
 
   const { error } = await supabaseClient.from('workouts').upsert(
-    plan.map((entry, i) => ({
+    plan.map((entry) => ({
       user_id: currentUser.id,
       day: entry.day,
       type: entry.type,
-      details: entry.details + (liftIdx.has(i) ? (entry.details ? ' ' : '') + '+ lift' : ''),
+      details: entry.details,
       timed: entry.timed || null,
+      lift_details: entry.liftDetails || null,
     })),
     { onConflict: 'user_id,day' }
   );
@@ -906,6 +930,8 @@ async function renderWeekBoard() {
       <h4>${day}</h4>
       ${w ? `<div class="type">${escapeHtml(w.type)}${w.timed ? ` <span class="score-pill">${escapeHtml(w.timed)}</span>` : ''}</div><div class="details">${escapeHtml(w.details || '')}</div>`
           : `<div class="details">No session set</div>`}
+      ${w && w.lift_details ? `<div class="hint">🏋️ ${escapeHtml(w.lift_details)}</div>` : ''}
+      ${w && w.logged_result ? `<div class="hint">⏱️ Ran: ${escapeHtml(w.logged_result)}</div>` : ''}
       ${badges.length ? `<div class="day-badges">${badges.join('')}</div>` : ''}
       ${w ? `<button class="delete-btn">Clear</button>` : ''}
     `;
@@ -917,6 +943,8 @@ async function renderWeekBoard() {
       document.getElementById('workoutType').value = w ? w.type : '';
       document.getElementById('workoutDetails').value = w ? w.details || '' : '';
       document.getElementById('workoutTimed').value = w && w.timed ? w.timed : '';
+      document.getElementById('workoutLift').value = w && w.lift_details ? w.lift_details : '';
+      document.getElementById('workoutLoggedResult').value = w && w.logged_result ? w.logged_result : '';
       document.getElementById('workoutDetails').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     if (w) {
