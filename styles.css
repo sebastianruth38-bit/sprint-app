@@ -514,6 +514,18 @@ textarea {
 }
 .file-label input { width: auto; background: none; padding: 0; }
 
+.ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+.ai-toggle .hint { font-size: 0.85rem; }
+
+.ai-note { border-left: 2px solid var(--border-strong); padding-left: 0.6rem; margin-top: 0.4rem; }
+
 /* ---------- Entries ---------- */
 .entry-list { display: flex; flex-direction: column; gap: 0.75rem; }
 
