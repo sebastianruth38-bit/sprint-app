@@ -576,6 +576,9 @@ textarea {
 .day-card .type { color: var(--text); font-weight: 600; font-size: 0.9rem; }
 .day-card .details { color: var(--muted); font-size: 0.88rem; margin-top: 0.3rem; overflow-wrap: anywhere; line-height: 1.45; }
 .day-card.empty { opacity: 0.45; }
+.day-card.blocked-day { border-style: dashed; }
+.day-card .type.blocked { color: var(--muted); font-weight: 600; }
+.day-card .hint.blocked { color: var(--muted); font-style: italic; }
 .day-card .hint { font-size: 0.85rem; margin-top: 0.35rem; overflow-wrap: anywhere; }
 .day-card .delete-btn { margin-top: 0.4rem; }
 

@@ -47,7 +47,7 @@ create table if not exists public.small_goals (
   created_at timestamptz not null default now()
 );
 
--- ---------- Weight-room exercises + weekly completion checks ----------
+-- ---------- Form Reference movements (name + a form video link) ----------
 create table if not exists public.exercises (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -55,17 +55,6 @@ create table if not exists public.exercises (
   url text,
   is_custom boolean not null default true,
   created_at timestamptz not null default now()
-);
-
--- Unused since the weight room became the Form Reference page (a lookup
--- list, not a weekly checklist). Kept so existing rows aren't dropped.
-create table if not exists public.weight_checks (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  exercise_id uuid not null references public.exercises(id) on delete cascade,
-  week_key text not null, -- e.g. "2026-W36"
-  done boolean not null default true,
-  unique (user_id, exercise_id, week_key)
 );
 
 -- ---------- Form diagnosis entries ----------
@@ -139,7 +128,6 @@ alter table public.times enable row level security;
 alter table public.big_goals enable row level security;
 alter table public.small_goals enable row level security;
 alter table public.exercises enable row level security;
-alter table public.weight_checks enable row level security;
 alter table public.diagnosis_entries enable row level security;
 alter table public.favorites enable row level security;
 alter table public.competition_seasons enable row level security;
@@ -150,7 +138,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['workouts','times','big_goals','small_goals','exercises','weight_checks','diagnosis_entries','favorites','availability','competition_seasons','athlete_settings','form_criteria']
+  foreach t in array array['workouts','times','big_goals','small_goals','exercises','diagnosis_entries','favorites','availability','competition_seasons','athlete_settings','form_criteria']
   loop
     execute format('
       create policy "owner_select" on public.%I for select using (auth.uid() = user_id);
