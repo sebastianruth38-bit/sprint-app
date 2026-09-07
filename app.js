@@ -627,6 +627,145 @@ function selectSubject(framePoses, secondsPerFrame) {
   return { metrics: subject.metrics, rejection: null };
 }
 
+// ---------- Ground contact, and the checks that hang off it ----------
+// Everything below is measured at touchdown, so touchdown has to be found
+// first: the frames where a foot is at its lowest on screen.
+
+// Where the foot lands relative to the hip, as a fraction of leg length.
+// Positive means the foot touches down in front of the hip -- the further
+// in front, the more braking. This is the overstriding measure.
+const STRIKE_BANDS = [
+  { min: -Infinity, max: 0.12, score: 5, note: 'Foot lands under the hips' },
+  { min: 0.12, max: 0.22, score: 4, note: 'Foot lands slightly ahead of the hips' },
+  { min: 0.22, max: 0.32, score: 3, note: 'Reaching -- foot landing ahead of the hips' },
+  { min: 0.32, max: Infinity, score: 2, note: 'Overstriding badly -- braking on every step' },
+];
+
+// Ankle angle at touchdown. Under ~95 the toes are up and the foot is
+// ready to be stiff; well over that it lands pointed and collapses.
+const DORSI_BANDS = [
+  { min: -Infinity, max: 95, score: 5, note: 'Toes up on landing' },
+  { min: 95, max: 108, score: 4, note: 'Ankle close to neutral on landing' },
+  { min: 108, max: 120, score: 3, note: 'Toes dropping before landing' },
+  { min: 120, max: Infinity, score: 2, note: 'Landing toes-down -- no stiff platform' },
+];
+
+// How much the hips drop through the stride, as a fraction of leg length.
+const SINK_BANDS = [
+  { min: -Infinity, max: 0.08, score: 5, note: 'Hips stay tall' },
+  { min: 0.08, max: 0.13, score: 4, note: 'Slight hip drop' },
+  { min: 0.13, max: 0.2, score: 3, note: 'Hips sinking through contact' },
+  { min: 0.2, max: Infinity, score: 2, note: 'Hips collapsing -- sitting in the stride' },
+];
+
+// Front swing vs back swing. 1.0 is balanced; below ~0.7 the leg is being
+// left behind the body instead of cycling through.
+const BALANCE_BANDS = [
+  { min: 0.85, max: Infinity, score: 5, note: 'Front and back swing balanced' },
+  { min: 0.7, max: 0.85, score: 4, note: 'Slightly more backside than frontside' },
+  { min: 0.55, max: 0.7, score: 3, note: 'Too much backside -- heel kicking out behind' },
+  { min: -Infinity, max: 0.55, score: 2, note: 'Leg left behind -- long backside recovery' },
+];
+
+// A foot is on the ground when its ankle is within this much of its lowest
+// point in the clip, measured in leg lengths.
+const CONTACT_TOLERANCE = 0.06;
+
+function footContacts(metrics, sideIndex) {
+  const rows = metrics
+    .map((m, i) => ({ i, leg: m.legs && m.legs[sideIndex] }))
+    .filter((r) => r.leg);
+  if (rows.length < 4) return [];
+  const lowest = Math.max(...rows.map((r) => r.leg.ank[1]));
+  const legLen = median(rows.map((r) => r.leg.legLen)) || 1;
+  const down = rows.filter((r) => (lowest - r.leg.ank[1]) / legLen < CONTACT_TOLERANCE);
+
+  // Collapse runs of adjacent frames into one contact, keeping the lowest.
+  const contacts = [];
+  let run = [];
+  down.forEach((r, k) => {
+    if (k && r.i - down[k - 1].i > 2) { contacts.push(run); run = []; }
+    run.push(r);
+  });
+  if (run.length) contacts.push(run);
+  return contacts.map((g) => g.reduce((a, b) => (b.leg.ank[1] > a.leg.ank[1] ? b : a)));
+}
+
+// Two strides is both feet twice over -- enough to see left/right and a
+// full cycle, without averaging over a whole run where the athlete is
+// still accelerating. Trims to the window around the earliest strides.
+function limitToStrides(metrics, strides = 3) {
+  const contacts = [...footContacts(metrics, 0), ...footContacts(metrics, 1)]
+    .map((c) => c.i)
+    .sort((a, b) => a - b);
+  if (contacts.length < 3) return metrics;
+  const wanted = Math.min(contacts.length - 1, strides * 2);
+  const from = contacts[0];
+  const to = contacts[wanted];
+  return metrics.slice(Math.max(0, from - 1), Math.min(metrics.length, to + 2));
+}
+
+function scoreGroundContact(metrics) {
+  const facing = median(
+    metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
+  ) || 1;
+
+  const strikes = [];
+  const dorsi = [];
+  [0, 1].forEach((side) => {
+    footContacts(metrics, side).forEach((c) => {
+      const leg = c.leg;
+      const hipX = metrics[c.i].midHip ? metrics[c.i].midHip[0] : leg.hip[0];
+      strikes.push(((leg.ank[0] - hipX) * facing) / leg.legLen);
+      if (leg.footVsShin != null) dorsi.push(leg.footVsShin);
+    });
+  });
+
+  const out = [];
+  if (strikes.length) {
+    const strike = median(strikes);
+    const band = bandFor(strike, STRIKE_BANDS);
+    out.push({ name: 'Foot Strike vs Hips', score: band.score,
+               note: `${band.note} (${(strike * 100).toFixed(0)}% of leg length ahead)`, value: strike });
+  }
+  if (dorsi.length) {
+    const d = median(dorsi);
+    const band = bandFor(d, DORSI_BANDS);
+    out.push({ name: 'Ankle at Touchdown', score: band.score, note: `${band.note} (${d.toFixed(0)}°)`, value: d });
+  }
+  return out;
+}
+
+function scoreHipSink(metrics) {
+  const rows = metrics.filter((m) => m.midHip && m.legs && m.legs.length);
+  if (rows.length < 5) return null;
+  const legLen = median(rows.map((m) => median(m.legs.map((l) => l.legLen)))) || 1;
+  const ys = rows.map((m) => m.midHip[1]);
+  const sink = (Math.max(...ys) - Math.min(...ys)) / legLen;
+  const band = bandFor(sink, SINK_BANDS);
+  return { name: 'Hip Height', score: band.score,
+           note: `${band.note} (${(sink * 100).toFixed(0)}% of leg length)`, value: sink };
+}
+
+// High knees on their own mean nothing -- an athlete can spin their legs
+// quickly and go nowhere. This pairs the front swing against the back
+// swing so turnover without range gets caught.
+function scoreSwingBalance(metrics) {
+  const facing = median(
+    metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
+  ) || 1;
+  const swings = metrics.flatMap((m) => (m.legs || []).map((l) => l.thighSwing * facing));
+  if (swings.length < 6) return null;
+  const front = Math.max(...swings);
+  const back = Math.abs(Math.min(...swings));
+  if (front <= 0 || back <= 0) return null;
+  const ratio = Math.min(front, back) / Math.max(front, back);
+  const band = bandFor(ratio, BALANCE_BANDS);
+  return { name: 'Front/Back Swing Balance', score: band.score,
+           note: `${band.note} (front ${front.toFixed(0)}°, back ${back.toFixed(0)}°)`,
+           ratio, front, back };
+}
+
 // A frame reporting one of these is a tracking failure, not a position any
 // athlete reaches. Clip 2's highest-lift frame returned a 164 degree
 // scissor, which would otherwise have set the whole grade.
@@ -671,11 +810,20 @@ function toPoints(landmarks, width, height) {
 // How high one thigh is carried, and whether that leg is folded into the
 // figure-4. Both are scaled by thigh length so they don't change with how
 // big the athlete is in frame.
-function legMetrics(pt, conf, midSho, hipI, kneeI, ankI) {
+function legMetrics(pt, conf, midSho, hipI, kneeI, ankI, heelI, toeI) {
   if (![hipI, kneeI, ankI].every((i) => conf(i) >= MIN_LANDMARK_CONFIDENCE)) return null;
   const hip = pt(hipI), knee = pt(kneeI), ank = pt(ankI);
   const thighLen = Math.hypot(knee[0] - hip[0], knee[1] - hip[1]) || 1;
+  const legLen = thighLen + (Math.hypot(ank[0] - knee[0], ank[1] - knee[1]) || 1);
+  const footOk = conf(heelI) >= MIN_LANDMARK_CONFIDENCE && conf(toeI) >= MIN_LANDMARK_CONFIDENCE;
+  const heel = pt(heelI), toe = pt(toeI);
   return {
+    hip, knee, ank, legLen,
+    // Ankle vertex, rays to knee and toe. Standing neutral is about 90;
+    // below that the toes are pulled up (dorsiflexed), above is pointed.
+    footVsShin: footOk ? angleAt(knee, ank, toe) : null,
+    // Which way the athlete faces, from the foot itself.
+    facing: footOk ? Math.sign(toe[0] - heel[0]) : 0,
     // y grows downward, so knee above hip gives a positive rise. Used only
     // to find which frame is the peak, never scored on its own.
     rise: (hip[1] - knee[1]) / thighLen,
@@ -683,6 +831,9 @@ function legMetrics(pt, conf, midSho, hipI, kneeI, ankI) {
     hipAngle: angleAt(midSho, hip, knee),
     // Thigh against shin. Its minimum across the swing is the heel fold.
     knee: angleAt(hip, knee, ank),
+    // Signed thigh angle off vertical: caller flips it so + is always in
+    // front of the hip and - is behind. Drives the front/back balance check.
+    thighSwing: (Math.atan2(knee[0] - hip[0], hip[1] - knee[1]) * 180) / Math.PI,
   };
 }
 
@@ -699,8 +850,8 @@ function frameMetrics(landmarks, width, height) {
   // The lead leg is whichever thigh is carried highest -- that's the one the
   // hip angle and scissor are read against.
   const legs = [
-    legMetrics(pt, conf, midSho, POSE_LM.lHip, POSE_LM.lKnee, POSE_LM.lAnk),
-    legMetrics(pt, conf, midSho, POSE_LM.rHip, POSE_LM.rKnee, POSE_LM.rAnk),
+    legMetrics(pt, conf, midSho, POSE_LM.lHip, POSE_LM.lKnee, POSE_LM.lAnk, POSE_LM.lHeel, POSE_LM.lToe),
+    legMetrics(pt, conf, midSho, POSE_LM.rHip, POSE_LM.rKnee, POSE_LM.rAnk, POSE_LM.rHeel, POSE_LM.rToe),
   ].filter(Boolean);
   const lead = legs.length ? legs.reduce((a, b) => (b.rise > a.rise ? b : a)) : null;
 
@@ -712,6 +863,8 @@ function frameMetrics(landmarks, width, height) {
     leadKnee: lead ? lead.knee : null,
     // The tightest fold available this frame, across both legs.
     kneeFold: legs.length ? Math.min(...legs.map((l) => l.knee)) : null,
+    legs,
+    midHip,
   };
 }
 
@@ -832,7 +985,10 @@ function scoreConsistency(metrics) {
 
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
-function buildLocalAnalysis(metrics, clipType, surface) {
+function buildLocalAnalysis(allMetrics, clipType, surface) {
+  // Grade a few strides, not the whole run -- over a long clip the athlete
+  // is still changing gear, and averaging across that hides both faults.
+  const metrics = limitToStrides(allMetrics);
   const usable = metrics.filter((m) => m.torsoFromVertical != null || m.scissor != null);
   if (usable.length < 3) {
     return {
@@ -865,10 +1021,34 @@ function buildLocalAnalysis(metrics, clipType, surface) {
       pinpoints.push({ name: fold.name, score: fold.score, note: fold.note });
       if (fold.tightest > 75) flags.push('Heel is not recovering up under the hip');
     }
+    const balance = scoreSwingBalance(metrics);
+    if (balance) {
+      pinpoints.push({ name: balance.name, score: balance.score, note: balance.note });
+      if (balance.back > balance.front * 1.4) {
+        flags.push('Kicking too far back -- backside recovery is longer than the front side');
+      }
+    }
     if (clipType === 'Speed Endurance') {
       const consistency = scoreConsistency(metrics);
       if (consistency) pinpoints.push(consistency);
     }
+  }
+
+  scoreGroundContact(metrics).forEach((p) => {
+    pinpoints.push({ name: p.name, score: p.score, note: p.note });
+    if (p.name === 'Foot Strike vs Hips' && p.value > 0.32) {
+      flags.push(clipType === 'Acceleration'
+        ? 'Overstriding out of the start -- reaching instead of pushing the ground back'
+        : 'Overstriding -- the foot is landing well in front of the hips');
+    }
+    if (p.name === 'Ankle at Touchdown' && p.value > 120) {
+      flags.push('Landing with the toes down -- the foot has no stiff platform to push from');
+    }
+  });
+  const sink = scoreHipSink(metrics);
+  if (sink) {
+    pinpoints.push({ name: sink.name, score: sink.score, note: sink.note });
+    if (sink.value > 0.2) flags.push('Hips sinking through contact');
   }
 
   const posture = metrics.map((m) => m.torsoFromVertical).filter((v) => v != null);
@@ -1249,6 +1429,7 @@ function renderAnalysisHtml(analysis) {
   const filmingNote = analysis.filming_note
     ? `<div class="hint">🎥 ${escapeHtml(analysis.filming_note)}</div>`
     : '';
+  const surfaceNote = `<div class="surface-note">⚠️ Ground and footwear change these numbers. Spikes and a stiff track let the foot stay rigid and bounce; trainers and grass absorb force, so the foot collapses more, contact is longer and angles read flatter. Compare like with like.</div>`;
   const aiSummary = analysis.ai_summary
     ? `<div class="hint ai-note">🤖 ${escapeHtml(analysis.ai_summary)}</div>`
     : '';
@@ -1258,6 +1439,7 @@ function renderAnalysisHtml(analysis) {
     ${aiSummary}
     ${flags}
     ${filmingNote}
+    ${rows ? surfaceNote : ''}
   `;
 }
 

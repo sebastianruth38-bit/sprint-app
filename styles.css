@@ -842,3 +842,17 @@ blockquote {
   .tab-btn-center { margin-top: -1.1rem; }
   .tab-center-icon { width: 46px; height: 46px; font-size: 1.4rem; border-width: 3px; }
 }
+
+/* Surface/footwear caveat on every analysis -- stiffness of the ground
+   changes the numbers, so scores are only comparable like for like. */
+.surface-note {
+  display: inline-block;
+  background: rgba(245, 217, 10, 0.1);
+  border: 1px solid rgba(245, 217, 10, 0.35);
+  color: #f5d90a;
+  border-radius: var(--r-lg);
+  padding: 0.6rem 0.9rem;
+  margin-top: 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
