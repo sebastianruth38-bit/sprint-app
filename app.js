@@ -770,22 +770,6 @@ async function getPrimaryEvents() {
   return (data && data.primary_events) || [];
 }
 
-document.getElementById('suggestWorkout').addEventListener('click', async () => {
-  const type = document.getElementById('workoutType').value;
-  if (type === 'Race Modeling') {
-    document.getElementById('workoutDetails').value = pickRaceModelingText(await getPrimaryEvents());
-    return;
-  }
-  if (!WORKOUT_TEMPLATES[type]) {
-    alert('No templates yet for this workout type -- write it in directly below.');
-    return;
-  }
-  const equipment = await getEquipment();
-  const { season, nextMeetDate } = await getSeasonAndMeet();
-  const phase = computeTrainingPhase(season, nextMeetDate);
-  document.getElementById('workoutDetails').value = pickTemplateText(type, equipment, phase);
-});
-
 // ---------- Full week plan: fixed weekday mapping per phase ----------
 // Off-season and pre-season are identical. Competition week assumes the
 // meet falls on Saturday. "lift"/"noLift" drive gym pairing below.
@@ -854,13 +838,15 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
     ];
   }
 
-  // Off-season and pre-season: identical.
+  // Off-season and pre-season share the same sprint/rest layout, but
+  // pre-season (within ~2 months of competition) drops the Friday lift
+  // so the athlete isn't loading heavy this close to the season starting.
   return [
     { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase) },
     { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo(), liftDetails: buildLiftDetails('tempo1', phase) },
     { day: 'Wednesday', type: 'Rest Day', details: '' },
     { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase) },
-    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: buildLiftDetails('tempo2', phase) },
+    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: phase.seasonPhase === 'pre' ? null : buildLiftDetails('tempo2', phase) },
     { day: 'Saturday', type: 'Rest Day', details: '' },
     { day: 'Sunday', type: 'Rest Day', details: '' },
   ];
@@ -875,7 +861,7 @@ document.getElementById('generateWeekPlan').addEventListener('click', async () =
     supabaseClient.from('workouts').select('day').eq('user_id', currentUser.id),
   ]);
 
-  if (existing && existing.length && !confirm('This overwrites your existing sessions for this week. Continue?')) {
+  if (existing && existing.length && !confirm('This will DELETE everything currently shown for this week (all sessions and lifts) and replace it with a new plan. This cannot be undone. Continue?')) {
     return;
   }
 
