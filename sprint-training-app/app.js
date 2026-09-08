@@ -683,6 +683,45 @@ function buildTracks(framePoses) {
   return tracks;
 }
 
+// Splits a track wherever it stops describing the same body, and keeps the
+// longest piece.
+//
+// Filtering frame by frame against their neighbours does not work, because
+// once the athlete runs out of shot the tracker settles on the bystanders
+// behind him and stays there -- a contiguous run of wrong frames is
+// perfectly self-consistent. What gives it away is the seam: apparent body
+// size steps, and the torso angle jumps further in one sample than a running
+// body can rotate. On a real upload the seam was a torso going from 6 to 44
+// degrees between consecutive samples, with the spectators at the rail
+// graded as the athlete for the last eight frames.
+const BODY_SIZE_STEP = 1.6;
+const TORSO_STEP_DEG = 30;
+
+function longestConsistentRun(metrics) {
+  if (metrics.length < 6) return metrics;
+  const sizeOf = (m) => (m && m.legs && m.legs.length ? median(m.legs.map((l) => l.legLen)) : null);
+
+  const cuts = [0];
+  for (let i = 1; i < metrics.length; i++) {
+    const prevSize = sizeOf(metrics[i - 1]);
+    const size = sizeOf(metrics[i]);
+    const prevTorso = metrics[i - 1].torsoFromVertical;
+    const torso = metrics[i].torsoFromVertical;
+    const sizeJump = prevSize && size && Math.max(size / prevSize, prevSize / size) > BODY_SIZE_STEP;
+    const torsoJump = prevTorso != null && torso != null && Math.abs(torso - prevTorso) > TORSO_STEP_DEG;
+    if (sizeJump || torsoJump) cuts.push(i);
+  }
+  if (cuts.length === 1) return metrics;
+  cuts.push(metrics.length);
+
+  let best = [cuts[0], cuts[1]];
+  for (let i = 1; i < cuts.length - 1; i++) {
+    if (cuts[i + 1] - cuts[i] > best[1] - best[0]) best = [cuts[i], cuts[i + 1]];
+  }
+  const run = metrics.slice(best[0], best[1]);
+  return run.length >= 5 ? run : metrics;
+}
+
 // Returns the frames belonging to the one athlete worth grading, or a
 // reason to refuse. Refusing beats grading merged skeletons: a race clip
 // produces a confident score built from one runner's torso and another's
@@ -721,7 +760,10 @@ function selectSubject(framePoses, secondsPerFrame) {
     };
   }
 
-  const subject = running.reduce((a, b) => (b.metrics.length > a.metrics.length ? b : a));
+  let subject = running.reduce((a, b) => (b.metrics.length > a.metrics.length ? b : a));
+
+  // Trim the track back to the stretch that is actually one body.
+  subject = { metrics: longestConsistentRun(subject.metrics) };
 
   // Framing is checked last, on the athlete we actually settled on, and
   // against the picture pose was given -- which by this point is usually a
@@ -800,12 +842,17 @@ const CONTACT_TOLERANCE = 0.06;
 
 function footContacts(metrics, sideIndex) {
   const rows = metrics
-    .map((m, i) => ({ i, leg: m.legs && m.legs[sideIndex] }))
-    .filter((r) => r.leg);
+    .map((m, i) => ({ i, leg: m.legs && m.legs[sideIndex], frameHipY: m.midHip ? m.midHip[1] : null }))
+    .filter((r) => r.leg && r.frameHipY != null);
   if (rows.length < 4) return [];
-  const lowest = Math.max(...rows.map((r) => r.leg.ank[1]));
-  const legLen = median(rows.map((r) => r.leg.legLen)) || 1;
-  const down = rows.filter((r) => (lowest - r.leg.ank[1]) / legLen < CONTACT_TOLERANCE);
+  // How far the foot is below the athlete's own hip, in his own leg lengths.
+  // Comparing raw image Y across frames instead means a camera that pans or
+  // tilts decides where the ground is: on a hand-held upload it put every
+  // "contact" in the first second and found none afterwards, which then took
+  // hip height and ground contact down with it.
+  const depth = (r) => (r.leg.ank[1] - r.frameHipY) / (r.leg.legLen || 1);
+  const deepest = Math.max(...rows.map(depth));
+  const down = rows.filter((r) => deepest - depth(r) < CONTACT_TOLERANCE);
 
   // Collapse runs of adjacent frames into one contact, keeping the lowest.
   const contacts = [];
@@ -815,7 +862,7 @@ function footContacts(metrics, sideIndex) {
     run.push(r);
   });
   if (run.length) contacts.push(run);
-  return contacts.map((g) => g.reduce((a, b) => (b.leg.ank[1] > a.leg.ank[1] ? b : a)));
+  return contacts.map((g) => g.reduce((a, b) => (depth(b) > depth(a) ? b : a)));
 }
 
 // Two strides is both feet twice over -- enough to see left/right and a
@@ -863,12 +910,34 @@ function scoreGroundContact(metrics) {
   return out;
 }
 
+// How far the hips drop through the stride.
+//
+// Measured as the hip's height above the athlete's own lowest foot, in his
+// own leg lengths -- both points read from the same frame, so it survives a
+// camera that pans, tilts, or lets him change distance. The old version
+// compared raw image Y across frames, which on a hand-held clip measures the
+// camera operator rather than the athlete: a real upload came back with the
+// hips "sinking" 227% of a leg length, which would put them underground.
 function scoreHipSink(metrics) {
   const rows = metrics.filter((m) => m.midHip && m.legs && m.legs.length);
   if (rows.length < 5) return null;
   const legLen = median(rows.map((m) => median(m.legs.map((l) => l.legLen)))) || 1;
-  const ys = rows.map((m) => m.midHip[1]);
-  const sink = (Math.max(...ys) - Math.min(...ys)) / legLen;
+  // Only at touchdown. Off the ground the lowest foot is a recovering heel
+  // somewhere behind him, not the track, so hip-above-foot swings wildly
+  // through the flight phase and reads as a collapse that never happened.
+  const contactRows = [...footContacts(metrics, 0), ...footContacts(metrics, 1)]
+    .map((c) => metrics[c.i])
+    .filter((m) => m && m.midHip && m.legs && m.legs.length);
+  if (contactRows.length < 3) return null;
+  const heights = contactRows.map((m) => {
+    const lowestFoot = Math.max(...m.legs.map((l) => l.ank[1]));
+    return (lowestFoot - m.midHip[1]) / (median(m.legs.map((l) => l.legLen)) || legLen);
+  });
+  // Percentiles, not min/max: one mistracked frame should not define the
+  // athlete's whole range of hip height.
+  const sorted = heights.slice().sort((a, b) => a - b);
+  const at = (p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))];
+  const sink = at(0.95) - at(0.05);
   const band = bandFor(sink, SINK_BANDS);
   return { name: 'Hip Height', score: band.score,
            note: `${band.note} (${(sink * 100).toFixed(0)}% of leg length)`, value: sink };
@@ -958,9 +1027,14 @@ function legMetrics(pt, conf, midSho, hipI, kneeI, ankI, heelI, toeI) {
     hipAngle: angleAt(midSho, hip, knee),
     // Thigh against shin. Its minimum across the swing is the heel fold.
     knee: angleAt(hip, knee, ank),
-    // Signed thigh angle off vertical: caller flips it so + is always in
+    // Signed thigh angle off straight-down: caller flips it so + is always in
     // front of the hip and - is behind. Drives the front/back balance check.
-    thighSwing: (Math.atan2(knee[0] - hip[0], hip[1] - knee[1]) * 180) / Math.PI,
+    //
+    // Measured from DOWN, not up. y grows downward, so a leg hanging under
+    // the hip has knee[1] > hip[1]; the old form put that near +/-180 and,
+    // since a runner's knee is below his hip nearly all the time, the whole
+    // metric sat at 180 and handed out a free 5/5 for "balanced".
+    thighSwing: (Math.atan2(knee[0] - hip[0], knee[1] - hip[1]) * 180) / Math.PI,
   };
 }
 
