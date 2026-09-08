@@ -115,6 +115,47 @@ running three tenths of a second later.
 coarse track. On the block start that moved the window from 1.46–2.52s to
 0.63–1.69s, and the track in it from 10 frames at 0.75/s to 25 at 1.24/s.
 
+## Support stiffness (PROVISIONAL — two clips)
+
+The athlete's suggestion, and a better signal than the ankle angle for the
+same property: if the foot collapses the hip comes down with it, and the hip
+and knee are landmarks the model tracks well where the toe is neither. It is
+also in leg lengths, so filming distance does not move it — which the ankle
+angle cannot claim.
+
+Hip height above the planted foot, from touchdown to the lowest point while
+that foot is still down:
+
+| Clip | Drop | Contacts |
+|---|---|---|
+| Fast run (top speed) | 0.00 | 3 |
+| Drive phase (accelerating) | 0.09 | 3 |
+
+Those sit the right way round — contact at top speed is short and stiff, the
+drive phase longer with more give — but **two clips is not a calibration**.
+The bands are deliberately coarse until there are more.
+
+Two implementation notes that cost real accuracy before they were found:
+
+- The end of a contact must be found from the **foot**, not from hip height.
+  Hip height falls both when the support collapses and when the foot lifts,
+  so stopping on it truncates the measurement exactly when the collapse is
+  worst — a synthetic hip dropping 0.25 of a leg length came back as 0.125.
+- Contacts must agree before it is reported, same as the ankle. Two clips
+  disagreeing by more than `SUPPORT_AGREEMENT_MAX` is noise, not a soft foot.
+
+## The toe-based ankle angle (demoted)
+
+Not shown when support stiffness is available. The athlete reported a stiff
+ankle on a clip that scored it 2/5 "landing toes-down". Across six
+consecutive frames a thirtieth of a second apart it read 115, 126, 139, 129,
+122 and 94 degrees, and the three touchdowns it settled on read 107, 145 and
+137 — a 38 degree spread against bands 13 degrees wide.
+
+It still fires when nothing better is available and the contacts agree, but
+two numbers for one property, one of them known to be shaky, is worse than
+one.
+
 ## Sampling structure
 
 Two passes, not one:

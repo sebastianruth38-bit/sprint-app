@@ -688,6 +688,32 @@ const CONTACT_DEPTH_MIN = 0.8;
 // the contacts disagree by more than this the number is noise, and reporting
 // it told an athlete his stiff ankle was collapsing.
 const ANKLE_AGREEMENT_MAX = 25;
+
+// How far the hips settle while the foot is on the ground, in leg lengths.
+//
+// The athlete's own suggestion, and a better signal than the ankle angle for
+// the same thing: if the foot collapses the hip comes down with it, and the
+// hip and knee are large stable landmarks where the toe is neither. It is
+// also scale-free, so filming from further away does not move it -- which
+// the ankle angle cannot claim.
+//
+// PROVISIONAL. Anchored on two clips only: a top-speed run settled 0.00 of a
+// leg length across its contacts, an acceleration drive phase 0.09. Those sit
+// the right way round -- contact at top speed is short and stiff, the drive
+// phase is longer with more give -- but two clips is not a calibration, and
+// the bands are deliberately coarse until there are more.
+const SUPPORT_BANDS = [
+  { min: -Infinity, max: 0.06, score: 5, note: 'Hips stay up through contact -- stiff support' },
+  { min: 0.06, max: 0.12, score: 4, note: 'Hips settle slightly through contact' },
+  { min: 0.12, max: 0.20, score: 3, note: 'Noticeable give through contact' },
+  { min: 0.20, max: Infinity, score: 2, note: 'Support collapsing -- the hip drops onto the foot' },
+];
+// Contacts must agree before this is worth reporting, same as the ankle.
+const SUPPORT_AGREEMENT_MAX = 0.09;
+// A contact seen for fewer frames than this never showed the hip settle.
+const SUPPORT_MIN_FRAMES = 2;
+// How far the ankle may move and still count as planted, in leg lengths.
+const FOOT_PLANTED_TOLERANCE = 0.12;
 const STRIKE_PLAUSIBLE_MIN = -0.2;
 const STRIKE_PLAUSIBLE_MAX = 0.8;
 // How fast a sprinter's shape changes, measured with the fixed-gap method
@@ -1448,6 +1474,57 @@ function scoreConsistency(metrics) {
 
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
+// How far the hips settle while the foot is planted, per contact.
+//
+// Followed only while that foot is STILL down: running past toe-off measures
+// the leg swinging through rather than the hip settling, which produced drops
+// of half a leg length on footage where the real figure was near zero.
+function supportDrops(metrics) {
+  const drops = [];
+  [0, 1].forEach((side) => {
+    footContacts(metrics, side).forEach((c) => {
+      const row = metrics[c.i];
+      if (!row || !row.midHip) return;
+      const height = (m, leg) => (leg.ank[1] - m.midHip[1]) / (leg.legLen || 1);
+      const at = height(row, c.leg);
+      if (at < CONTACT_DEPTH_MIN) return;
+      // Follow the FOOT, not the hip height, to know when the contact ends.
+      // Hip height falls both when the support collapses and when the foot
+      // lifts off, so stopping on it cuts the measurement off exactly when
+      // the collapse is worst -- a hip dropping a quarter of a leg length
+      // came back as an eighth. A planted ankle stays put; at toe-off it
+      // rises. Over the three or four frames of a contact the camera cannot
+      // move far enough to confuse the two.
+      const plantedY = c.leg.ank[1];
+      let lowest = at;
+      let held = 0;
+      for (let j = c.i; j < Math.min(metrics.length, c.i + 5); j++) {
+        const leg = metrics[j].legs && metrics[j].legs[side];
+        if (!leg || !metrics[j].midHip) break;
+        if (Math.abs(leg.ank[1] - plantedY) / (leg.legLen || 1) > FOOT_PLANTED_TOLERANCE) break;
+        lowest = Math.min(lowest, height(metrics[j], leg));
+        held++;
+      }
+      if (held >= SUPPORT_MIN_FRAMES) drops.push(at - lowest);
+    });
+  });
+  return drops;
+}
+
+function scoreSupportStiffness(metrics) {
+  const drops = supportDrops(metrics);
+  if (drops.length < MIN_CONTACTS) return null;
+  if (Math.max(...drops) - Math.min(...drops) > SUPPORT_AGREEMENT_MAX) return null;
+  const drop = median(drops);
+  const band = bandFor(drop, SUPPORT_BANDS);
+  return {
+    name: 'Support Stiffness',
+    score: band.score,
+    note: `${band.note} (hips drop ${(drop * 100).toFixed(0)}% of a leg length)`,
+    value: drop,
+  };
+}
+
 // How many strides the graded frames actually cover: each foot touching down
 // once is one stride.
 function stridesMeasured(metrics) {
@@ -1507,7 +1584,16 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     }
   }
 
+  // Support stiffness and the ankle angle are two readings of the same
+  // thing -- whether the foot holds its shape under load -- and the hip-based
+  // one is measured from landmarks the model actually tracks well. When it is
+  // available the toe-based angle is not also shown: it disagreed with the
+  // athlete on his own footage, and two numbers for one property, one of them
+  // known to be shaky, is worse than one.
+  const support = scoreSupportStiffness(metrics);
+  if (support) pinpoints.push(support);
   scoreGroundContact(metrics).forEach((p) => {
+    if (support && p.name === 'Ankle at Touchdown') return;
     pinpoints.push({ name: p.name, score: p.score, note: p.note });
     if (p.name === 'Foot Strike vs Hips' && p.value > 0.32) {
       flags.push(clipType === 'Acceleration'
