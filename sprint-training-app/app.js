@@ -1039,6 +1039,14 @@ const SINK_BANDS = [
 
 // Front swing vs back swing. 1.0 is balanced; below ~0.7 the leg is being
 // left behind the body instead of cycling through.
+// UNCALIBRATED -- not currently scored. See scoreSwingBalance.
+//
+// These bands were written when thighSwing was measured from the wrong pole
+// and every value sat near 180 degrees. The measurement was fixed; these were
+// not, and asking for near-parity turns out to ask the thigh to travel as far
+// behind the body as it comes in front, which no sprinter does. Measured on
+// four clips, the thigh reached 54-88 degrees in front and 23-29 behind --
+// ratios of 0.27 to 0.43, all of which these bands call the worst score.
 const BALANCE_BANDS = [
   { min: 0.85, max: Infinity, score: 5, note: 'Front and back swing balanced' },
   { min: 0.7, max: 0.85, score: 4, note: 'Slightly more backside than frontside' },
@@ -1176,9 +1184,18 @@ function scoreSwingBalance(metrics) {
   const back = Math.abs(Math.min(...swings));
   if (front <= 0 || back <= 0) return null;
   const ratio = Math.min(front, back) / Math.max(front, back);
-  const band = bandFor(ratio, BALANCE_BANDS);
-  return { name: 'Front/Back Swing Balance', score: band.score,
-           note: `${band.note} (front ${front.toFixed(0)}°, back ${back.toFixed(0)}°)`,
+  // Measured but not scored. Every athlete measured so far -- four clips,
+  // three of them different phases of the same runner -- lands between 0.27
+  // and 0.43, which these bands all call "leg left behind, 2/5". A number
+  // that comes out the same for everyone is not telling the athlete
+  // anything, and telling all of them their worst fault is one they may not
+  // have is worse than staying quiet.
+  //
+  // What is missing is a reference for what front-to-back balance should be
+  // in these terms. Until there is one this returns the measurement without
+  // a score, so it can be gathered without being acted on.
+  return { name: 'Front/Back Swing Balance', score: null, measured: true,
+           note: `front ${front.toFixed(0)}°, back ${back.toFixed(0)}°`,
            ratio, front, back };
 }
 
@@ -1572,8 +1589,13 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
       if (fold.tightest > 75) flags.push('Heel is not recovering up under the hip');
     }
     const balance = scoreSwingBalance(metrics);
-    if (balance) {
+    if (balance && balance.score != null) {
       pinpoints.push({ name: balance.name, score: balance.score, note: balance.note });
+    }
+    if (balance) {
+      // This comparison stands on its own: it needs no band, only the two
+      // numbers, and a thigh travelling further behind than in front is a
+      // fault whatever the right ratio turns out to be.
       if (balance.back > balance.front * 1.4) {
         flags.push('Kicking too far back -- backside recovery is longer than the front side');
       }

@@ -156,6 +156,33 @@ It still fires when nothing better is available and the contacts agree, but
 two numbers for one property, one of them known to be shaky, is worse than
 one.
 
+## Front/back swing balance (UNCALIBRATED — measured, not scored)
+
+Every athlete measured lands in the same place, and the bands call all of
+them the worst score:
+
+| Clip | Front | Back | Ratio |
+|---|---|---|---|
+| Wide shot on grass | 88° | 23° | 0.26 |
+| Fast run | 85° | 29° | 0.34 |
+| Drive phase | 54° | 23° | 0.43 |
+| Block start | 75° | 27° | 0.36 |
+
+The bands were written when `thighSwing` was measured from the wrong pole and
+every value sat near 180°. The measurement was fixed; the bands were not.
+Asking for a ratio of 0.85 asks the thigh to travel as far behind the body as
+it comes in front, which no sprinter does — the thigh extends perhaps 20-30°
+past vertical at toe-off while reaching 85-90° in front at peak lift.
+
+Now returned without a score, so the numbers keep accumulating without being
+acted on. What is missing is a reference for what the ratio *should* be. The
+one comparison that survives is band-free and still fires: a thigh travelling
+further behind than in front is a fault whatever the right ratio is.
+
+**Lesson worth keeping: fixing a measurement means recalibrating everything
+that reads it.** This is the second time a repaired measurement left stale
+bands behind it.
+
 ## Sampling structure
 
 Two passes, not one:
