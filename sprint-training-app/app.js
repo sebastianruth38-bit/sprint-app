@@ -1604,6 +1604,9 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
 
         found.forEach((p) => {
           p.metrics.bodyPx = p.metrics.bodyFrac ? p.metrics.bodyFrac * p.sourcePxHeight : null;
+          // Carried so the dense pass can find WHEN the athlete was actually
+          // on screen, rather than assuming he is in the middle of the clip.
+          p.metrics.t = t;
           poses.push({ sig: p.sig, metrics: p.metrics });
         });
       }
@@ -1655,16 +1658,20 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     let denseFrames = 0;
     if (landmarker && !subject.rejection && subject.metrics.length >= 3) {
       try {
-        const times = candidates.slice(shotStart, shotEnd).map((c) => c.t);
-        // Centre the window on the middle of the stretch that tracked
-        // cleanly, which is where he is running rather than entering or
-        // leaving the shot.
-        const first = times[0];
-        const last = times[times.length - 1];
-        const mid = (first + last) / 2;
+        // Centre the window on when the ATHLETE was on screen, not on the
+        // middle of the clip. People film the whole run and the runner is
+        // often in shot for only a fraction of it -- on these clips he was
+        // gone by a third of the way in, so a window centred on the clip
+        // would have re-measured empty track at high resolution.
+        const seen = subject.metrics.map((m) => m.t).filter((t) => t != null).sort((a, b) => a - b);
+        if (seen.length < 3) throw new Error('no timestamps on the tracked frames');
+        const first = seen[0];
+        const last = seen[seen.length - 1];
+        const mid = seen[Math.floor(seen.length / 2)];
         const half = Math.min(DENSE_WINDOW_S, last - first) / 2;
-        const from = Math.max(first, mid - half);
-        const to = Math.min(last, mid + half);
+        // Keep the window inside the stretch he was actually visible for.
+        const from = Math.max(first, Math.min(mid - half, last - half * 2));
+        const to = Math.min(last, from + half * 2);
         const step = 1 / DENSE_RATE;
         const denseTimes = [];
         for (let t = from; t <= to + 1e-6 && denseTimes.length < DENSE_MAX_SAMPLES; t += step) {
