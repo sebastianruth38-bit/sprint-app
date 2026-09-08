@@ -183,6 +183,52 @@ further behind than in front is a fault whatever the right ratio is.
 that reads it.** This is the second time a repaired measurement left stale
 bands behind it.
 
+## Passing position — the elite reference (2 verified samples)
+
+Measured from a slow-motion top-speed clip of Bolt: single athlete, side-on,
+plain backdrop, body filling 40% of the player. Each leg followed straight
+through its own cycle, and the fold read at the instant its thigh crosses
+vertical — no leg-picking heuristic, which is what went wrong on the first
+two attempts.
+
+| Moment | Thigh | Fold | Foot height |
+|---|---|---|---|
+| 4.38s, right leg | +3° | **62°** | 0.31 leg-lengths below hip |
+| 7.28s, left leg | +0° | **81°** | 0.45 |
+| 1.02s, left leg | +17° | (75° interpolated, 160° in frame) | 0.38 |
+
+The first two are visually confirmed — heel clearly tucked under him, knee
+coming through. The third is discarded: the fold jumped from ~75 to 160
+between consecutive frames, which is a tracking discontinuity, and the frame
+itself reads +17° rather than vertical.
+
+**Bolt at passing: roughly 62-81°.** The athlete's own clips read **108-113°**
+at the same instant — a 30-45° gap, consistent across three of his clips.
+
+Two other events must be kept apart from this, and mixing them is what made
+the first pass read 62-160°:
+
+- The **stance** leg also crosses vertical each stride, as the body rotates
+  over a planted foot, and it is nearly straight there: measured 152° and
+  160°, foot 0.91-0.98 leg-lengths below the hip. Filter on foot height.
+- Near the end of a clip the crossings bunch up (three inside 0.16s) and the
+  folds drift high. Real passing moments are spread a stride apart.
+
+### Also from the same clip — peak knee lift
+
+Unambiguous, since it is an extremum rather than a crossing:
+
+| | Bolt |
+|---|---|
+| Thigh from vertical | +86° |
+| Hip-to-thigh | **95°** |
+| Scissor | **112°** |
+| Fold | 67° |
+
+Hip-to-thigh 95° is a third independent athlete landing on the ~90° standard,
+after 87° and 88.9° measured earlier. Scissor 112° sits inside the existing
+5/5 band of 105-125. Both existing calibrations hold.
+
 ## Sampling structure
 
 Two passes, not one:
