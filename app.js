@@ -649,18 +649,25 @@ function framingCheck(metricsList) {
 // fast, so anything above the ceiling means the tracker lost the plot.
 const MAX_PEOPLE_IN_FRAME = 3;
 const MIN_TRACK_FRAMES = 8;
-// Enough frames to follow someone is not enough frames to grade him. After
-// the track is trimmed back to the stretch that is genuinely one body, what
-// survives can be a fraction of it -- on a clip where the athlete runs from
-// near the camera to out of shot his apparent size changes about fourfold,
-// and only a short stretch is consistent.
+// Whatever the athlete filmed is what gets graded -- a short clip is not a
+// reason to refuse, only a reason to say less about it. Each measure carries
+// its own evidence requirement instead, so a clip that only supports posture
+// reports posture and stays quiet about ground contact.
 //
-// At DENSE_RATE this is about two strides. Below it the numbers stop being
-// measurements: a run of 8 frames put the foot strike 48% of a leg length
-// BEHIND the hip, which cannot happen. A run of 13 on another clip gave
-// angles that held together, so the bar sits between them rather than at a
-// round number.
-const MIN_GRADED_FRAMES = 12;
+// Touchdown is the one that needed a real minimum. It was reporting from a
+// single contact, and one bad contact put the foot strike 48% of a leg
+// length BEHIND the hip -- impossible, and indistinguishable from a real
+// score on the page. Two contacts is one full stride, the least that can be
+// called a measurement rather than an instant.
+const MIN_CONTACTS = 2;
+// A touchdown can land a little behind the hip -- that is what good looks
+// like -- but not half a leg length behind it. Beyond this the "contact" is
+// not one: it is the lowest frame in a window where the foot never actually
+// planted, and because the good end of the strike band is open, such a value
+// scored 5/5. Garbage reading as perfect is worse than garbage reading as
+// bad, so a strike outside the plausible range is dropped, not scored.
+const STRIKE_PLAUSIBLE_MIN = -0.2;
+const STRIKE_PLAUSIBLE_MAX = 0.8;
 // How fast a sprinter's shape changes, measured with the fixed-gap method
 // above so the numbers do not move with the sampling rate. Real tracks
 // (tools/CALIBRATION.md):
@@ -914,12 +921,6 @@ function selectSubject(framePoses, secondsPerFrame) {
 
   // Trim the track back to the stretch that is actually one body.
   subject = { metrics: longestConsistentRun(subject.metrics) };
-  if (subject.metrics.length < MIN_GRADED_FRAMES) {
-    return {
-      metrics: [],
-      rejection: 'Only a moment of this clip could be measured — keep him in frame, side-on and at a steady distance, for three or four strides.',
-    };
-  }
 
   // Framing is checked last, on the athlete we actually settled on, and
   // against the picture pose was given -- which by this point is usually a
@@ -1052,13 +1053,15 @@ function scoreGroundContact(metrics) {
   });
 
   const out = [];
-  if (strikes.length) {
+  if (strikes.length >= MIN_CONTACTS) {
     const strike = median(strikes);
-    const band = bandFor(strike, STRIKE_BANDS);
-    out.push({ name: 'Foot Strike vs Hips', score: band.score,
-               note: `${band.note} (${(strike * 100).toFixed(0)}% of leg length ahead)`, value: strike });
+    if (strike >= STRIKE_PLAUSIBLE_MIN && strike <= STRIKE_PLAUSIBLE_MAX) {
+      const band = bandFor(strike, STRIKE_BANDS);
+      out.push({ name: 'Foot Strike vs Hips', score: band.score,
+                 note: `${band.note} (${(strike * 100).toFixed(0)}% of leg length ahead)`, value: strike });
+    }
   }
-  if (dorsi.length) {
+  if (dorsi.length >= MIN_CONTACTS) {
     const d = median(dorsi);
     const band = bandFor(d, DORSI_BANDS);
     out.push({ name: 'Ankle at Touchdown', score: band.score, note: `${band.note} (${d.toFixed(0)}°)`, value: d });
@@ -1373,6 +1376,13 @@ function scoreConsistency(metrics) {
 
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
+// How many strides the graded frames actually cover: each foot touching down
+// once is one stride.
+function stridesMeasured(metrics) {
+  const contacts = footContacts(metrics, 0).length + footContacts(metrics, 1).length;
+  return contacts / 2;
+}
+
 function buildLocalAnalysis(allMetrics, clipType, surface) {
   // Grade a few strides, not the whole run -- over a long clip the athlete
   // is still changing gear, and averaging across that hides both faults.
@@ -1458,10 +1468,19 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     : 'No scoreable positions found in this clip.';
 
   const readRate = usable.length / metrics.length;
+  const strides = stridesMeasured(metrics);
+  // Say what the score rests on. A grade off one stride is a real reading of
+  // one stride, not a weaker version of a grade off four, and the athlete
+  // should be able to tell the difference at a glance.
+  const basis = strides >= 1
+    ? `Measured over ${strides < 2 ? 'about 1' : Math.round(strides)} stride${strides < 2 ? '' : 's'}.`
+    : 'Measured over less than a full stride — treat this as a snapshot.';
   return {
     summary,
     pinpoints,
     flags,
+    strides,
+    basis,
     filming_note: readRate < 0.6
       ? 'Only part of the clip was readable -- film side-on with the full body in frame.'
       : null,
