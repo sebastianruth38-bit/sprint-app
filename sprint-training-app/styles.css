@@ -856,3 +856,11 @@ blockquote {
   font-size: 0.8rem;
   line-height: 1.45;
 }
+
+/* How many strides a score rests on -- shown under the summary, quieter than
+   the scores themselves but not hidden away at the bottom. */
+.basis-note {
+  margin: 0.15rem 0 0.5rem;
+  opacity: 0.75;
+  font-size: 0.82rem;
+}
