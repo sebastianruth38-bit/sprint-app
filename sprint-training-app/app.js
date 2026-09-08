@@ -560,9 +560,20 @@ const CROP_PADDING = 2.2;
 // Sampling. The scout pass only has to find the shot, the athlete and the
 // framing, so it stays thin. The angles are measured by the dense pass over
 // the strides that get graded -- about six samples per stride instead of two.
-// The coarse sweep only has to answer "where in this clip is he, and are
-// there any shot cuts". It does not have to track him, so it can be thin --
-// everything that needs continuity happens in the dense pass.
+// Playing the clip and taking frames as the decoder delivers them, rather
+// than seeking to each one. Measured: 95 seconds to analyse a 4-second clip,
+// of which 94.7 was seek-and-decode and 0.3 was pose -- about 1.6 seconds per
+// seek, because the decoder rebuilds a frame from scratch each time. Played
+// back it hands them over continuously for nothing.
+//
+// Faster than real time where the decoder keeps up; it drops frames rather
+// than lagging, and a dropped frame is just one we do not measure. The
+// capture rate is what a stride needs -- about six samples across one.
+const PLAYBACK_RATE = 2;
+const CAPTURE_RATE = 30;
+
+// The fallback path, for a browser without requestVideoFrameCallback. Slow,
+// because it seeks, so it stays thin.
 const SCOUT_RATE = 6;
 const SCOUT_MIN_SAMPLES = 12;
 const SCOUT_MAX_SAMPLES = 30;
@@ -1677,18 +1688,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       }
     };
 
-    // Scout pass: spread thinly over the whole clip, at a roughly fixed rate
-    // so a 2s clip and a 10s clip get the same sample spacing. This pass
-    // decides the things that need the whole clip in view -- which shot to
-    // grade, who the athlete is, and whether he is framed well enough -- and
-    // supplies the stills sent to the AI. It is NOT what the angles are
-    // measured from; see the dense pass below.
-    const candidateCount = landmarker
-      ? Math.max(SCOUT_MIN_SAMPLES, Math.min(SCOUT_MAX_SAMPLES, Math.round(duration * SCOUT_RATE)))
-      : Math.min(16, count * 2 + 2);
-    const secondsPerFrame = duration / Math.max(candidateCount - 1, 1);
     const candidates = [];
-    const framePoses = [];
     let prevGray = null;
     let cropped = 0;
     let duplicates = 0;
@@ -1701,12 +1701,46 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // Walks a list of timestamps, measuring each one. Used twice: once
     // spread over the whole clip, once packed into the few strides that get
     // graded.
-    const scan = async (times, label, collect) => {
-      const poseRows = [];
-      for (let i = 0; i < times.length; i++) {
-      onProgress(`${label} ${i + 1}/${times.length}…`);
-      const t = times[i];
-      await seekTo(t);
+    // Plays the clip once and processes frames as the decoder delivers them.
+    //
+    // Seeking is the entire cost of an analysis: measured at 95 seconds for a
+    // 4-second clip, of which 94.7 was seek-and-decode and 0.3 was pose. Each
+    // seek costs about 1.6 seconds because the decoder has to find and build
+    // a frame from scratch; played back, it hands them over continuously for
+    // nothing. The work per frame is identical -- only the way frames arrive
+    // changes.
+    //
+    // Needs requestVideoFrameCallback to know which frame it is looking at.
+    // Without it there is no way to timestamp a painted frame, so the seeking
+    // path stays as the fallback.
+    const canPlayThrough = typeof video.requestVideoFrameCallback === 'function';
+
+    const playThrough = (onFrame, targetRate, label) => new Promise((resolve) => {
+      const minGap = 1 / targetRate;
+      let last = -Infinity;
+      let stop = false;
+      const finish = () => { if (!stop) { stop = true; video.pause(); resolve(); } };
+      video.addEventListener('ended', finish, { once: true });
+      // Never let a stalled decoder hang the analysis.
+      const guard = setTimeout(finish, Math.max(8000, (duration / video.playbackRate) * 3000));
+      const onTick = (now, meta) => {
+        if (stop) return;
+        const t = meta && meta.mediaTime != null ? meta.mediaTime : video.currentTime;
+        if (t - last >= minGap) {
+          last = t;
+          onFrame(t);
+          onProgress(`${label} ${(t / duration * 100).toFixed(0)}%…`);
+        }
+        if (video.ended || t >= duration - 0.02) { clearTimeout(guard); finish(); return; }
+        video.requestVideoFrameCallback(onTick);
+      };
+      video.requestVideoFrameCallback(onTick);
+      video.play().catch(finish);
+    });
+
+    // The work done on one frame, once it is on screen. Identical whether the
+    // frame arrived by seeking to it or by the decoder playing it to us.
+    const processFrame = (t, collect) => {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       thumbCtx.drawImage(canvas, 0, 0, thumb.width, thumb.height);
@@ -1839,16 +1873,25 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
 
         found.forEach((p) => {
           p.metrics.bodyPx = p.metrics.bodyFrac ? p.metrics.bodyFrac * p.sourcePxHeight : null;
-          // Carried so the dense pass can find WHEN the athlete was actually
-          // on screen, rather than assuming he is in the middle of the clip.
+          // Carried so the measuring pass can find WHEN the athlete was
+          // actually on screen, rather than assuming he is mid-clip.
           p.metrics.t = t;
           poses.push({ sig: p.sig, metrics: p.metrics });
         });
       }
-      poseRows.push(poses);
       if (collect) {
         candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion, t });
       }
+      return poses;
+    };
+
+    const scan = async (times, label, collect) => {
+      const poseRows = [];
+      for (let i = 0; i < times.length; i++) {
+        onProgress(`${label} ${i + 1}/${times.length}…`);
+        const t = times[i];
+        await seekTo(t);
+        poseRows.push(processFrame(t, collect));
       }
       return poseRows;
     };
@@ -1856,11 +1899,47 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // Nudge timestamps off the very ends -- setting currentTime to the value
     // it already holds can silently no-op the seek.
     const clampT = (t) => Math.min(Math.max(t, 0.05), Math.max(duration - 0.05, 0));
-    const scoutTimes = [];
-    for (let i = 0; i < candidateCount; i++) {
-      scoutTimes.push(clampT((duration * i) / Math.max(candidateCount - 1, 1)));
+
+    // One play-through captures everything: locating the athlete, the shot
+    // cuts, the stills for the AI, and the measurements themselves. There is
+    // no second pass because there is nothing left to go back for -- which is
+    // the point, since going back is what used to cost ninety seconds.
+    let framePoses = [];
+    let playedThrough = false;
+    if (landmarker && canPlayThrough) {
+      try {
+        // Faster than real time where the decoder can keep up. It drops
+        // frames rather than falling behind, and dropped frames are simply
+        // ones we do not measure.
+        video.playbackRate = PLAYBACK_RATE;
+        video.currentTime = 0;
+        await waitForEvent(video, 'seeked', 2000);
+        await playThrough((t) => { framePoses.push(processFrame(t, true)); },
+                          CAPTURE_RATE, 'Watching the run');
+        playedThrough = framePoses.length >= MIN_TRACK_FRAMES;
+      } catch (playErr) {
+        console.warn('Playback capture failed, falling back to seeking:', playErr);
+      }
+      video.playbackRate = 1;
     }
-    framePoses.push(...(await scan(scoutTimes, 'Scanning clip', true)));
+
+    if (!playedThrough) {
+      // No requestVideoFrameCallback, or playback gave us too little. Seek
+      // frame by frame instead: slow, but it works everywhere.
+      framePoses = [];
+      candidates.length = 0;
+      const sampleCount = landmarker
+        ? Math.max(SCOUT_MIN_SAMPLES, Math.min(SCOUT_MAX_SAMPLES, Math.round(duration * SCOUT_RATE)))
+        : Math.min(16, count * 2 + 2);
+      const times = [];
+      for (let i = 0; i < sampleCount; i++) {
+        times.push(clampT((duration * i) / Math.max(sampleCount - 1, 1)));
+      }
+      framePoses = await scan(times, 'Scanning clip', true);
+    }
+    const secondsPerFrame = candidates.length > 1
+      ? (candidates[candidates.length - 1].t - candidates[0].t) / (candidates.length - 1)
+      : duration / Math.max(candidates.length - 1, 1);
 
     // A screen recording often holds more than one video -- a scroll to the
     // next reel, or the control centre pulled down over the end. Grading
@@ -1873,53 +1952,47 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     const shotPoses = framePoses.slice(shotStart, shotEnd);
     const shotTimes = candidates.slice(shotStart, shotEnd).map((c) => c.t);
 
-    // ---- Dense pass over the stretch the athlete is actually on screen.
+    // ---- Pick the stretch to grade, out of what was already captured.
     //
-    // The coarse sweep above only locates him. Everything that needs frame-to
-    // -frame continuity -- deciding who to grade, and measuring him -- happens
-    // here, because the coarse sweep does not have the frames for it: across
-    // three clips the athlete filmed himself he was in shot for 0.4-1.2s of
-    // clips running 2.1-6.5s, which at a thin rate is about five frames. The
-    // track-length floor could never be met and every one was refused with
-    // "could not follow anyone through this clip".
+    // A stride is ~0.22s and peak thigh lift lasts about one frame of 30fps
+    // video, so the frames must be close together or the instant every
+    // peak-lift angle is defined at is simply missed: the same clip sampled
+    // at four thin rates gave scissor 105, 69, 105 and 88 degrees. Captured
+    // at CAPTURE_RATE that is ~6 samples per stride, and sliding the window
+    // gave a 2 degree spread.
     //
-    // Sampling densely also fixes the measurement. A stride is ~0.22s and peak
-    // thigh lift lasts about one frame of 30fps video, so a thin rate misses
-    // the instant every peak-lift angle is defined at: the same clip sampled
-    // at four rates gave scissor 105, 69, 105 and 88 degrees. At DENSE_RATE it
-    // is ~6 samples per stride, and sliding the window gave a 2 degree spread.
+    // Which stretch matters too. The athlete is often on screen for a
+    // fraction of the clip -- across three the athlete filmed himself, 0.4 to
+    // 1.2s of clips running 2.1 to 6.5s -- and a runner is easiest to detect
+    // while stationary, so aiming at where detections are densest lands on
+    // him waiting in the blocks.
     let subject = { metrics: [], rejection: null };
     let denseFrames = 0;
-    let denseSpf = null;
 
-    if (landmarker) {
-      // Where was anybody at all? Any detection will do -- this only has to
-      // aim the window, and the dense pass decides who is worth grading.
-      const seenAt = [];
-      shotPoses.forEach((poses, i) => { if (poses.length) seenAt.push(shotTimes[i]); });
+    if (landmarker && shotPoses.length) {
+      const seenIdx = [];
+      shotPoses.forEach((poses, i) => { if (poses.length) seenIdx.push(i); });
 
-      if (seenAt.length) {
-        const first = seenAt[0];
-        const last = seenAt[seenAt.length - 1];
-        const span = DENSE_MAX_SAMPLES / DENSE_RATE;
-        // Centre on where he is running, falling back to the middle of his
-        // appearance when the coarse sweep can't tell.
+      if (seenIdx.length) {
+        const maxFrames = Math.min(DENSE_MAX_SAMPLES, seenIdx.length);
         const busiest = busiestTime(shotPoses, shotTimes, secondsPerFrame);
-        const centre = busiest != null ? busiest : seenAt[Math.floor(seenAt.length / 2)];
-        const from = last - first <= span
-          ? first
-          : Math.min(Math.max(first, centre - span / 2), last - span);
-        const to = Math.min(last, from + span);
-        const step = 1 / DENSE_RATE;
-        const denseTimes = [];
-        for (let t = from; t <= to + 1e-6 && denseTimes.length < DENSE_MAX_SAMPLES; t += step) {
-          denseTimes.push(clampT(t));
+        // Work in frame indices: the frames are already in hand, so this is
+        // choosing a slice of an array rather than deciding where to seek.
+        let centreIdx = seenIdx[Math.floor(seenIdx.length / 2)];
+        if (busiest != null) {
+          let bestGap = Infinity;
+          shotTimes.forEach((t, i) => {
+            const gap = Math.abs(t - busiest);
+            if (gap < bestGap) { bestGap = gap; centreIdx = i; }
+          });
         }
+        const half = Math.floor(maxFrames / 2);
+        const lo = Math.max(seenIdx[0], Math.min(centreIdx - half, seenIdx[seenIdx.length - 1] - maxFrames + 1));
+        const hi = Math.min(seenIdx[seenIdx.length - 1] + 1, lo + maxFrames);
+        const windowPoses = shotPoses.slice(Math.max(0, lo), hi);
 
-        if (denseTimes.length >= MIN_TRACK_FRAMES) {
-          denseSpf = step;
-          const densePoses = await scan(denseTimes, 'Measuring strides', false);
-          subject = selectSubject(densePoses, step);
+        if (windowPoses.length >= MIN_TRACK_FRAMES) {
+          subject = selectSubject(windowPoses, secondsPerFrame);
           if (!subject.rejection) {
             const trimmed = longestConsistentRun(subject.metrics);
             if (trimmed.length >= MIN_TRACK_FRAMES) subject = { metrics: trimmed, rejection: null };
@@ -1928,8 +2001,8 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         }
       }
       if (!denseFrames && !subject.rejection) {
-        // Nobody found, or too short a window to sample. Fall back to the
-        // coarse sweep so a clip is still judged rather than silently empty.
+        // The window was too short to judge; fall back to the whole shot so a
+        // clip is still graded rather than coming back silently empty.
         subject = selectSubject(shotPoses, secondsPerFrame);
       }
     }
