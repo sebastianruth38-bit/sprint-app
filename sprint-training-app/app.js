@@ -557,6 +557,14 @@ const CROP_PADDING = 2.2;
 // sprinting produces. Measured on the athlete's own uploads: normal running
 // motion sat at the clip median, an Instagram scroll spiked 8-10x it, a
 // control-centre pull 6.6x.
+// Sampling. The scout pass only has to find the shot, the athlete and the
+// framing, so it stays thin. The angles are measured by the dense pass over
+// the strides that get graded -- about six samples per stride instead of two.
+const SCOUT_RATE = 10;
+const SCOUT_MAX_SAMPLES = 40;
+const DENSE_RATE = 30;
+const DENSE_WINDOW_S = 0.9;   // ~3 strides at sprint turnover
+const DENSE_MAX_SAMPLES = 32;
 const SHOT_CUT_RATIO = 5;
 const MIN_SHOT_FRAMES = 8;
 // MediaPipe clamps a landmark that leaves the picture to the frame edge, so
@@ -720,6 +728,39 @@ function longestConsistentRun(metrics) {
   }
   const run = metrics.slice(best[0], best[1]);
   return run.length >= 5 ? run : metrics;
+}
+
+// Follows one body through a run of frames by nearest hip, seeded from the
+// largest pose in the first frame that has one.
+//
+// This is the dense pass's tracker. It can be this simple because the scout
+// pass has already established that there is exactly one athlete worth
+// grading, that he is running, and that he is framed well enough -- all this
+// has to do is not lose him over a window under a second long.
+function followNearest(framePoses) {
+  const out = [];
+  let last = null;
+  for (const poses of framePoses) {
+    if (!poses.length) continue;
+    let pick;
+    if (!last) {
+      pick = poses.reduce((a, b) => (b.sig.size > a.sig.size ? b : a));
+    } else {
+      pick = poses.reduce((a, b) => {
+        const da = Math.hypot(a.sig.hip[0] - last.hip[0], a.sig.hip[1] - last.hip[1]);
+        const db = Math.hypot(b.sig.hip[0] - last.hip[0], b.sig.hip[1] - last.hip[1]);
+        return db < da ? b : a;
+      });
+      // A jump of more than a body's width between neighbouring frames is
+      // the tracker changing its mind about who it is watching, not a
+      // sprinter teleporting.
+      const jump = Math.hypot(pick.sig.hip[0] - last.hip[0], pick.sig.hip[1] - last.hip[1]);
+      if (jump > last.size * 3) continue;
+    }
+    out.push(pick.metrics);
+    last = pick.sig;
+  }
+  return out;
 }
 
 // Returns the frames belonging to the one athlete worth grading, or a
@@ -1439,12 +1480,14 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       await videoFramePainted(video);
     };
 
-    // Sampled at a roughly fixed rate (~10fps) rather than a fixed count:
-    // the tracking thresholds are per-second, and a fixed count would give
-    // a 2s clip and a 10s clip wildly different sample rates. Capped so a
-    // long clip doesn't grind on a phone.
+    // Scout pass: spread thinly over the whole clip, at a roughly fixed rate
+    // so a 2s clip and a 10s clip get the same sample spacing. This pass
+    // decides the things that need the whole clip in view -- which shot to
+    // grade, who the athlete is, and whether he is framed well enough -- and
+    // supplies the stills sent to the AI. It is NOT what the angles are
+    // measured from; see the dense pass below.
     const candidateCount = landmarker
-      ? Math.max(16, Math.min(60, Math.round(duration * 10)))
+      ? Math.max(16, Math.min(SCOUT_MAX_SAMPLES, Math.round(duration * SCOUT_RATE)))
       : Math.min(16, count * 2 + 2);
     const secondsPerFrame = duration / Math.max(candidateCount - 1, 1);
     const candidates = [];
@@ -1456,12 +1499,14 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     let lastBox = null;
     let cropSidePx = 0;
 
-    for (let i = 0; i < candidateCount; i++) {
-      onProgress(`Scanning clip ${i + 1}/${candidateCount}…`);
-      // Nudge the very first timestamp off zero -- setting currentTime to
-      // the value it's already at can silently no-op the seek.
-      const raw = (duration * i) / Math.max(candidateCount - 1, 1);
-      const t = Math.min(Math.max(raw, 0.05), Math.max(duration - 0.05, 0));
+    // Walks a list of timestamps, measuring each one. Used twice: once
+    // spread over the whole clip, once packed into the few strides that get
+    // graded.
+    const scan = async (times, label, collect) => {
+      const poseRows = [];
+      for (let i = 0; i < times.length; i++) {
+      onProgress(`${label} ${i + 1}/${times.length}…`);
+      const t = times[i];
       await seekTo(t);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -1562,10 +1607,22 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
           poses.push({ sig: p.sig, metrics: p.metrics });
         });
       }
-      framePoses.push(poses);
+      poseRows.push(poses);
+      if (collect) {
+        candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion, t });
+      }
+      }
+      return poseRows;
+    };
 
-      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion });
+    // Nudge timestamps off the very ends -- setting currentTime to the value
+    // it already holds can silently no-op the seek.
+    const clampT = (t) => Math.min(Math.max(t, 0.05), Math.max(duration - 0.05, 0));
+    const scoutTimes = [];
+    for (let i = 0; i < candidateCount; i++) {
+      scoutTimes.push(clampT((duration * i) / Math.max(candidateCount - 1, 1)));
     }
+    framePoses.push(...(await scan(scoutTimes, 'Scanning clip', true)));
 
     // A screen recording often holds more than one video -- a scroll to the
     // next reel, or the control centre pulled down over the end. Grading
@@ -1575,14 +1632,72 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     const cutOut = candidates.length - (shotEnd - shotStart);
 
     const chosen = chooseBestFrames(candidates.slice(shotStart, shotEnd), count);
+    const shotPoses = framePoses.slice(shotStart, shotEnd);
     const subject = landmarker
-      ? selectSubject(framePoses.slice(shotStart, shotEnd), secondsPerFrame)
+      ? selectSubject(shotPoses, secondsPerFrame)
       : { metrics: [], rejection: null };
+
+    // ---- Dense pass: re-measure the few strides that actually get graded.
+    //
+    // The scout rate is about 10 samples a second. A sprinter turns over
+    // around 4.5 strides a second and peak thigh lift lasts roughly one
+    // frame of 30fps video, so ~2 samples per stride will usually miss the
+    // exact instant every peak-lift angle is defined at. Measured on one
+    // clip, re-sampled at four rates: scissor came out 105, 69, 105 and 88
+    // degrees, and hip angle 100 to 119 -- a 36 degree spread from sampling
+    // phase alone, against a model noise floor of 8. That swamps the bands
+    // it is scored against.
+    //
+    // So the strides being graded are re-scanned at DENSE_RATE, roughly six
+    // samples per stride. It is cheaper than it sounds: the window is under
+    // a second, so this costs fewer seeks than the scout pass it corrects.
+    let measured = subject.metrics;
+    let denseFrames = 0;
+    if (landmarker && !subject.rejection && subject.metrics.length >= 3) {
+      try {
+        const times = candidates.slice(shotStart, shotEnd).map((c) => c.t);
+        // Centre the window on the middle of the stretch that tracked
+        // cleanly, which is where he is running rather than entering or
+        // leaving the shot.
+        const first = times[0];
+        const last = times[times.length - 1];
+        const mid = (first + last) / 2;
+        const half = Math.min(DENSE_WINDOW_S, last - first) / 2;
+        const from = Math.max(first, mid - half);
+        const to = Math.min(last, mid + half);
+        const step = 1 / DENSE_RATE;
+        const denseTimes = [];
+        for (let t = from; t <= to + 1e-6 && denseTimes.length < DENSE_MAX_SAMPLES; t += step) {
+          denseTimes.push(clampT(t));
+        }
+        if (denseTimes.length >= 8) {
+          const densePoses = await scan(denseTimes, 'Measuring strides', false);
+          // The athlete was already identified and vetted by the scout pass,
+          // so this only has to keep following him. selectSubject is
+          // deliberately not re-run here: its motion band is per-second but
+          // tracker jitter does not shrink with the sample interval, so at
+          // 30fps the same athlete reads as "moving too fast to be real"
+          // and gets rejected.
+          const followed = followNearest(densePoses);
+          const trimmed = longestConsistentRun(followed);
+          if (trimmed.length >= 8) {
+            measured = trimmed;
+            denseFrames = trimmed.length;
+          }
+        }
+      } catch (denseErr) {
+        // Falling back to the scout metrics is a worse measurement, not a
+        // broken one, so this must never fail the whole analysis.
+        console.warn('Dense re-measure failed, using the scout pass:', denseErr);
+      }
+    }
+
     return {
       frames: chosen.map((c) => c.dataUrl),
       // Only the chosen athlete's frames inform the score. Every frame they
       // appear in counts -- there's no per-frame cost locally.
-      metrics: subject.metrics,
+      metrics: measured,
+      denseFrames,
       rejection: subject.rejection,
       shotTrimmed: cutOut > 0,
       // How often pose got a crop of the athlete rather than the whole
