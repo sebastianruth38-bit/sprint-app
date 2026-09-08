@@ -649,6 +649,18 @@ function framingCheck(metricsList) {
 // fast, so anything above the ceiling means the tracker lost the plot.
 const MAX_PEOPLE_IN_FRAME = 3;
 const MIN_TRACK_FRAMES = 8;
+// Enough frames to follow someone is not enough frames to grade him. After
+// the track is trimmed back to the stretch that is genuinely one body, what
+// survives can be a fraction of it -- on a clip where the athlete runs from
+// near the camera to out of shot his apparent size changes about fourfold,
+// and only a short stretch is consistent.
+//
+// At DENSE_RATE this is about two strides. Below it the numbers stop being
+// measurements: a run of 8 frames put the foot strike 48% of a leg length
+// BEHIND the hip, which cannot happen. A run of 13 on another clip gave
+// angles that held together, so the bar sits between them rather than at a
+// round number.
+const MIN_GRADED_FRAMES = 12;
 // How fast a sprinter's shape changes, measured with the fixed-gap method
 // above so the numbers do not move with the sampling rate. Real tracks
 // (tools/CALIBRATION.md):
@@ -831,6 +843,11 @@ function busiestTime(framePoses, times, secondsPerFrame) {
   for (let i = 0; i + gapFrames < track.history.length; i++) {
     const a = track.history[i];
     const b = track.history[i + gapFrames];
+    // A body half out of the picture appears to change shape faster than
+    // anything he does on purpose, so it would always win this comparison and
+    // aim the whole measurement at the moment he leaves the shot.
+    if ((track.metrics[i] && track.metrics[i].bodyAtEdge) ||
+        (track.metrics[i + gapFrames] && track.metrics[i + gapFrames].bodyAtEdge)) continue;
     const seconds = (b.fi - a.fi) * secondsPerFrame;
     if (seconds > 0) {
       rates.push({ fi: (a.fi + b.fi) / 2, rate: signatureDistance(a.norm, b.norm) / seconds });
@@ -897,6 +914,12 @@ function selectSubject(framePoses, secondsPerFrame) {
 
   // Trim the track back to the stretch that is actually one body.
   subject = { metrics: longestConsistentRun(subject.metrics) };
+  if (subject.metrics.length < MIN_GRADED_FRAMES) {
+    return {
+      metrics: [],
+      rejection: 'Only a moment of this clip could be measured — keep him in frame, side-on and at a steady distance, for three or four strides.',
+    };
+  }
 
   // Framing is checked last, on the athlete we actually settled on, and
   // against the picture pose was given -- which by this point is usually a
@@ -1202,6 +1225,13 @@ function frameMetrics(landmarks, width, height) {
     ys.push(y / height);
   }
   const bodyFrac = ys.length >= 6 ? Math.max(...ys) - Math.min(...ys) : null;
+  // Any part of him touching the boundary means we are looking at a partial
+  // body. Its apparent size is meaningless, so it must not be used to size a
+  // crop or to judge how fast he is moving.
+  const bodyAtEdge = xs.length >= 6 && (
+    Math.min(...xs) <= EDGE_MARGIN || Math.max(...xs) >= 1 - EDGE_MARGIN ||
+    Math.min(...ys) <= EDGE_MARGIN || Math.max(...ys) >= 1 - EDGE_MARGIN
+  );
   const footAtEdge = [POSE_LM.lAnk, POSE_LM.rAnk, POSE_LM.lToe, POSE_LM.rToe].some((i) => {
     if (conf(i) < MIN_LANDMARK_CONFIDENCE) return false;
     const [x, y] = pt(i);
@@ -1212,6 +1242,7 @@ function frameMetrics(landmarks, width, height) {
 
   return {
     bodyFrac,
+    bodyAtEdge,
     footAtEdge,
     torsoFromVertical: torsoOk ? angleFromVertical(midHip, midSho) : null,
     scissor: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
@@ -1652,7 +1683,12 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         // was shown, padding multiplies that, and the box grows every frame
         // until it swallows the picture and cropping quietly stops. Position
         // still follows the athlete frame to frame; only the scale is pinned.
-        if (lead && lead.metrics.bodyFrac) {
+        // Only from a body wholly inside the picture. As he runs out of
+        // frame the visible part shrinks, and sizing the crop from that
+        // zooms further and further into a fragment of him: on one clip the
+        // measured leg went 196px, 188, 82, 33 over four frames, which then
+        // split the track and left only the frames before he started running.
+        if (lead && lead.metrics.bodyFrac && !lead.metrics.bodyAtEdge) {
           cropSidePx = lead.metrics.bodyFrac * video.videoHeight * CROP_PADDING;
         }
         if (lead) {
