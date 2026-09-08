@@ -561,7 +561,12 @@ const CROP_PADDING = 2.2;
 // framing, so it stays thin. The angles are measured by the dense pass over
 // the strides that get graded -- about six samples per stride instead of two.
 const SCOUT_RATE = 10;
-const SCOUT_MAX_SAMPLES = 40;
+// The cap has to stay high enough that the rate really is SCOUT_RATE for a
+// normal clip, because the athlete-motion band below is calibrated at that
+// rate and is not actually independent of it (see the note there). Dropping
+// this to 40 made a 6.5s clip sample at 6/s, which read a real block start
+// as "nobody moving like a sprinter" and refused it.
+const SCOUT_MAX_SAMPLES = 60;
 const DENSE_RATE = 30;
 const DENSE_WINDOW_S = 0.9;   // ~3 strides at sprint turnover
 const DENSE_MAX_SAMPLES = 32;
@@ -637,6 +642,23 @@ function framingCheck(metricsList) {
 // fast, so anything above the ceiling means the tracker lost the plot.
 const MAX_PEOPLE_IN_FRAME = 3;
 const MIN_TRACK_FRAMES = 8;
+// KNOWN BUG -- these are not rate-independent, despite being expressed per
+// second. Motion per frame is signal/rate + tracker jitter, and the jitter
+// does not shrink with the interval, so multiplying by the rate leaves the
+// jitter scaled by it. Measured on one block start, same athlete, same
+// clip: 1.11/s sampled at 6/s, 2.61/s sampled at 30/s -- a 2.4x swing from
+// sampling alone, which straddles the floor below.
+//
+// Both ends misfire on real footage. A block start sampled slightly slow
+// falls under the floor and is refused as not moving like a sprinter; a
+// genuinely fast athlete reads 4.3-5.4/s and breaks the ceiling, and is
+// refused as overlapping people. The clips that showed this are described
+// in tools/CALIBRATION.md.
+//
+// The fix is to measure motion between frames a fixed TIME apart rather
+// than between adjacent samples, then recalibrate both ends. Until then,
+// keep the scout rate pinned at SCOUT_RATE, which is what these were
+// calibrated against.
 const ATHLETE_MOTION_MIN = 1.8;
 const ATHLETE_MOTION_MAX = 4.0;
 
