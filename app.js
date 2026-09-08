@@ -1316,6 +1316,43 @@ function scoreKneeFold(metrics) {
 // Acceleration isn't one target posture -- it's a progression. The torso
 // starts near horizontal out of the blocks and rises gradually toward
 // upright, so what's scored is the shape of that rise, not any one frame.
+// Torso lean when there isn't enough run to watch it change.
+//
+// Acceleration is normally scored on the PROGRESSION -- the torso rising
+// smoothly from the drive out to upright. Over one stride there is no
+// progression to see, and scoring one anyway punishes the athlete for the
+// length of his clip: a first step held at 65 degrees came back "body angle
+// barely changed, 2/5" when 65 degrees off vertical on the first step is
+// what a good drive looks like.
+//
+// So when the clip is too short for a progression, the POSITION is scored
+// instead. Anchored on the elite acceleration references measured earlier,
+// which came out of the blocks at 68 and 59 degrees and were upright by 6.
+const DRIVE_BANDS = [
+  { min: 45, max: 78, score: 5, note: 'Strong forward drive angle' },
+  { min: 78, max: Infinity, score: 4, note: 'Very low -- driving hard, watch for over-reaching' },
+  { min: 35, max: 45, score: 4, note: 'Good lean, coming up out of the drive' },
+  { min: 25, max: 35, score: 3, note: 'Mid-acceleration lean' },
+  { min: -Infinity, max: 25, score: 2, note: 'Already upright -- little drive angle left' },
+];
+
+// A progression needs both enough strides to see one and enough run for the
+// torso to have actually travelled.
+const PROGRESSION_MIN_STRIDES = 3;
+
+function scoreDrivePosition(metrics) {
+  const series = metrics.map((m) => m.torsoFromVertical).filter((v) => v != null);
+  if (series.length < 3) return null;
+  const lean = median(series);
+  const band = bandFor(lean, DRIVE_BANDS);
+  return {
+    name: 'Drive Position',
+    score: band.score,
+    note: `${band.note} (torso ${lean.toFixed(0)}° from vertical)`,
+    value: lean,
+  };
+}
+
 function scoreAcceleration(metrics) {
   const series = metrics.map((m) => m.torsoFromVertical).filter((v) => v != null);
   if (series.length < 3) return null;
@@ -1401,7 +1438,10 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
   const flags = [];
 
   if (clipType === 'Acceleration') {
-    const accel = scoreAcceleration(metrics);
+    // Only judge the rise when there is enough of the run to see it rise.
+    const accel = stridesMeasured(metrics) >= PROGRESSION_MIN_STRIDES
+      ? scoreAcceleration(metrics)
+      : scoreDrivePosition(metrics);
     if (accel) {
       pinpoints.push({ name: accel.name, score: accel.score, note: accel.note });
       if (accel.start < 30) flags.push('Already upright at the start -- little drive phase visible');
