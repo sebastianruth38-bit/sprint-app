@@ -1519,6 +1519,76 @@ function scoreConsistency(metrics) {
 
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
+// How folded the leg is at the instant it swings through under the hip.
+//
+// The athlete's coaching point, and his coach's: backside mechanics are not
+// the enemy and frontside are not the hero -- you get both. So the question
+// is not how far the thigh travels each way, which is what the old front/back
+// ratio asked and why it scored every athlete the same. It is whether the leg
+// has GATHERED by the time it has to travel. A short pendulum swings fast; a
+// long one swings slow, for the same effort.
+//
+// Measured from a slow-motion top-speed clip of Bolt: 62 and 81 degrees at
+// passing, both confirmed by eye with the heel tucked under him. The
+// athlete's own clips read 108-113 at the same instant.
+const PASSING_BANDS = [
+  { min: -Infinity, max: 85, score: 5, note: 'Leg gathered as it swings through' },
+  { min: 85, max: 100, score: 4, note: 'Folding well, a touch late' },
+  { min: 100, max: 115, score: 3, note: 'Folding late -- long lever coming through' },
+  { min: 115, max: Infinity, score: 2, note: 'Leg still long as it passes under the hip' },
+];
+// The stance leg crosses vertical every stride too, as the body rotates over
+// a planted foot, and it is nearly straight there -- 152 and 160 degrees on
+// the reference clip. Only a foot clearly off the ground is a recovery.
+const PASSING_FOOT_MAX_DEPTH = 0.6;
+// Passing moments are a stride apart. Crossings bunched closer than this are
+// the tracker flickering, not strides -- three inside 0.16s on the reference.
+const PASSING_MIN_GAP_S = 0.12;
+const PASSING_AGREEMENT_MAX = 35;
+
+function passingFolds(metrics) {
+  const facing = median(
+    metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
+  ) || 1;
+  const found = [];
+  [0, 1].forEach((side) => {
+    for (let i = 1; i < metrics.length; i++) {
+      const prev = metrics[i - 1].legs && metrics[i - 1].legs[side];
+      const cur = metrics[i].legs && metrics[i].legs[side];
+      if (!prev || !cur || !metrics[i].midHip) continue;
+      const before = prev.thighSwing * facing;
+      const after = cur.thighSwing * facing;
+      if (!(before < 0 && after >= 0)) continue;      // thigh swinging through vertical
+      const depth = (cur.ank[1] - metrics[i].midHip[1]) / (cur.legLen || 1);
+      if (depth > PASSING_FOOT_MAX_DEPTH) continue;   // that is the stance leg
+      if (cur.kneeAngle == null) continue;
+      found.push({ t: metrics[i].t, fold: cur.kneeAngle });
+    }
+  });
+  found.sort((a, b) => (a.t || 0) - (b.t || 0));
+  // Drop crossings that arrive too soon after the last one.
+  const spaced = [];
+  found.forEach((f) => {
+    const last = spaced[spaced.length - 1];
+    if (!last || f.t == null || last.t == null || f.t - last.t >= PASSING_MIN_GAP_S) spaced.push(f);
+  });
+  return spaced.map((f) => f.fold);
+}
+
+function scorePassingPosition(metrics) {
+  const folds = passingFolds(metrics);
+  if (folds.length < 2) return null;
+  if (Math.max(...folds) - Math.min(...folds) > PASSING_AGREEMENT_MAX) return null;
+  const fold = median(folds);
+  const band = bandFor(fold, PASSING_BANDS);
+  return {
+    name: 'Passing Position',
+    score: band.score,
+    note: `${band.note} (knee ${fold.toFixed(0)}° as it passes under the hip)`,
+    value: fold,
+  };
+}
+
 // How far the hips settle while the foot is planted, per contact.
 //
 // Followed only while that foot is STILL down: running past toe-off measures
@@ -1615,6 +1685,16 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     if (fold) {
       pinpoints.push({ name: fold.name, score: fold.score, note: fold.note });
       if (fold.tightest > 75) flags.push('Heel is not recovering up under the hip');
+    }
+    // Anchored on a top-speed reference, so it is only asked of top-speed
+    // running. During acceleration the leg legitimately stays longer through
+    // the swing and the same numbers would read as a fault.
+    const passing = scorePassingPosition(metrics);
+    if (passing) {
+      pinpoints.push({ name: passing.name, score: passing.score, note: passing.note });
+      if (passing.value > 115) {
+        flags.push('Leg is still long as it swings through -- it gathers after the moment it helps');
+      }
     }
     const balance = scoreSwingBalance(metrics);
     if (balance && balance.score != null) {
