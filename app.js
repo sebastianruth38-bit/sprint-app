@@ -2140,8 +2140,14 @@ function renderAnalysisHtml(analysis) {
   const aiSummary = analysis.ai_summary
     ? `<div class="hint ai-note">🤖 ${escapeHtml(analysis.ai_summary)}</div>`
     : '';
+  // What the score rests on. A grade off one stride is a real reading of one
+  // stride, and the athlete should see which he is looking at.
+  const basis = analysis.basis && rows
+    ? `<div class="hint basis-note">${escapeHtml(analysis.basis)}</div>`
+    : '';
   return `
     ${analysis.summary ? `<div>${escapeHtml(analysis.summary)}</div>` : ''}
+    ${basis}
     ${rows}
     ${aiSummary}
     ${flags}
