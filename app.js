@@ -696,6 +696,11 @@ const STRIKE_PLAUSIBLE_MAX = 0.8;
 // Doing that properly needs the clip type, or a check on whether the hips
 // travel rather than on how fast the limbs move.
 // Frames this far apart are compared to measure motion; see trackMotionPerSec.
+// Two sampled frames this alike are the same frame handed back twice.
+const DUPLICATE_FRAME_MOTION = 0.35;
+// Above this share of repeats, the clip was never really read, and any
+// verdict about how the athlete moves would be a verdict about the decoder.
+const DUPLICATE_SHARE_MAX = 0.4;
 const MOTION_GAP_S = 0.1;
 // A second track at least this share of the longest is a real second athlete,
 // not a fragment broken off the first.
@@ -1656,10 +1661,20 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     const poseCanvas = document.createElement('canvas');
     const poseCtx = poseCanvas.getContext('2d', { willReadFrequently: true });
 
+    // Seeking can quietly fail to land. Both waits below resolve on timeout
+    // rather than hanging, which is right, but it means a slow decode leaves
+    // the PREVIOUS frame on screen and we measure that instead. Sample enough
+    // repeats and the athlete stops appearing to move at all -- which reads,
+    // wrongly, as nobody in the clip moving like a sprinter.
     const seekTo = async (t) => {
-      video.currentTime = t;
-      await waitForEvent(video, 'seeked', 2000);
-      await videoFramePainted(video);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        video.currentTime = t;
+        await waitForEvent(video, 'seeked', 2000);
+        await videoFramePainted(video);
+        // A frame's worth of tolerance: the decoder lands on the nearest one
+        // it has, not exactly where it was asked.
+        if (Math.abs(video.currentTime - t) < 0.06) return;
+      }
     };
 
     // Scout pass: spread thinly over the whole clip, at a roughly fixed rate
@@ -1676,6 +1691,8 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     const framePoses = [];
     let prevGray = null;
     let cropped = 0;
+    let duplicates = 0;
+    let sampled = 0;
     // Where the athlete was last seen, normalized to the full video frame,
     // and how big the crop aimed at him was.
     let lastBox = null;
@@ -1695,6 +1712,10 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       thumbCtx.drawImage(canvas, 0, 0, thumb.width, thumb.height);
       const gray = toGrayscale(thumbCtx, thumb.width, thumb.height);
       const { detail, motion } = scoreThumbnail(gray, prevGray);
+      // A frame identical to the one before it is the decoder handing back
+      // what was already on screen, not a still moment in the clip.
+      if (prevGray && motion < DUPLICATE_FRAME_MOTION) duplicates++;
+      sampled++;
       prevGray = gray;
 
       // Measure every person in the frame.
@@ -1711,19 +1732,44 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // compression noise along the horizon and the caption, not the runner.
       const poses = [];
       if (landmarker) {
-        const measure = (source, sourcePxHeight) => {
+        // `region` maps a crop back onto the whole frame, as fractions of it.
+        // Everything geometric is measured in WHOLE-FRAME coordinates even
+        // when the model was shown a crop, because those numbers are compared
+        // across frames: hip position associates one frame's body with the
+        // next, and leg length decides whether the track is still the same
+        // person. Leaving a cropped frame in its own coordinates makes the
+        // hip appear to teleport and the leg to change length whenever
+        // cropping switches on or off, which shatters the track into stubs --
+        // and then nothing is moving like a sprinter, because nothing is
+        // being followed long enough to tell.
+        //
+        // Only the framing flags stay in the coordinates the model actually
+        // saw: how much of THAT picture he filled is what decided whether it
+        // could be read, and a limb clamped to the edge of a crop is just as
+        // invented as one clamped to the edge of the frame.
+        const measure = (source, sourcePxHeight, region) => {
           try {
             const result = landmarker.detect(source);
-            return (result.landmarks || []).map((lms) => ({
-              lms,
-              sig: poseSignature(lms, source.width, source.height),
-              metrics: Object.assign(frameMetrics(lms, source.width, source.height), {
-                // Body height in real pixels of the original video, which is
-                // what decides whether there is any detail left to enlarge.
-                bodyPx: null,
-              }),
-              sourcePxHeight,
-            }));
+            return (result.landmarks || []).map((lms) => {
+              const seen = frameMetrics(lms, source.width, source.height);
+              const whole = region
+                ? lms.map((p) => Object.assign({}, p, {
+                    x: region.x + p.x * region.w,
+                    y: region.y + p.y * region.h,
+                  }))
+                : lms;
+              const metrics = region ? frameMetrics(whole, canvas.width, canvas.height) : seen;
+              metrics.bodyFrac = seen.bodyFrac;
+              metrics.footAtEdge = seen.footAtEdge;
+              metrics.bodyAtEdge = seen.bodyAtEdge;
+              metrics.bodyPx = null;
+              return {
+                lms,
+                sig: poseSignature(whole, canvas.width, canvas.height),
+                metrics,
+                sourcePxHeight,
+              };
+            });
           } catch (poseErr) {
             console.warn('Pose detection failed on a frame:', poseErr);
             return [];
@@ -1770,7 +1816,9 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
             poseCanvas.width = Math.max(1, Math.round(sw * k));
             poseCanvas.height = Math.max(1, Math.round(sh * k));
             poseCtx.drawImage(video, sx, sy, sw, sh, 0, 0, poseCanvas.width, poseCanvas.height);
-            const inCrop = measure(poseCanvas, sh);
+            const inCrop = measure(poseCanvas, sh, {
+              x: sx / bw, y: sy / bh, w: sw / bw, h: sh / bh,
+            });
             const cropLead = inCrop.length ? biggest(inCrop) : null;
             if (cropLead && (cropLead.metrics.bodyFrac || 0) > (lead ? lead.metrics.bodyFrac || 0 : 0)) {
               found = inCrop;
@@ -1895,6 +1943,10 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       denseFrames,
       rejection: subject.rejection,
       shotTrimmed: cutOut > 0,
+      // How much of the clip the decoder gave us twice. Reported so a device
+      // that cannot keep up shows up as a number rather than as an athlete
+      // who appears not to be moving.
+      duplicateShare: sampled ? duplicates / sampled : 0,
       // How often pose got a crop of the athlete rather than the whole
       // frame. Surfaced so a regression here shows up as a number rather
       // than as quietly worse scores.
@@ -1974,14 +2026,27 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let analysis = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const { frames, metrics, rejection, shotTrimmed } = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+      const { frames, metrics, rejection, shotTrimmed, duplicateShare } =
+        await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+
+      // If most sampled frames came back identical, the clip was never really
+      // read and nothing measured from it means anything. Say that, rather
+      // than reporting the athlete as motionless -- which is what it looks
+      // like from the inside, and is a much more confusing thing to be told.
+      const starved = duplicateShare > DUPLICATE_SHARE_MAX;
 
       // Local measurement is the default engine: it runs on this device, so
       // it costs nothing and works offline.
       setAnalysisStatus('Measuring form…');
-      analysis = rejection
-        ? { summary: 'This clip could not be graded.', pinpoints: [], flags: [], filming_note: rejection }
-        : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
+      analysis = starved
+        ? {
+            summary: 'This clip could not be read on this device.',
+            pinpoints: [], flags: [],
+            filming_note: `${Math.round(duplicateShare * 100)}% of the frames came back identical — this device could not decode the clip quickly enough. A shorter clip, or one recorded at a lower resolution, should work.`,
+          }
+        : rejection
+          ? { summary: 'This clip could not be graded.', pinpoints: [], flags: [], filming_note: rejection }
+          : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
       if (shotTrimmed && !rejection) {
         analysis.flags = [
           ...(analysis.flags || []),
