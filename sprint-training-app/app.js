@@ -677,6 +677,17 @@ const MIN_CONTACTS = 2;
 // planted, and because the good end of the strike band is open, such a value
 // scored 5/5. Garbage reading as perfect is worse than garbage reading as
 // bad, so a strike outside the plausible range is dropped, not scored.
+// A real touchdown puts the foot near its full reach below the hip -- about
+// one leg length. Below this the "contact" is the lowest frame in a window
+// where the foot never actually planted.
+const CONTACT_DEPTH_MIN = 0.8;
+// The ankle angle comes from the toe, the smallest and least stable landmark
+// the model tracks. On one clip it moved 115, 126, 139, 129, 122, 94 across
+// six consecutive frames a thirtieth of a second apart -- an ankle cannot do
+// that, and the bands it is scored against are only ~13 degrees wide. When
+// the contacts disagree by more than this the number is noise, and reporting
+// it told an athlete his stiff ankle was collapsing.
+const ANKLE_AGREEMENT_MAX = 25;
 const STRIKE_PLAUSIBLE_MIN = -0.2;
 const STRIKE_PLAUSIBLE_MAX = 0.8;
 // How fast a sprinter's shape changes, measured with the fixed-gap method
@@ -1062,8 +1073,13 @@ function scoreGroundContact(metrics) {
   [0, 1].forEach((side) => {
     footContacts(metrics, side).forEach((c) => {
       const leg = c.leg;
-      const hipX = metrics[c.i].midHip ? metrics[c.i].midHip[0] : leg.hip[0];
-      strikes.push(((leg.ank[0] - hipX) * facing) / leg.legLen);
+      const row = metrics[c.i];
+      if (!row || !row.midHip) return;
+      // Only frames where the foot really is down. Otherwise this measures
+      // whichever moment happened to be lowest, mid-flight included.
+      const depth = (leg.ank[1] - row.midHip[1]) / (leg.legLen || 1);
+      if (depth < CONTACT_DEPTH_MIN) return;
+      strikes.push(((leg.ank[0] - row.midHip[0]) * facing) / leg.legLen);
       if (leg.footVsShin != null) dorsi.push(leg.footVsShin);
     });
   });
@@ -1077,7 +1093,10 @@ function scoreGroundContact(metrics) {
                  note: `${band.note} (${(strike * 100).toFixed(0)}% of leg length ahead)`, value: strike });
     }
   }
-  if (dorsi.length >= MIN_CONTACTS) {
+  // Only when the touchdowns agree. A spread wider than the bands themselves
+  // means the toe landmark was wandering, not the ankle.
+  if (dorsi.length >= MIN_CONTACTS &&
+      Math.max(...dorsi) - Math.min(...dorsi) <= ANKLE_AGREEMENT_MAX) {
     const d = median(dorsi);
     const band = bandFor(d, DORSI_BANDS);
     out.push({ name: 'Ankle at Touchdown', score: band.score, note: `${band.note} (${d.toFixed(0)}°)`, value: d });
