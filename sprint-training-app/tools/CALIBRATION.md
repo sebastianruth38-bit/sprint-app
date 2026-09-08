@@ -202,8 +202,19 @@ coming through. The third is discarded: the fold jumped from ~75 to 160
 between consecutive frames, which is a tracking discontinuity, and the frame
 itself reads +17° rather than vertical.
 
-**Bolt at passing: roughly 62-81°.** The athlete's own clips read **108-113°**
-at the same instant — a 30-45° gap, consistent across three of his clips.
+**Bolt at passing: roughly 62-81°.**
+
+The athlete's own clips were first reported at 108-113° — a 30-45° gap. **That
+comparison was wrong and there is no gap.** His figure came from an earlier
+pass that had no foot-height filter, so it counted the stance leg's crossings
+too: on one clip the raw list was 126, 123, 176, 62, 70, 55, 56, 98, 115, 171,
+175, 175, 63, 55, 124, 101 — the values above 120 are the support leg, nearly
+straight, and they dragged the median to 108. Filtered the same way Bolt's
+were, the same clip gives 63, 55, 62, 55, 56, 98, 101: a median of **62°**.
+
+Measured alike, he is at Bolt's passing fold and possibly tighter. The lesson
+is the obvious one and it was still nearly missed: a reference and a subject
+have to go through the identical pipeline before their numbers are compared.
 
 Two other events must be kept apart from this, and mixing them is what made
 the first pass read 62-160°:
