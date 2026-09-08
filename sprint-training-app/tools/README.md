@@ -28,3 +28,23 @@ found here first and only explained afterwards:
 
 A left/right swap is invisible in the numbers and obvious in the colours,
 which is the reason for the two-colour scheme.
+
+## isolate_in_pack.py
+
+Isolating one athlete from a race pack. Its limits are documented in the
+script itself -- read them before trusting a number off a race clip.
+
+## analysis/
+
+The measurement scripts every band in `CALIBRATION.md` came out of. See
+`analysis/README.md`.
+
+## deploy.sh
+
+Publishes to the `gh-pages` branch, stamping the commit SHA onto the asset
+URLs. Without that stamp a browser keeps serving the cached `app.js` and the
+deploy silently does nothing.
+
+## ../tests/
+
+`../tests/run.sh` runs every suite. Run it before deploying.
