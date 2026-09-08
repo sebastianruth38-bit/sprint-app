@@ -753,6 +753,9 @@ const MOTION_GAP_S = 0.1;
 // A second track at least this share of the longest is a real second athlete,
 // not a fragment broken off the first.
 const SECOND_ATHLETE_SHARE = 0.6;
+// How much of a candidate window has to be moving like a sprinter for it to
+// be the stretch worth measuring.
+const WINDOW_RUNNING_SHARE = 0.7;
 const ATHLETE_MOTION_MIN = 0.9;
 const ATHLETE_MOTION_MAX = 6.0;
 
@@ -880,51 +883,73 @@ function longestConsistentRun(metrics) {
   return run.length >= 5 ? run : metrics;
 }
 
-// When in this clip is the athlete actually running?
+// Which stretch of the clip to measure.
 //
-// The dense window used to be centred on the middle of the detections, which
-// is the wrong target: a runner is easiest to detect when he is stationary
-// and hardest once he is moving away, so on a block start the detections
-// cluster around him sitting in the blocks. The window then landed on the
-// set position, the only track in it read 0.75/s against a floor of 2.0, and
-// the clip came back "nobody in this clip is moving like a sprinter" -- while
-// he was, three tenths of a second later.
+// Two things have to be true at once, and picking either alone goes wrong.
+// Measure where he is BIGGEST and a block start hands back the set position,
+// because he is nearest the camera before he has gone anywhere. Measure where
+// the tracked shape changes FASTEST and you get the far end of the clip,
+// because a small distant body tracks noisily and noise looks like movement:
+// on a relay run that put the graded window at 4.5-5.6 seconds, after the
+// handoff, and returned 161 degrees of hip angle for a runner who measures 94
+// during the run itself.
 //
-// So aim at motion instead of at presence. Returns the time around which the
-// tracked body is changing shape fastest, or null if that can't be told.
-function busiestTime(framePoses, times, secondsPerFrame) {
+// So: among the stretches where he is moving like a sprinter, take the one
+// where he is easiest to see. Size is a direct proxy for how much the
+// measurement can be trusted, which is the whole argument of the framing
+// work above.
+function bestWindow(framePoses, secondsPerFrame, maxFrames) {
   if (!(secondsPerFrame > 0)) return null;
   const tracks = buildTracks(framePoses, secondsPerFrame);
   if (!tracks.length) return null;
   const track = tracks.reduce((a, b) => (b.history.length > a.history.length ? b : a));
-  const gapFrames = Math.max(1, Math.round(MOTION_GAP_S / secondsPerFrame));
+  const n = track.history.length;
+  if (n < MIN_TRACK_FRAMES) return null;
 
-  const rates = [];
-  for (let i = 0; i + gapFrames < track.history.length; i++) {
-    const a = track.history[i];
-    const b = track.history[i + gapFrames];
-    // A body half out of the picture appears to change shape faster than
-    // anything he does on purpose, so it would always win this comparison and
-    // aim the whole measurement at the moment he leaves the shot.
-    if ((track.metrics[i] && track.metrics[i].bodyAtEdge) ||
-        (track.metrics[i + gapFrames] && track.metrics[i + gapFrames].bodyAtEdge)) continue;
-    const seconds = (b.fi - a.fi) * secondsPerFrame;
-    if (seconds > 0) {
-      rates.push({ fi: (a.fi + b.fi) / 2, rate: signatureDistance(a.norm, b.norm) / seconds });
+  const gap = Math.max(1, Math.round(MOTION_GAP_S / secondsPerFrame));
+  // Local rate of change and local visibility, per position along the track.
+  const rate = [];
+  const size = [];
+  for (let i = 0; i < n; i++) {
+    const j = Math.min(n - 1, i + gap);
+    const seconds = (track.history[j].fi - track.history[i].fi) * secondsPerFrame;
+    const partial = track.metrics[i].bodyAtEdge || track.metrics[j].bodyAtEdge;
+    rate.push(seconds > 0 && !partial
+      ? signatureDistance(track.history[i].norm, track.history[j].norm) / seconds
+      : null);
+    size.push(track.metrics[i].bodyFrac || 0);
+  }
+
+  const span = Math.max(MIN_TRACK_FRAMES, Math.min(maxFrames, n));
+  let best = null;
+  for (let start = 0; start + span <= n; start++) {
+    const rates = rate.slice(start, start + span).filter((r) => r != null);
+    if (rates.length < span / 2) continue;
+    // Most of the window has to be running, not just its middle value. A
+    // median alone lets a window straddle a standing stretch and a running
+    // one and still pass, which measures half of each.
+    const inBand = rates.filter((r) => r >= ATHLETE_MOTION_MIN && r <= ATHLETE_MOTION_MAX);
+    if (inBand.length < rates.length * WINDOW_RUNNING_SHARE) continue;
+    const seen = median(size.slice(start, start + span));
+    if (!best || seen > best.seen) best = { start, seen, moving: median(inBand) };
+  }
+  // Nothing in the window met the movement test -- fall back to wherever he
+  // is biggest, which is still the most measurable stretch on offer.
+  if (!best) {
+    for (let start = 0; start + span <= n; start++) {
+      const seen = median(size.slice(start, start + span));
+      if (!best || seen > best.seen) best = { start, seen, moving: null };
     }
   }
-  if (!rates.length) return null;
-
-  // The middle of the fast stretch, not the single fastest sample -- one
-  // noisy frame should not decide where a whole clip is measured.
-  const peak = rates.reduce((m, r) => Math.max(m, r.rate), 0);
-  if (peak <= 0) return null;
-  const busy = rates.filter((r) => r.rate >= peak * 0.6).map((r) => r.fi).sort((a, b) => a - b);
-  const fi = busy[Math.floor(busy.length / 2)];
-  const idx = Math.max(0, Math.min(times.length - 1, Math.round(fi)));
-  return times[idx];
+  if (!best) return null;
+  return {
+    from: track.history[best.start].fi,
+    to: track.history[Math.min(n - 1, best.start + span - 1)].fi,
+    seen: best.seen,
+  };
 }
 
+// Returns the frames belonging to the one athlete worth grading, or a
 // Returns the frames belonging to the one athlete worth grading, or a
 // reason to refuse. Refusing beats grading merged skeletons: a race clip
 // produces a confident score built from one runner's torso and another's
@@ -1251,6 +1276,9 @@ function legMetrics(pt, conf, midSho, hipI, kneeI, ankI, heelI, toeI) {
   const footOk = conf(heelI) >= MIN_LANDMARK_CONFIDENCE && conf(toeI) >= MIN_LANDMARK_CONFIDENCE;
   const heel = pt(heelI), toe = pt(toeI);
   return {
+    // `knee` is the joint's position; the ANGLE at it is kneeAngle below.
+    // These were both called `knee` in one object literal, so the position
+    // was silently overwritten by the angle and could not be read at all.
     hip, knee, ank, legLen,
     // Ankle vertex, rays to knee and toe. Standing neutral is about 90;
     // below that the toes are pulled up (dorsiflexed), above is pointed.
@@ -1263,7 +1291,7 @@ function legMetrics(pt, conf, midSho, hipI, kneeI, ankI, heelI, toeI) {
     // The angle the athlete described: torso against the front thigh.
     hipAngle: angleAt(midSho, hip, knee),
     // Thigh against shin. Its minimum across the swing is the heel fold.
-    knee: angleAt(hip, knee, ank),
+    kneeAngle: angleAt(hip, knee, ank),
     // Signed thigh angle off straight-down: caller flips it so + is always in
     // front of the hip and - is behind. Drives the front/back balance check.
     //
@@ -1329,9 +1357,9 @@ function frameMetrics(landmarks, width, height) {
     scissor: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
     thighRise: lead ? lead.rise : null,
     hipAngle: lead ? lead.hipAngle : null,
-    leadKnee: lead ? lead.knee : null,
+    leadKnee: lead ? lead.kneeAngle : null,
     // The tightest fold available this frame, across both legs.
-    kneeFold: legs.length ? Math.min(...legs.map((l) => l.knee)) : null,
+    kneeFold: legs.length ? Math.min(...legs.map((l) => l.kneeAngle)) : null,
     legs,
     midHip,
   };
@@ -2077,7 +2105,6 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
 
     const chosen = chooseBestFrames(candidates.slice(shotStart, shotEnd), count);
     const shotPoses = framePoses.slice(shotStart, shotEnd);
-    const shotTimes = candidates.slice(shotStart, shotEnd).map((c) => c.t);
 
     // ---- Pick the stretch to grade, out of what was already captured.
     //
@@ -2102,20 +2129,9 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
 
       if (seenIdx.length) {
         const maxFrames = Math.min(DENSE_MAX_SAMPLES, seenIdx.length);
-        const busiest = busiestTime(shotPoses, shotTimes, secondsPerFrame);
-        // Work in frame indices: the frames are already in hand, so this is
-        // choosing a slice of an array rather than deciding where to seek.
-        let centreIdx = seenIdx[Math.floor(seenIdx.length / 2)];
-        if (busiest != null) {
-          let bestGap = Infinity;
-          shotTimes.forEach((t, i) => {
-            const gap = Math.abs(t - busiest);
-            if (gap < bestGap) { bestGap = gap; centreIdx = i; }
-          });
-        }
-        const half = Math.floor(maxFrames / 2);
-        const lo = Math.max(seenIdx[0], Math.min(centreIdx - half, seenIdx[seenIdx.length - 1] - maxFrames + 1));
-        const hi = Math.min(seenIdx[seenIdx.length - 1] + 1, lo + maxFrames);
+        const win = bestWindow(shotPoses, secondsPerFrame, maxFrames);
+        const lo = win ? win.from : seenIdx[0];
+        const hi = win ? win.to + 1 : Math.min(seenIdx[seenIdx.length - 1] + 1, lo + maxFrames);
         const windowPoses = shotPoses.slice(Math.max(0, lo), hi);
 
         if (windowPoses.length >= MIN_TRACK_FRAMES) {
