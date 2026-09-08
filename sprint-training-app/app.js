@@ -650,31 +650,38 @@ function framingCheck(metricsList) {
 const MAX_PEOPLE_IN_FRAME = 3;
 const MIN_TRACK_FRAMES = 8;
 // How fast a sprinter's shape changes, measured with the fixed-gap method
-// above so the numbers do not move with the sampling rate. Measured on real
-// tracks at both 6-10/s and 30/s (tools/CALIBRATION.md):
+// above so the numbers do not move with the sampling rate. Real tracks
+// (tools/CALIBRATION.md):
 //
-//   block start, driving out      4.20        \
-//   fast run                      4.14         }  athletes
-//   drive phase                   3.22        /
-//   same athlete still in blocks  1.06   -- not running yet
-//   skeleton jumping between      7.97   -- tracking has lost the plot
-//   people in a crowd
+//   drive phase, upright and turning over    3.22
+//   fast run                                 4.14
+//   runner inside a race pack                3.27
+//   first steps out of the blocks            1.24
+//   same athlete still set in the blocks     1.06
+//   skeleton jumping between people          7.97
 //
-// The old ceiling of 4.0 sat underneath two of the three real athletes, so a
-// genuine block start and a genuinely fast run were both refused as
-// "tracking jumped between overlapping people". That was the bug. The floor
-// was never the problem, and is kept high enough to exclude an athlete who
-// is set in the blocks but has not gone yet.
+// The ceiling is the part that works: 6.0 sits clear above every real
+// athlete measured and below a tracker that has lost the plot.
 //
-// Motion alone cannot separate a lone sprinter from one in a pack -- a
-// runner in a race reads 3.27, squarely among the athletes -- so that is
-// left to the people-count check, which is what it is for.
+// The floor does much less than it looks like it does, and the numbers above
+// say why. A block start legitimately changes shape slowly -- the first steps
+// out of the blocks read 1.24, while the same athlete sitting motionless in
+// the set position reads 1.06. Those are 17% apart, which is noise. This
+// measure cannot tell "driving out of the blocks" from "not gone yet", so a
+// floor placed to admit real starts cannot also exclude someone standing
+// still. It is set to admit the athlete, because refusing a real block start
+// is the worse error and the other guards -- track length, people count,
+// subject size, feet in frame -- still apply.
+//
+// Nothing here is a substitute for a floor that understands the difference.
+// Doing that properly needs the clip type, or a check on whether the hips
+// travel rather than on how fast the limbs move.
 // Frames this far apart are compared to measure motion; see trackMotionPerSec.
 const MOTION_GAP_S = 0.1;
 // A second track at least this share of the longest is a real second athlete,
 // not a fragment broken off the first.
 const SECOND_ATHLETE_SHARE = 0.6;
-const ATHLETE_MOTION_MIN = 2.0;
+const ATHLETE_MOTION_MIN = 0.9;
 const ATHLETE_MOTION_MAX = 6.0;
 
 const SIG_JOINTS = ['lSho', 'rSho', 'lHip', 'rHip', 'lKnee', 'rKnee', 'lAnk', 'rAnk'];
@@ -799,6 +806,46 @@ function longestConsistentRun(metrics) {
   }
   const run = metrics.slice(best[0], best[1]);
   return run.length >= 5 ? run : metrics;
+}
+
+// When in this clip is the athlete actually running?
+//
+// The dense window used to be centred on the middle of the detections, which
+// is the wrong target: a runner is easiest to detect when he is stationary
+// and hardest once he is moving away, so on a block start the detections
+// cluster around him sitting in the blocks. The window then landed on the
+// set position, the only track in it read 0.75/s against a floor of 2.0, and
+// the clip came back "nobody in this clip is moving like a sprinter" -- while
+// he was, three tenths of a second later.
+//
+// So aim at motion instead of at presence. Returns the time around which the
+// tracked body is changing shape fastest, or null if that can't be told.
+function busiestTime(framePoses, times, secondsPerFrame) {
+  if (!(secondsPerFrame > 0)) return null;
+  const tracks = buildTracks(framePoses, secondsPerFrame);
+  if (!tracks.length) return null;
+  const track = tracks.reduce((a, b) => (b.history.length > a.history.length ? b : a));
+  const gapFrames = Math.max(1, Math.round(MOTION_GAP_S / secondsPerFrame));
+
+  const rates = [];
+  for (let i = 0; i + gapFrames < track.history.length; i++) {
+    const a = track.history[i];
+    const b = track.history[i + gapFrames];
+    const seconds = (b.fi - a.fi) * secondsPerFrame;
+    if (seconds > 0) {
+      rates.push({ fi: (a.fi + b.fi) / 2, rate: signatureDistance(a.norm, b.norm) / seconds });
+    }
+  }
+  if (!rates.length) return null;
+
+  // The middle of the fast stretch, not the single fastest sample -- one
+  // noisy frame should not decide where a whole clip is measured.
+  const peak = rates.reduce((m, r) => Math.max(m, r.rate), 0);
+  if (peak <= 0) return null;
+  const busy = rates.filter((r) => r.rate >= peak * 0.6).map((r) => r.fi).sort((a, b) => a - b);
+  const fi = busy[Math.floor(busy.length / 2)];
+  const idx = Math.max(0, Math.min(times.length - 1, Math.round(fi)));
+  return times[idx];
 }
 
 // Returns the frames belonging to the one athlete worth grading, or a
@@ -1712,10 +1759,13 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         const first = seenAt[0];
         const last = seenAt[seenAt.length - 1];
         const span = DENSE_MAX_SAMPLES / DENSE_RATE;
-        // If he is on screen longer than we can afford to scan, centre on the
-        // middle of his appearance rather than its start.
-        const mid = seenAt[Math.floor(seenAt.length / 2)];
-        const from = last - first <= span ? first : Math.max(first, mid - span / 2);
+        // Centre on where he is running, falling back to the middle of his
+        // appearance when the coarse sweep can't tell.
+        const busiest = busiestTime(shotPoses, shotTimes, secondsPerFrame);
+        const centre = busiest != null ? busiest : seenAt[Math.floor(seenAt.length / 2)];
+        const from = last - first <= span
+          ? first
+          : Math.min(Math.max(first, centre - span / 2), last - span);
         const to = Math.min(last, from + span);
         const step = 1 / DENSE_RATE;
         const denseTimes = [];

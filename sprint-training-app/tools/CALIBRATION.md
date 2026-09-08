@@ -74,10 +74,24 @@ within ~5% on the two clips sampled densely enough for a real fixed gap.
 | Runner inside a race pack | 3.27 |
 | Skeleton jumping between people in a crowd | 7.97 |
 
-Set to **2.0 – 6.0**. The old ceiling of 4.0 sat *underneath* two of the
+Set to **0.9 – 6.0**.
+
+The **ceiling** is the part that works. The old 4.0 sat *underneath* two of
 three real athletes, which is why a genuine block start and a genuinely fast
-run were both refused. The floor was never the problem; it is kept high
-enough to exclude an athlete who is set but has not gone yet.
+run were both refused as overlapping people. 6.0 clears every athlete
+measured and still catches a tracker that has jumped between bodies.
+
+The **floor does much less than it appears to**. The first steps out of the
+blocks read 1.24; the same athlete motionless in the set position reads 1.06.
+Seventeen per cent apart is noise, so no floor can admit a real start and
+still exclude someone standing about. It is placed to admit the athlete,
+because refusing a real block start is the worse error and the other guards
+(track length, people count, subject size, feet in frame) still apply.
+
+Doing this properly needs either the clip type — acceleration legitimately
+turns over slowly, top speed does not — or a different signal altogether,
+such as whether the hips travel rather than how fast the limbs move. Noted as
+open rather than solved.
 
 Motion alone cannot separate a lone sprinter from one in a pack — a runner
 in a race reads 3.27, squarely among the athletes — so that is left to the
@@ -87,6 +101,19 @@ A second track in the band is only treated as a second athlete if it is at
 least `SECOND_ATHLETE_SHARE` of the longest. One block start came back as a
 27-frame track plus a 9-frame stub of the same runner, and refusing that as
 "more than one athlete" would have been wrong.
+
+## Aiming the dense window
+
+Centre it on where the athlete is **running**, not on the middle of the
+detections. A runner is easiest to detect when stationary and hardest once
+he is moving away, so on a block start the detections cluster around the set
+position: the window landed there, the only track in it read 0.75/s, and the
+clip came back "nobody in this clip is moving like a sprinter" — while he was
+running three tenths of a second later.
+
+`busiestTime` picks the middle of the fastest-changing stretch of the longest
+coarse track. On the block start that moved the window from 1.46–2.52s to
+0.63–1.69s, and the track in it from 10 frames at 0.75/s to 25 at 1.24/s.
 
 ## Sampling structure
 
