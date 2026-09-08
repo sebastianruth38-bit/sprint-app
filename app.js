@@ -479,6 +479,11 @@ function chooseBestFrames(candidates, count) {
 const POSE_LM = {
   nose: 0, lSho: 11, rSho: 12, lHip: 23, rHip: 24,
   lKnee: 25, rKnee: 26, lAnk: 27, rAnk: 28, lHeel: 29, rHeel: 30,
+  // MediaPipe's foot_index landmarks. These were missing, which made
+  // legMetrics read landmarks[undefined] and throw on every frame where
+  // the heel was visible -- the throw was swallowed by the per-frame
+  // catch in extractFrames, so every clip came back "No athlete detected".
+  lToe: 31, rToe: 32,
 };
 
 // A landmark this uncertain is a guess. The model still returns coordinates
@@ -523,6 +528,112 @@ const FOLD_BANDS = [
   { min: 75, max: Infinity, score: 2, note: 'Heel trailing -- long lever swinging through' },
 ];
 
+// ---------- Framing: is the athlete big enough, and is this one shot? ----------
+// Calibrated twice, by compositing a known-good athlete into a phone-shaped
+// frame and re-measuring him.
+//
+// First: how much of the frame he has to cover. While he spans at least ~25%
+// of frame height, every frame detects and the hip angle lands within ~8
+// degrees of the full-size read -- that 8 degrees is the model's own noise
+// floor, and it does not improve at higher render resolutions, because
+// MediaPipe resizes to a fixed internal size regardless. Below 25% it comes
+// apart fast: at 20% only 12 of 15 frames detect and the error triples to 26
+// degrees; at 10%, one frame in fifteen.
+//
+// Second: whether cropping rescues him. It does, completely -- a padded crop
+// around the athlete restored 15/15 detection at every size down to 7%, at
+// that same ~8 degree floor. What matters is his SHARE of the picture, not
+// its resolution, so cropping is the whole fix.
+//
+// Third: how few real pixels he can be made of. Shrinking the source video
+// while keeping his share of it constant, measurement held to ~8 degrees
+// down to about 110 pixels of athlete. Below roughly 90 there is no detail
+// left to enlarge, and that is the one case worth refusing outright.
+const SUBJECT_FRAC_MIN = 0.25;
+const SUBJECT_PX_MIN = 90;
+const CROP_PADDING = 2.2;
+// A scroll between two videos, or a pull-down of the phone's control centre,
+// registers as a frame-to-frame change several times larger than anything
+// sprinting produces. Measured on the athlete's own uploads: normal running
+// motion sat at the clip median, an Instagram scroll spiked 8-10x it, a
+// control-centre pull 6.6x.
+// Sampling. The scout pass only has to find the shot, the athlete and the
+// framing, so it stays thin. The angles are measured by the dense pass over
+// the strides that get graded -- about six samples per stride instead of two.
+const SCOUT_RATE = 10;
+// The cap has to stay high enough that the rate really is SCOUT_RATE for a
+// normal clip, because the athlete-motion band below is calibrated at that
+// rate and is not actually independent of it (see the note there). Dropping
+// this to 40 made a 6.5s clip sample at 6/s, which read a real block start
+// as "nobody moving like a sprinter" and refused it.
+const SCOUT_MAX_SAMPLES = 60;
+const DENSE_RATE = 30;
+const DENSE_WINDOW_S = 0.9;   // ~3 strides at sprint turnover
+const DENSE_MAX_SAMPLES = 32;
+const SHOT_CUT_RATIO = 5;
+const MIN_SHOT_FRAMES = 8;
+// MediaPipe clamps a landmark that leaves the picture to the frame edge, so
+// an ankle pinned to the boundary is not a low foot -- it's a foot that isn't
+// in shot. Grading ground contact off those invents touchdowns.
+const EDGE_MARGIN = 0.02;
+const MAX_EDGE_FRACTION = 0.4;
+
+// Longest stretch of frames with no cut in it. Returns [start, end).
+function longestShot(motions) {
+  const usable = motions.filter((m) => m > 0);
+  if (usable.length < 4) return [0, motions.length];
+  const sorted = usable.slice().sort((a, b) => a - b);
+  const mid = sorted[Math.floor(sorted.length / 2)] || 0;
+  if (mid <= 0) return [0, motions.length];
+
+  const cuts = [0];
+  for (let i = 1; i < motions.length; i++) {
+    if (motions[i] > mid * SHOT_CUT_RATIO) cuts.push(i);
+  }
+  cuts.push(motions.length);
+  // Seeded with the first segment, not the whole clip -- seeding it with the
+  // whole clip means no individual shot can ever beat it and nothing splits.
+  let best = [cuts[0], cuts[1]];
+  for (let i = 1; i < cuts.length - 1; i++) {
+    if (cuts[i + 1] - cuts[i] > best[1] - best[0]) best = [cuts[i], cuts[i + 1]];
+  }
+  return best[1] - best[0] >= MIN_SHOT_FRAMES ? best : [0, motions.length];
+}
+
+// The box a set of landmarks occupies, normalized to the image they were
+// measured in. Used to aim the next frame's crop.
+function poseBounds(landmarks) {
+  let x0 = 1, y0 = 1, x1 = 0, y1 = 0, n = 0;
+  for (let i = 0; i < landmarks.length; i++) {
+    if ((landmarks[i].visibility ?? 1) < MIN_LANDMARK_CONFIDENCE) continue;
+    const { x, y } = landmarks[i];
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+    n++;
+  }
+  return n >= 6 && x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : null;
+}
+
+// How much of the frame the athlete's own body covers, how many real pixels
+// that was, and whether his feet are inside the picture.
+function framingCheck(metricsList) {
+  const fracs = [];
+  const pxs = [];
+  let edge = 0;
+  let counted = 0;
+  metricsList.forEach((m) => {
+    if (!m || !m.bodyFrac) return;
+    fracs.push(m.bodyFrac);
+    if (m.bodyPx) pxs.push(m.bodyPx);
+    counted++;
+    if (m.footAtEdge) edge++;
+  });
+  if (!counted) return { frac: null, px: null, edgeFraction: 0 };
+  return { frac: median(fracs), px: pxs.length ? median(pxs) : null, edgeFraction: edge / counted };
+}
+
 // ---------- Who to grade, and when to refuse ----------
 // Calibrated on reference clips sampled at ~13fps, then expressed per
 // second so a different sample rate doesn't move the thresholds. Measured:
@@ -531,6 +642,23 @@ const FOLD_BANDS = [
 // fast, so anything above the ceiling means the tracker lost the plot.
 const MAX_PEOPLE_IN_FRAME = 3;
 const MIN_TRACK_FRAMES = 8;
+// KNOWN BUG -- these are not rate-independent, despite being expressed per
+// second. Motion per frame is signal/rate + tracker jitter, and the jitter
+// does not shrink with the interval, so multiplying by the rate leaves the
+// jitter scaled by it. Measured on one block start, same athlete, same
+// clip: 1.11/s sampled at 6/s, 2.61/s sampled at 30/s -- a 2.4x swing from
+// sampling alone, which straddles the floor below.
+//
+// Both ends misfire on real footage. A block start sampled slightly slow
+// falls under the floor and is refused as not moving like a sprinter; a
+// genuinely fast athlete reads 4.3-5.4/s and breaks the ceiling, and is
+// refused as overlapping people. The clips that showed this are described
+// in tools/CALIBRATION.md.
+//
+// The fix is to measure motion between frames a fixed TIME apart rather
+// than between adjacent samples, then recalibrate both ends. Until then,
+// keep the scout rate pinned at SCOUT_RATE, which is what these were
+// calibrated against.
 const ATHLETE_MOTION_MIN = 1.8;
 const ATHLETE_MOTION_MAX = 4.0;
 
@@ -585,6 +713,78 @@ function buildTracks(framePoses) {
   return tracks;
 }
 
+// Splits a track wherever it stops describing the same body, and keeps the
+// longest piece.
+//
+// Filtering frame by frame against their neighbours does not work, because
+// once the athlete runs out of shot the tracker settles on the bystanders
+// behind him and stays there -- a contiguous run of wrong frames is
+// perfectly self-consistent. What gives it away is the seam: apparent body
+// size steps, and the torso angle jumps further in one sample than a running
+// body can rotate. On a real upload the seam was a torso going from 6 to 44
+// degrees between consecutive samples, with the spectators at the rail
+// graded as the athlete for the last eight frames.
+const BODY_SIZE_STEP = 1.6;
+const TORSO_STEP_DEG = 30;
+
+function longestConsistentRun(metrics) {
+  if (metrics.length < 6) return metrics;
+  const sizeOf = (m) => (m && m.legs && m.legs.length ? median(m.legs.map((l) => l.legLen)) : null);
+
+  const cuts = [0];
+  for (let i = 1; i < metrics.length; i++) {
+    const prevSize = sizeOf(metrics[i - 1]);
+    const size = sizeOf(metrics[i]);
+    const prevTorso = metrics[i - 1].torsoFromVertical;
+    const torso = metrics[i].torsoFromVertical;
+    const sizeJump = prevSize && size && Math.max(size / prevSize, prevSize / size) > BODY_SIZE_STEP;
+    const torsoJump = prevTorso != null && torso != null && Math.abs(torso - prevTorso) > TORSO_STEP_DEG;
+    if (sizeJump || torsoJump) cuts.push(i);
+  }
+  if (cuts.length === 1) return metrics;
+  cuts.push(metrics.length);
+
+  let best = [cuts[0], cuts[1]];
+  for (let i = 1; i < cuts.length - 1; i++) {
+    if (cuts[i + 1] - cuts[i] > best[1] - best[0]) best = [cuts[i], cuts[i + 1]];
+  }
+  const run = metrics.slice(best[0], best[1]);
+  return run.length >= 5 ? run : metrics;
+}
+
+// Follows one body through a run of frames by nearest hip, seeded from the
+// largest pose in the first frame that has one.
+//
+// This is the dense pass's tracker. It can be this simple because the scout
+// pass has already established that there is exactly one athlete worth
+// grading, that he is running, and that he is framed well enough -- all this
+// has to do is not lose him over a window under a second long.
+function followNearest(framePoses) {
+  const out = [];
+  let last = null;
+  for (const poses of framePoses) {
+    if (!poses.length) continue;
+    let pick;
+    if (!last) {
+      pick = poses.reduce((a, b) => (b.sig.size > a.sig.size ? b : a));
+    } else {
+      pick = poses.reduce((a, b) => {
+        const da = Math.hypot(a.sig.hip[0] - last.hip[0], a.sig.hip[1] - last.hip[1]);
+        const db = Math.hypot(b.sig.hip[0] - last.hip[0], b.sig.hip[1] - last.hip[1]);
+        return db < da ? b : a;
+      });
+      // A jump of more than a body's width between neighbouring frames is
+      // the tracker changing its mind about who it is watching, not a
+      // sprinter teleporting.
+      const jump = Math.hypot(pick.sig.hip[0] - last.hip[0], pick.sig.hip[1] - last.hip[1]);
+      if (jump > last.size * 3) continue;
+    }
+    out.push(pick.metrics);
+    last = pick.sig;
+  }
+  return out;
+}
+
 // Returns the frames belonging to the one athlete worth grading, or a
 // reason to refuse. Refusing beats grading merged skeletons: a race clip
 // produces a confident score built from one runner's torso and another's
@@ -623,7 +823,39 @@ function selectSubject(framePoses, secondsPerFrame) {
     };
   }
 
-  const subject = running.reduce((a, b) => (b.metrics.length > a.metrics.length ? b : a));
+  let subject = running.reduce((a, b) => (b.metrics.length > a.metrics.length ? b : a));
+
+  // Trim the track back to the stretch that is actually one body.
+  subject = { metrics: longestConsistentRun(subject.metrics) };
+
+  // Framing is checked last, on the athlete we actually settled on, and
+  // against the picture pose was given -- which by this point is usually a
+  // crop, so a distant athlete has already been rescued rather than refused.
+  // What's left here is footage no crop can fix.
+  const { frac, px, edgeFraction } = framingCheck(subject.metrics);
+  // Two different ways of being too far away. A small share of the frame is
+  // recoverable -- the extraction pass will already have tried cropping to
+  // him -- but too few real pixels of athlete is not: there is no detail
+  // left to enlarge, and any angle read off him is invented.
+  if (px != null && px < SUBJECT_PX_MIN) {
+    return {
+      metrics: [],
+      rejection: 'The athlete is too far away to measure — there isn\'t enough of him in the picture. Film closer.',
+    };
+  }
+  if (frac != null && frac < SUBJECT_FRAC_MIN) {
+    return {
+      metrics: [],
+      rejection: 'The athlete is too small in the frame to measure — film closer, or crop the clip to him before uploading.',
+    };
+  }
+  if (edgeFraction > MAX_EDGE_FRACTION) {
+    return {
+      metrics: [],
+      rejection: 'His feet leave the picture for much of this clip — ground contact can\'t be read. Keep the whole body in frame.',
+    };
+  }
+
   return { metrics: subject.metrics, rejection: null };
 }
 
@@ -673,12 +905,17 @@ const CONTACT_TOLERANCE = 0.06;
 
 function footContacts(metrics, sideIndex) {
   const rows = metrics
-    .map((m, i) => ({ i, leg: m.legs && m.legs[sideIndex] }))
-    .filter((r) => r.leg);
+    .map((m, i) => ({ i, leg: m.legs && m.legs[sideIndex], frameHipY: m.midHip ? m.midHip[1] : null }))
+    .filter((r) => r.leg && r.frameHipY != null);
   if (rows.length < 4) return [];
-  const lowest = Math.max(...rows.map((r) => r.leg.ank[1]));
-  const legLen = median(rows.map((r) => r.leg.legLen)) || 1;
-  const down = rows.filter((r) => (lowest - r.leg.ank[1]) / legLen < CONTACT_TOLERANCE);
+  // How far the foot is below the athlete's own hip, in his own leg lengths.
+  // Comparing raw image Y across frames instead means a camera that pans or
+  // tilts decides where the ground is: on a hand-held upload it put every
+  // "contact" in the first second and found none afterwards, which then took
+  // hip height and ground contact down with it.
+  const depth = (r) => (r.leg.ank[1] - r.frameHipY) / (r.leg.legLen || 1);
+  const deepest = Math.max(...rows.map(depth));
+  const down = rows.filter((r) => deepest - depth(r) < CONTACT_TOLERANCE);
 
   // Collapse runs of adjacent frames into one contact, keeping the lowest.
   const contacts = [];
@@ -688,7 +925,7 @@ function footContacts(metrics, sideIndex) {
     run.push(r);
   });
   if (run.length) contacts.push(run);
-  return contacts.map((g) => g.reduce((a, b) => (b.leg.ank[1] > a.leg.ank[1] ? b : a)));
+  return contacts.map((g) => g.reduce((a, b) => (depth(b) > depth(a) ? b : a)));
 }
 
 // Two strides is both feet twice over -- enough to see left/right and a
@@ -736,12 +973,34 @@ function scoreGroundContact(metrics) {
   return out;
 }
 
+// How far the hips drop through the stride.
+//
+// Measured as the hip's height above the athlete's own lowest foot, in his
+// own leg lengths -- both points read from the same frame, so it survives a
+// camera that pans, tilts, or lets him change distance. The old version
+// compared raw image Y across frames, which on a hand-held clip measures the
+// camera operator rather than the athlete: a real upload came back with the
+// hips "sinking" 227% of a leg length, which would put them underground.
 function scoreHipSink(metrics) {
   const rows = metrics.filter((m) => m.midHip && m.legs && m.legs.length);
   if (rows.length < 5) return null;
   const legLen = median(rows.map((m) => median(m.legs.map((l) => l.legLen)))) || 1;
-  const ys = rows.map((m) => m.midHip[1]);
-  const sink = (Math.max(...ys) - Math.min(...ys)) / legLen;
+  // Only at touchdown. Off the ground the lowest foot is a recovering heel
+  // somewhere behind him, not the track, so hip-above-foot swings wildly
+  // through the flight phase and reads as a collapse that never happened.
+  const contactRows = [...footContacts(metrics, 0), ...footContacts(metrics, 1)]
+    .map((c) => metrics[c.i])
+    .filter((m) => m && m.midHip && m.legs && m.legs.length);
+  if (contactRows.length < 3) return null;
+  const heights = contactRows.map((m) => {
+    const lowestFoot = Math.max(...m.legs.map((l) => l.ank[1]));
+    return (lowestFoot - m.midHip[1]) / (median(m.legs.map((l) => l.legLen)) || legLen);
+  });
+  // Percentiles, not min/max: one mistracked frame should not define the
+  // athlete's whole range of hip height.
+  const sorted = heights.slice().sort((a, b) => a - b);
+  const at = (p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))];
+  const sink = at(0.95) - at(0.05);
   const band = bandFor(sink, SINK_BANDS);
   return { name: 'Hip Height', score: band.score,
            note: `${band.note} (${(sink * 100).toFixed(0)}% of leg length)`, value: sink };
@@ -831,9 +1090,14 @@ function legMetrics(pt, conf, midSho, hipI, kneeI, ankI, heelI, toeI) {
     hipAngle: angleAt(midSho, hip, knee),
     // Thigh against shin. Its minimum across the swing is the heel fold.
     knee: angleAt(hip, knee, ank),
-    // Signed thigh angle off vertical: caller flips it so + is always in
+    // Signed thigh angle off straight-down: caller flips it so + is always in
     // front of the hip and - is behind. Drives the front/back balance check.
-    thighSwing: (Math.atan2(knee[0] - hip[0], hip[1] - knee[1]) * 180) / Math.PI,
+    //
+    // Measured from DOWN, not up. y grows downward, so a leg hanging under
+    // the hip has knee[1] > hip[1]; the old form put that near +/-180 and,
+    // since a runner's knee is below his hip nearly all the time, the whole
+    // metric sat at 180 and handed out a free 5/5 for "balanced".
+    thighSwing: (Math.atan2(knee[0] - hip[0], knee[1] - hip[1]) * 180) / Math.PI,
   };
 }
 
@@ -855,7 +1119,30 @@ function frameMetrics(landmarks, width, height) {
   ].filter(Boolean);
   const lead = legs.length ? legs.reduce((a, b) => (b.rise > a.rise ? b : a)) : null;
 
+  // Framing, read off the same landmarks: how tall the athlete stands in
+  // this image, and whether either foot is pinned to its edge. Both are in
+  // the coordinates of whatever was handed to pose -- the full frame, or a
+  // crop of it -- which is exactly the picture the model actually saw.
+  const ys = [];
+  const xs = [];
+  for (let i = 0; i < landmarks.length; i++) {
+    if (conf(i) < MIN_LANDMARK_CONFIDENCE) continue;
+    const [x, y] = pt(i);
+    xs.push(x / width);
+    ys.push(y / height);
+  }
+  const bodyFrac = ys.length >= 6 ? Math.max(...ys) - Math.min(...ys) : null;
+  const footAtEdge = [POSE_LM.lAnk, POSE_LM.rAnk, POSE_LM.lToe, POSE_LM.rToe].some((i) => {
+    if (conf(i) < MIN_LANDMARK_CONFIDENCE) return false;
+    const [x, y] = pt(i);
+    const nx = x / width;
+    const ny = y / height;
+    return nx <= EDGE_MARGIN || nx >= 1 - EDGE_MARGIN || ny <= EDGE_MARGIN || ny >= 1 - EDGE_MARGIN;
+  });
+
   return {
+    bodyFrac,
+    footAtEdge,
     torsoFromVertical: torsoOk ? angleFromVertical(midHip, midSho) : null,
     scissor: scissorOk ? angleAt(pt(POSE_LM.lKnee), midHip, pt(POSE_LM.rKnee)) : null,
     thighRise: lead ? lead.rise : null,
@@ -1203,27 +1490,46 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     thumb.height = Math.max(1, Math.round(48 * (canvas.height / canvas.width)));
     const thumbCtx = thumb.getContext('2d', { willReadFrequently: true });
 
-    // Sampled at a roughly fixed rate (~10fps) rather than a fixed count:
-    // the tracking thresholds are per-second, and a fixed count would give
-    // a 2s clip and a 10s clip wildly different sample rates. Capped so a
-    // long clip doesn't grind on a phone.
+    // The crop handed to pose. Kept at the same budget as the full frame, so
+    // cropping spends nothing extra -- it just spends the pixels on the
+    // athlete instead of on the track and the phone UI around him.
+    const poseCanvas = document.createElement('canvas');
+    const poseCtx = poseCanvas.getContext('2d', { willReadFrequently: true });
+
+    const seekTo = async (t) => {
+      video.currentTime = t;
+      await waitForEvent(video, 'seeked', 2000);
+      await videoFramePainted(video);
+    };
+
+    // Scout pass: spread thinly over the whole clip, at a roughly fixed rate
+    // so a 2s clip and a 10s clip get the same sample spacing. This pass
+    // decides the things that need the whole clip in view -- which shot to
+    // grade, who the athlete is, and whether he is framed well enough -- and
+    // supplies the stills sent to the AI. It is NOT what the angles are
+    // measured from; see the dense pass below.
     const candidateCount = landmarker
-      ? Math.max(16, Math.min(60, Math.round(duration * 10)))
+      ? Math.max(16, Math.min(SCOUT_MAX_SAMPLES, Math.round(duration * SCOUT_RATE)))
       : Math.min(16, count * 2 + 2);
     const secondsPerFrame = duration / Math.max(candidateCount - 1, 1);
     const candidates = [];
     const framePoses = [];
     let prevGray = null;
+    let cropped = 0;
+    // Where the athlete was last seen, normalized to the full video frame,
+    // and how big the crop aimed at him was.
+    let lastBox = null;
+    let cropSidePx = 0;
 
-    for (let i = 0; i < candidateCount; i++) {
-      onProgress(`Scanning clip ${i + 1}/${candidateCount}…`);
-      // Nudge the very first timestamp off zero -- setting currentTime to
-      // the value it's already at can silently no-op the seek.
-      const raw = (duration * i) / Math.max(candidateCount - 1, 1);
-      const t = Math.min(Math.max(raw, 0.05), Math.max(duration - 0.05, 0));
-      video.currentTime = t;
-      await waitForEvent(video, 'seeked', 2000);
-      await videoFramePainted(video);
+    // Walks a list of timestamps, measuring each one. Used twice: once
+    // spread over the whole clip, once packed into the few strides that get
+    // graded.
+    const scan = async (times, label, collect) => {
+      const poseRows = [];
+      for (let i = 0; i < times.length; i++) {
+      onProgress(`${label} ${i + 1}/${times.length}…`);
+      const t = times[i];
+      await seekTo(t);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       thumbCtx.drawImage(canvas, 0, 0, thumb.width, thumb.height);
@@ -1231,38 +1537,202 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       const { detail, motion } = scoreThumbnail(gray, prevGray);
       prevGray = gray;
 
-      // Measure every person in the frame while it's already on the canvas
-      // -- one pass covers choosing frames, working out who to grade, and
-      // scoring them.
+      // Measure every person in the frame.
+      //
+      // Pose runs on the whole frame first. If the athlete comes back too
+      // small to measure well -- or doesn't come back at all -- it runs a
+      // second time on a padded crop aimed at where he was last seen, drawn
+      // from the video at full resolution. That costs one extra inference on
+      // the frames that need it and no extra seeking, and it is the whole
+      // difference between reading a distant athlete and refusing him.
+      //
+      // The crop is aimed by the previous detection rather than by looking
+      // for movement: on a re-encoded social clip most of what "moves" is
+      // compression noise along the horizon and the caption, not the runner.
       const poses = [];
       if (landmarker) {
-        try {
-          const result = landmarker.detect(canvas);
-          (result.landmarks || []).forEach((lms) => {
-            poses.push({
-              sig: poseSignature(lms, canvas.width, canvas.height),
-              metrics: frameMetrics(lms, canvas.width, canvas.height),
-            });
-          });
-        } catch (poseErr) {
-          console.warn('Pose detection failed on a frame:', poseErr);
-        }
-      }
-      framePoses.push(poses);
+        const measure = (source, sourcePxHeight) => {
+          try {
+            const result = landmarker.detect(source);
+            return (result.landmarks || []).map((lms) => ({
+              lms,
+              sig: poseSignature(lms, source.width, source.height),
+              metrics: Object.assign(frameMetrics(lms, source.width, source.height), {
+                // Body height in real pixels of the original video, which is
+                // what decides whether there is any detail left to enlarge.
+                bodyPx: null,
+              }),
+              sourcePxHeight,
+            }));
+          } catch (poseErr) {
+            console.warn('Pose detection failed on a frame:', poseErr);
+            return [];
+          }
+        };
+        const biggest = (list) =>
+          list.reduce((a, b) => ((b.metrics.bodyFrac || 0) > (a.metrics.bodyFrac || 0) ? b : a), list[0]);
 
-      candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion });
+        let found = measure(canvas, video.videoHeight);
+        let lead = found.length ? biggest(found) : null;
+
+        // How big the crop should be is taken ONLY from a whole-frame
+        // detection, where the athlete's size is in known frame units. Sizing
+        // it from a detection made inside a crop feeds the crop back into
+        // itself: the model reports the body as some fraction of whatever it
+        // was shown, padding multiplies that, and the box grows every frame
+        // until it swallows the picture and cropping quietly stops. Position
+        // still follows the athlete frame to frame; only the scale is pinned.
+        if (lead && lead.metrics.bodyFrac) {
+          cropSidePx = lead.metrics.bodyFrac * video.videoHeight * CROP_PADDING;
+        }
+        if (lead) {
+          const b = poseBounds(lead.lms);
+          if (b) lastBox = b;
+        }
+
+        if ((!lead || (lead.metrics.bodyFrac || 0) < SUBJECT_FRAC_MIN) && lastBox && cropSidePx > 0) {
+          const bw = video.videoWidth;
+          const bh = video.videoHeight;
+          const cx = ((lastBox.x0 + lastBox.x1) / 2) * bw;
+          const cy = ((lastBox.y0 + lastBox.y1) / 2) * bh;
+          const side = cropSidePx;
+          const sx = Math.max(0, Math.min(bw - 1, cx - side / 2));
+          const sy = Math.max(0, Math.min(bh - 1, cy - side / 2));
+          const sw = Math.min(bw - sx, side);
+          const sh = Math.min(bh - sy, side);
+          if (sw > 16 && sh > 16 && sw * sh < bw * bh * 0.8) {
+            const k = Math.min(1, maxEdge / Math.max(sw, sh));
+            poseCanvas.width = Math.max(1, Math.round(sw * k));
+            poseCanvas.height = Math.max(1, Math.round(sh * k));
+            poseCtx.drawImage(video, sx, sy, sw, sh, 0, 0, poseCanvas.width, poseCanvas.height);
+            const inCrop = measure(poseCanvas, sh);
+            const cropLead = inCrop.length ? biggest(inCrop) : null;
+            if (cropLead && (cropLead.metrics.bodyFrac || 0) > (lead ? lead.metrics.bodyFrac || 0 : 0)) {
+              found = inCrop;
+              lead = cropLead;
+              cropped++;
+              // Aim only: the crop's coordinates map back to the full frame
+              // so the next crop follows him, but its size stays pinned.
+              const b = poseBounds(cropLead.lms);
+              if (b) {
+                lastBox = {
+                  x0: (sx + b.x0 * sw) / bw, x1: (sx + b.x1 * sw) / bw,
+                  y0: (sy + b.y0 * sh) / bh, y1: (sy + b.y1 * sh) / bh,
+                };
+              }
+            }
+          }
+        }
+
+        found.forEach((p) => {
+          p.metrics.bodyPx = p.metrics.bodyFrac ? p.metrics.bodyFrac * p.sourcePxHeight : null;
+          // Carried so the dense pass can find WHEN the athlete was actually
+          // on screen, rather than assuming he is in the middle of the clip.
+          p.metrics.t = t;
+          poses.push({ sig: p.sig, metrics: p.metrics });
+        });
+      }
+      poseRows.push(poses);
+      if (collect) {
+        candidates.push({ dataUrl: canvas.toDataURL('image/jpeg', 0.7), detail, motion, t });
+      }
+      }
+      return poseRows;
+    };
+
+    // Nudge timestamps off the very ends -- setting currentTime to the value
+    // it already holds can silently no-op the seek.
+    const clampT = (t) => Math.min(Math.max(t, 0.05), Math.max(duration - 0.05, 0));
+    const scoutTimes = [];
+    for (let i = 0; i < candidateCount; i++) {
+      scoutTimes.push(clampT((duration * i) / Math.max(candidateCount - 1, 1)));
+    }
+    framePoses.push(...(await scan(scoutTimes, 'Scanning clip', true)));
+
+    // A screen recording often holds more than one video -- a scroll to the
+    // next reel, or the control centre pulled down over the end. Grading
+    // across a cut averages two different clips into one score, so only the
+    // longest unbroken shot is measured.
+    const [shotStart, shotEnd] = longestShot(candidates.map((c) => c.motion));
+    const cutOut = candidates.length - (shotEnd - shotStart);
+
+    const chosen = chooseBestFrames(candidates.slice(shotStart, shotEnd), count);
+    const shotPoses = framePoses.slice(shotStart, shotEnd);
+    const subject = landmarker
+      ? selectSubject(shotPoses, secondsPerFrame)
+      : { metrics: [], rejection: null };
+
+    // ---- Dense pass: re-measure the few strides that actually get graded.
+    //
+    // The scout rate is about 10 samples a second. A sprinter turns over
+    // around 4.5 strides a second and peak thigh lift lasts roughly one
+    // frame of 30fps video, so ~2 samples per stride will usually miss the
+    // exact instant every peak-lift angle is defined at. Measured on one
+    // clip, re-sampled at four rates: scissor came out 105, 69, 105 and 88
+    // degrees, and hip angle 100 to 119 -- a 36 degree spread from sampling
+    // phase alone, against a model noise floor of 8. That swamps the bands
+    // it is scored against.
+    //
+    // So the strides being graded are re-scanned at DENSE_RATE, roughly six
+    // samples per stride. It is cheaper than it sounds: the window is under
+    // a second, so this costs fewer seeks than the scout pass it corrects.
+    let measured = subject.metrics;
+    let denseFrames = 0;
+    if (landmarker && !subject.rejection && subject.metrics.length >= 3) {
+      try {
+        // Centre the window on when the ATHLETE was on screen, not on the
+        // middle of the clip. People film the whole run and the runner is
+        // often in shot for only a fraction of it -- on these clips he was
+        // gone by a third of the way in, so a window centred on the clip
+        // would have re-measured empty track at high resolution.
+        const seen = subject.metrics.map((m) => m.t).filter((t) => t != null).sort((a, b) => a - b);
+        if (seen.length < 3) throw new Error('no timestamps on the tracked frames');
+        const first = seen[0];
+        const last = seen[seen.length - 1];
+        const mid = seen[Math.floor(seen.length / 2)];
+        const half = Math.min(DENSE_WINDOW_S, last - first) / 2;
+        // Keep the window inside the stretch he was actually visible for.
+        const from = Math.max(first, Math.min(mid - half, last - half * 2));
+        const to = Math.min(last, from + half * 2);
+        const step = 1 / DENSE_RATE;
+        const denseTimes = [];
+        for (let t = from; t <= to + 1e-6 && denseTimes.length < DENSE_MAX_SAMPLES; t += step) {
+          denseTimes.push(clampT(t));
+        }
+        if (denseTimes.length >= 8) {
+          const densePoses = await scan(denseTimes, 'Measuring strides', false);
+          // The athlete was already identified and vetted by the scout pass,
+          // so this only has to keep following him. selectSubject is
+          // deliberately not re-run here: its motion band is per-second but
+          // tracker jitter does not shrink with the sample interval, so at
+          // 30fps the same athlete reads as "moving too fast to be real"
+          // and gets rejected.
+          const followed = followNearest(densePoses);
+          const trimmed = longestConsistentRun(followed);
+          if (trimmed.length >= 8) {
+            measured = trimmed;
+            denseFrames = trimmed.length;
+          }
+        }
+      } catch (denseErr) {
+        // Falling back to the scout metrics is a worse measurement, not a
+        // broken one, so this must never fail the whole analysis.
+        console.warn('Dense re-measure failed, using the scout pass:', denseErr);
+      }
     }
 
-    const chosen = chooseBestFrames(candidates, count);
-    const subject = landmarker
-      ? selectSubject(framePoses, secondsPerFrame)
-      : { metrics: [], rejection: null };
     return {
       frames: chosen.map((c) => c.dataUrl),
       // Only the chosen athlete's frames inform the score. Every frame they
       // appear in counts -- there's no per-frame cost locally.
-      metrics: subject.metrics,
+      metrics: measured,
+      denseFrames,
       rejection: subject.rejection,
+      shotTrimmed: cutOut > 0,
+      // How often pose got a crop of the athlete rather than the whole
+      // frame. Surfaced so a regression here shows up as a number rather
+      // than as quietly worse scores.
+      cropped,
     };
   } finally {
     document.body.removeChild(video);
@@ -1338,7 +1808,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let analysis = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const { frames, metrics, rejection } = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+      const { frames, metrics, rejection, shotTrimmed } = await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
 
       // Local measurement is the default engine: it runs on this device, so
       // it costs nothing and works offline.
@@ -1346,6 +1816,12 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       analysis = rejection
         ? { summary: 'This clip could not be graded.', pinpoints: [], flags: [], filming_note: rejection }
         : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
+      if (shotTrimmed && !rejection) {
+        analysis.flags = [
+          ...(analysis.flags || []),
+          'This clip contained more than one shot — only the longest continuous run was graded.',
+        ];
+      }
 
       // The AI read is opt-in, because that's the part that costs money.
       if (document.getElementById('aiAssist').checked) {
