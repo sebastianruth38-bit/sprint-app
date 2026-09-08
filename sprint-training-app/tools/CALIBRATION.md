@@ -43,48 +43,74 @@ One clip re-sampled at four rates, nothing else changed:
 dense pass. After it, the same clip with the window slid to four different
 start times gave hip 122/124/124/124 and scissor 86/84/84/84 — a 2° spread.
 
-## Athlete-motion band (BROKEN — next job)
+## Athlete-motion band (fixed)
 
-`ATHLETE_MOTION_MIN/MAX` are expressed per second but are not independent of
-the sampling rate. Motion per frame is signal/rate + tracker jitter; the
-jitter does not shrink with the interval, so multiplying by the rate leaves
-the jitter scaled by it.
+`ATHLETE_MOTION_MIN/MAX` were expressed per second but moved with the
+sampling rate. Motion per frame is signal/rate + tracker jitter; the jitter
+does not shrink with the interval, so multiplying by the rate left the jitter
+scaled by it. Motion is now measured across pairs of frames a fixed **time**
+apart (`MOTION_GAP_S`), which divides a much larger real change by a known
+interval.
 
-Three clips the athlete filmed himself, all properly framed, side-on, single
-athlete, real camera. All three were refused:
+Same tracks, both methods, at two sampling rates:
 
-| Clip | Duration | Scout rate | Tracked | Motion | Size | Refused with |
-|---|---|---|---|---|---|---|
-| Block start | 6.47s | 6.0/s | 11 frames | **1.11/s** | 15% | "nobody moving like a sprinter" |
-| Fast run | 2.10s | 9.5/s | **5 frames** | 4.30/s | 24% | "could not follow anyone" |
-| Drive phase | 3.43s | 9.6/s | 10 frames | 2.98/s | **17%** | "athlete too small" |
+| Track | Rate | New | Old |
+|---|---|---|---|
+| Block start | 6/s → 30/s | 0.86 → 1.06 | 1.11 → **2.61** |
+| Fast run | 9.5/s → 30/s | 4.34 → 4.14 | 4.30 → 5.43 |
+| Drive phase | 9.6/s → 30/s | 3.11 → 3.22 | 2.98 → 4.85 |
 
-Sampled at 30/s instead, the same tracks read 2.61/s, 5.43/s and 4.85/s. The
-block start's motion figure moves 2.4x on sampling rate alone and straddles
-the 1.8 floor.
+The old figure moved up to 2.4x on sampling alone; the new one holds to
+within ~5% on the two clips sampled densely enough for a real fixed gap.
 
-Both ends misfire:
+### The band, measured
 
-- **Floor too high / rate too low.** A real block start sampled at 6/s reads
-  1.11 and is refused. Mitigated for now by pinning `SCOUT_MAX_SAMPLES` back
-  to 60 so a normal clip really is sampled at `SCOUT_RATE`; a clip longer
-  than ~6s still degrades.
-- **Ceiling too low.** A genuinely fast athlete reads 4.3/s at scout rate and
-  5.4/s dense, both above the 4.0 ceiling, and is refused as overlapping
-  people. This is a false rejection of exactly the athletes the app is for.
-- **`MIN_TRACK_FRAMES` = 8 vs. short visibility.** Across these three the
-  athlete was on screen for 0.4-1.2s of clips running 2.1-6.5s. At 10/s a
-  0.5s appearance yields 5 frames and can never reach 8, though at 30/s the
-  same clip yields 16.
+| Track | Motion |
+|---|---|
+| Block start, driving out | 4.20 |
+| Fast run | 4.14 |
+| Drive phase | 3.22 |
+| Same athlete still set in the blocks | 1.06 |
+| Runner inside a race pack | 3.27 |
+| Skeleton jumping between people in a crowd | 7.97 |
 
-### The fix
+Set to **2.0 – 6.0**. The old ceiling of 4.0 sat *underneath* two of the
+three real athletes, which is why a genuine block start and a genuinely fast
+run were both refused. The floor was never the problem; it is kept high
+enough to exclude an athlete who is set but has not gone yet.
 
-Measure motion between frames a fixed *time* apart (~0.1s) rather than
-between adjacent samples, which makes the number rate-invariant by
-construction. Then recalibrate both ends against the reference tracks —
-athlete, standing bystander, and a skeleton jumping between runners in a
-pack — rather than tuning until these three clips pass.
+Motion alone cannot separate a lone sprinter from one in a pack — a runner
+in a race reads 3.27, squarely among the athletes — so that is left to the
+people-count check.
 
-The drive-phase clip's "too small" refusal is **unverified**: the offline
-harness does not simulate the auto-crop, which should lift 17% above the
-threshold in the real app. Check that before treating it as a fourth bug.
+A second track in the band is only treated as a second athlete if it is at
+least `SECOND_ATHLETE_SHARE` of the longest. One block start came back as a
+27-frame track plus a 9-frame stub of the same runner, and refusing that as
+"more than one athlete" would have been wrong.
+
+## Sampling structure
+
+Two passes, not one:
+
+1. **Coarse sweep** (`SCOUT_RATE`, 12–30 samples) — locates the athlete in
+   time and finds shot cuts. It does not have to track him.
+2. **Dense pass** (`DENSE_RATE`, up to `DENSE_MAX_SAMPLES`) over the stretch
+   he is actually on screen — subject selection *and* measurement.
+
+Across three clips the athlete filmed himself he was in shot for 0.4–1.2s of
+clips running 2.1–6.5s. Spreading a thin rate over the whole clip gave about
+five frames of him — under the track-length floor, so every clip was refused
+with "could not follow anyone through this clip".
+
+## Auto-crop, verified
+
+Previously unverified. Measured on the two clips that failed the size check
+on the full frame:
+
+| Clip | Full frame | After crop |
+|---|---|---|
+| Block start | 15.9% | 46.6% |
+| Drive phase | 17.5% | 44.5% |
+
+Both clear the 25% threshold comfortably, so the size refusal on those two
+was an artefact of the offline harness (which does not crop), not the app.
