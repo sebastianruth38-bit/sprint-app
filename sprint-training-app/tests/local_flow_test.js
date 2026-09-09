@@ -106,6 +106,34 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(degraded.startsWith('threw'),'pose loader rejects cleanly when the CDN is unreachable (sandbox): '+degraded);
   assert(errors.length===0,'…and that rejection does not surface as an uncaught page error');
 
+  // ---------- one-tap sign-in ----------
+  // The point of the Google button is that a teammate standing on a track can
+  // start using this without typing an email and inventing a password, which
+  // is exactly where people give up. So it has to be the thing they see first.
+  const auth = await page.evaluate(() => {
+    const gate = document.getElementById('authGate');
+    const g = document.getElementById('authGoogle');
+    const email = document.getElementById('authEmail');
+    return {
+      hasGoogle: !!g,
+      // Position, not just presence: below the email fields it is decoration.
+      googleFirst: !!(g && email && g.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING),
+      redirect: typeof authRedirectUrl === 'function' ? authRedirectUrl() : null,
+      legalLinks: Array.from(gate.querySelectorAll('a')).map((a) => a.getAttribute('href')),
+    };
+  });
+  assert(auth.hasGoogle, 'the sign-in screen offers Google');
+  assert(auth.googleFirst, 'and offers it above the email fields, not under them');
+  // Hard-coding a redirect breaks the moment the app moves domain, and a stale
+  // one fails at the provider rather than in the app, which is hard to debug.
+  const origin = await page.evaluate(() => window.location.origin);
+  assert(auth.redirect && auth.redirect.startsWith(origin),
+    'the redirect points back at wherever the app is actually served from: ' + auth.redirect);
+  assert(!/[?#]/.test(auth.redirect),
+    'and carries no query or hash, which would confuse the auth code coming back: ' + auth.redirect);
+  assert(auth.legalLinks.includes('terms.html') && auth.legalLinks.includes('privacy.html'),
+    'the gate links the terms and privacy policy someone is agreeing to: ' + JSON.stringify(auth.legalLinks));
+
   // ---------- compression falls back rather than failing a save ----------
   // Storage is the free tier's real ceiling. But an unwatchable clip is worse
   // than a large one, so every path that cannot produce a smaller playable
