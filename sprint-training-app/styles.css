@@ -1131,3 +1131,178 @@ body.is-analysing .tab-panel.active { animation: none; }
   .score-bar .progress-fill { animation: none; }
   * { scroll-behavior: auto !important; }
 }
+
+/* =====================================================================
+   Instrument panel
+   =====================================================================
+   The app is a measuring device, so it should look like one. Numbers set in
+   mono with tabular figures, HUD framing on the surfaces that carry readings,
+   and a signal-green accent that belongs to a track rather than a spaceship.
+   Same rule as above: transforms and opacity only, and all of it parks while
+   a clip is being measured.                                                  */
+
+:root {
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --grid-line: rgba(56, 232, 255, 0.045);
+}
+
+/* ---- A faint grid, far back ----
+   Sits under the colour wash. Two hairline gradients, no repetition cost
+   worth speaking of, and it gives every surface something to float above. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* ---- Readings are set in mono ----
+   Scoped to the things that ARE readings. Body copy stays in Barlow: a whole
+   interface in monospace is a costume, not a design. */
+.score-pill,
+.day-badge,
+.explog-input,
+.time-value,
+.analysis-live .hint,
+.legal-page .hint {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.score-pill {
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  border: 1px solid var(--border-strong);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+/* The measurement in each note -- the parenthetical with the angle in it --
+   is the payload of the whole row. */
+.score-note { font-variant-numeric: tabular-nums; }
+
+/* ---- HUD framing ----
+   Corner brackets on the cards that carry readings. Drawn with a single
+   background layer, no extra elements, no cost while idle. */
+.entry, .card {
+  --bracket: rgba(56, 232, 255, 0.30);
+  --bracket-len: 14px;
+  background-image:
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket));
+  background-repeat: no-repeat;
+  background-size:
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len);
+  background-position:
+    12px 10px, 10px 12px,
+    calc(100% - 12px) 10px, calc(100% - 10px) 12px,
+    12px calc(100% - 10px), 10px calc(100% - 12px),
+    calc(100% - 12px) calc(100% - 10px), calc(100% - 10px) calc(100% - 12px);
+}
+
+/* ---- The title reads as a readout ---- */
+.app-header h1 {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: linear-gradient(92deg, var(--text) 30%, var(--glow));
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- Section headings get a leading tick ---- */
+.tab-panel > h2::before {
+  content: '';
+  display: inline-block;
+  width: 3px; height: 0.78em;
+  margin-right: 0.5rem;
+  vertical-align: -0.04em;
+  background: var(--glow);
+  box-shadow: 0 0 10px var(--glow-dim);
+}
+
+/* ---- Score bars carry a live edge ----
+   A bright leading edge on the fill, so a bar reads as a level rather than a
+   coloured rectangle. Pure box-shadow on the same element that already moves. */
+.score-bar { background: rgba(255, 255, 255, 0.05); }
+.score-bar .progress-fill {
+  box-shadow: 0 0 12px -1px currentColor;
+  filter: saturate(1.15);
+}
+
+/* ---- Waiting, at length ----
+   The analysis is the app's slowest moment and the one that most needs to
+   look deliberate. A segmented ring with a sweep behind it. */
+.analysis-live {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: rgba(56, 232, 255, 0.03);
+  padding: 0.7rem 0.85rem;
+  position: relative;
+  overflow: hidden;
+}
+body:not(.is-analysing) .analysis-live {
+  border-color: transparent;
+  background: none;
+  padding: 0.1rem 0;
+}
+body.is-analysing .analysis-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(56, 232, 255, 0.10), transparent);
+  transform: translateX(-100%);
+  animation: sweep 1.8s linear infinite;
+  pointer-events: none;
+}
+.analysis-ring {
+  border-width: 2px;
+  border-style: solid;
+  border-color: rgba(56, 232, 255, 0.15);
+  border-top-color: var(--glow);
+  border-right-color: var(--glow-dim);
+  box-shadow: 0 0 14px -2px var(--glow-dim);
+}
+
+/* ---- The bottom bar is the console ---- */
+.bottom-nav {
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 -2px 30px -12px var(--glow-dim), var(--shadow-soft);
+}
+.tab-btn .tab-label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ---- Reduced motion: the framing stays, the movement goes ---- */
+@media (prefers-reduced-motion: reduce) {
+  body.is-analysing .analysis-live::after { animation: none; }
+}
+
+/* Mono, uppercase and letter-spaced is wider than the sentence-case labels it
+   replaced -- enough to push the console 23px past the screen on a 320px
+   phone. Tighten rather than truncate: "FORM ANALYSIS" losing its end is
+   worse than it being a point smaller. */
+@media (max-width: 360px) {
+  .tab-btn .tab-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.02em;
+  }
+  .bottom-nav { left: 0.6rem; right: 0.6rem; }
+}
