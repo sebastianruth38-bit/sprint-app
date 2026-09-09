@@ -15,21 +15,32 @@ WORK="$(mktemp -d)"
 SHA="$(git -C "$ROOT" rev-parse --short HEAD)"
 MSG="${1:-Sync: $SHA}"
 
+# Every page that ships. Named in one place because a page missing from this
+# list does not fail -- it just silently never reaches the site.
+PAGES=(index.html privacy.html terms.html)
+
 trap 'git -C "$ROOT" worktree remove "$WORK" --force >/dev/null 2>&1 || true; git -C "$ROOT" worktree prune' EXIT
 
 git -C "$ROOT" worktree add "$WORK" gh-pages -f >/dev/null
-cp "$APP/app.js" "$APP/styles.css" "$APP/config.js" "$APP/index.html" "$WORK/"
+cp "$APP/app.js" "$APP/styles.css" "$APP/config.js" "$WORK/"
+for page in "${PAGES[@]}"; do
+  cp "$APP/$page" "$WORK/"
+done
 
 # Version every local asset so a cached copy can never shadow a new deploy.
-python3 - "$WORK/index.html" "$SHA" <<'PY'
-import re, sys
+# Every page, not just index: the legal pages load the same stylesheet and
+# would otherwise keep serving a cached copy of it.
+for page in "${PAGES[@]}"; do
+  python3 - "$WORK/$page" "$SHA" <<'PY'
+import re, sys, os
 path, sha = sys.argv[1], sys.argv[2]
 html = open(path).read()
 html = re.sub(r'(src|href)="([\w.-]+\.(?:js|css))(\?v=[^"]*)?"',
               lambda m: f'{m.group(1)}="{m.group(2)}?v={sha}"', html)
 open(path, 'w').write(html)
-print(f"stamped assets with ?v={sha}")
+print(f"stamped {os.path.basename(path)} with ?v={sha}")
 PY
+done
 
 node --check "$WORK/app.js"
 git -C "$WORK" add -A

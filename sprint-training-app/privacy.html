@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Privacy Policy — Sprint Lab</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app legal-page">
+    <header class="app-header">
+      <a class="icon-btn" href="index.html" aria-label="Back to Sprint Lab">←</a>
+      <h1>Privacy Policy</h1>
+      <span style="width:44px"></span>
+    </header>
+
+    <main class="panel active">
+      <p class="hint">Last updated: 9 September 2026</p>
+
+      <p>Sprint Lab is a training app for sprinters. This page explains exactly
+      what it stores, where it goes, and how to get rid of it. It describes what
+      the app actually does — if you find something here that does not match how
+      the app behaves, the app is wrong and should be fixed.</p>
+
+      <h2>What is stored</h2>
+      <ul>
+        <li><strong>Your account.</strong> Your email address, and a password
+        that is stored only as a hash — never as text anyone can read. You can
+        also sign in with a one-time email link instead of a password.</li>
+        <li><strong>Your training.</strong> Workouts, sprint times, lift weights,
+        goals, availability, competition seasons, and app settings.</li>
+        <li><strong>Your clips.</strong> Videos you upload for form analysis,
+        plus a small still image from each one used as the preview.</li>
+        <li><strong>Your scores.</strong> The measurements and grades produced
+        from each clip.</li>
+      </ul>
+
+      <h2>How your video is analysed</h2>
+      <p><strong>Form grading happens on your own device.</strong> The pose model
+      runs inside your browser, reads the video off your phone, and produces the
+      measurements there. The video is not uploaded anywhere in order to be
+      graded.</p>
+
+      <p>Your clip <em>is</em> uploaded afterwards, so you can play it back later
+      from the history list. It is shrunk first to save space.</p>
+
+      <h2>The AI coach notes are the exception</h2>
+      <p>There is an optional checkbox labelled <em>"Also get AI coach notes"</em>.
+      It is <strong>off by default</strong>. If you tick it, six still frames from
+      your clip are sent through our server to Anthropic's API, which generates
+      the written notes and sends them back.</p>
+      <p>Only those still frames leave your device — never the video file. Our
+      server does not keep them; it passes them on and forwards the reply. What
+      Anthropic does with data sent to its API is governed by Anthropic's own
+      terms and privacy policy, not this one. If you leave the box unticked,
+      nothing about your clip is ever sent to Anthropic.</p>
+      <p>We do keep a count of how many AI analyses you have run each day, to
+      enforce the daily limit. That is a number, not your data.</p>
+
+      <h2>Where it is kept</h2>
+      <p>Accounts, training data and clips are stored with
+      <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a>,
+      on servers in the United States. Supabase is the hosting provider; they
+      store the data on our behalf.</p>
+      <p>The app itself is served as static files from GitHub Pages, and the pose
+      model is downloaded from Google's public model host. Neither receives your
+      training data.</p>
+
+      <h2>Who can see it</h2>
+      <p>Only you. Every table enforces row-level security, which means the
+      database itself refuses to return one athlete's rows to another athlete,
+      regardless of what the app asks for. Clips are stored in a private bucket
+      and are reachable only through short-lived links generated for you.</p>
+      <p>Your data is not sold, rented, or shared with advertisers. There is no
+      analytics or tracking in this app.</p>
+
+      <h2>How long it is kept</h2>
+      <ul>
+        <li><strong>Videos are deleted after 30 days</strong>, automatically.</li>
+        <li><strong>Scores and training data are kept</strong> until you delete
+        them, so your history stays useful after the video is gone.</li>
+      </ul>
+
+      <h2>Deleting your data</h2>
+      <p>Every clip in the history has a <strong>Delete</strong> button, which
+      removes the video and its scores immediately.</p>
+      <p><strong>Full account deletion is not yet available in the app.</strong>
+      Until it is, email the address below and your account and everything in it
+      will be deleted. This is a known gap and is being fixed.</p>
+
+      <h2>Young athletes</h2>
+      <p>This app is built for high-school and club sprinters, so many users are
+      under 18. If you are under 13, do not create an account without a parent or
+      guardian setting it up with you.</p>
+      <p>Video of a young person is sensitive. If you are a parent or guardian
+      and want to see what is stored for your athlete, or want it deleted, email
+      the address below and it will be handled.</p>
+
+      <h2>Changes</h2>
+      <p>If what the app does with your data changes, this page changes with it,
+      and the date at the top will tell you when.</p>
+
+      <h2>Contact</h2>
+      <p>Questions, deletion requests, or anything that looks wrong:
+      <strong>[ADD YOUR CONTACT EMAIL HERE]</strong></p>
+
+      <p class="hint" style="margin-top:2rem">
+        <a href="terms.html">Terms of Use</a> · <a href="index.html">Back to Sprint Lab</a>
+      </p>
+    </main>
+  </div>
+</body>
+</html>
