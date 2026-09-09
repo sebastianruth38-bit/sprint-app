@@ -2482,8 +2482,20 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // is, go back and sample only that stretch densely. Seeking is slow,
       // which is why this is a fallback and why it is aimed at one second of
       // clip rather than all of it.
-      const seenTimes = times.filter((t, i) => framePoses[i] && framePoses[i].length);
-      if (landmarker && seenTimes.length && posedCount(framePoses) < MIN_TRACK_FRAMES) {
+      // Where he was seen, by ANY attempt so far. Taking this from the sweep
+      // alone aimed the dense pass at nothing whenever the sweep missed him
+      // and a playback pass had not -- which is the usual case here, since
+      // playback samples far more densely than the sweep does.
+      const seenTimes = times.filter((t, i) => framePoses[i] && framePoses[i].length)
+        .concat(best.rows.flatMap((row) => row.map((p) => p.metrics && p.metrics.t))
+          .filter((t) => typeof t === 'number' && isFinite(t)));
+      // Measured against the BEST result so far, and against the same bar the
+      // playback passes are held to. Two mistakes lived here: it compared
+      // only the sweep, ignoring a playback pass that may already have found
+      // more, and it used the bare track minimum while acceptance needs twice
+      // that -- so a sweep finding 8 to 15 settled instead of looking closer,
+      // on exactly the clips sitting near the edge.
+      if (landmarker && seenTimes.length && posedCount(best.rows) < PLAYBACK_GOOD_ENOUGH) {
         const pad = 1 / SCOUT_RATE;
         const from = Math.max(0, Math.min(...seenTimes) - pad);
         const to = Math.min(duration, Math.max(...seenTimes) + pad);
