@@ -2370,19 +2370,35 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // the point, since going back is what used to cost ninety seconds.
     let framePoses = [];
     let playedThrough = false;
+    // Frames the athlete is actually IN, which is the only count that decides
+    // whether there is enough to grade. Counting captured frames instead
+    // meant a clip where he crosses the shot in a second declared success on
+    // the strength of two hundred frames of empty track: 236 captured is far
+    // past the minimum, so the fallback never ran, while pose had found him
+    // in five of them. That is exactly the clip the athlete reported.
+    const posedCount = (rows) => rows.filter((p) => p.length).length;
+
     if (landmarker && canPlayThrough) {
-      try {
-        // Faster than real time where the decoder can keep up. It drops
-        // frames rather than falling behind, and dropped frames are simply
-        // ones we do not measure.
-        video.playbackRate = PLAYBACK_RATE;
-        video.currentTime = 0;
-        await waitForEvent(video, 'seeked', 2000);
-        await playThrough((t) => { framePoses.push(processFrame(t, true)); },
-                          CAPTURE_RATE, 'Watching the run');
-        playedThrough = framePoses.length >= MIN_TRACK_FRAMES;
-      } catch (playErr) {
-        console.warn('Playback capture failed, falling back to seeking:', playErr);
+      // Faster than real time where the decoder can keep up, then real time
+      // if that came back thin. At 2x the decoder has half as long per frame
+      // to decode AND run pose, and what it drops are frames we never
+      // measure -- costly on a clip where the athlete is only in shot
+      // briefly, since the drops come out of the handful that contain him.
+      for (const rate of [PLAYBACK_RATE, 1]) {
+        try {
+          framePoses = [];
+          candidates.length = 0;
+          video.playbackRate = rate;
+          video.currentTime = 0;
+          await waitForEvent(video, 'seeked', 2000);
+          await playThrough((t) => { framePoses.push(processFrame(t, true)); },
+                            CAPTURE_RATE, rate === 1 ? 'Watching again, more slowly' : 'Watching the run');
+          playedThrough = posedCount(framePoses) >= MIN_TRACK_FRAMES;
+        } catch (playErr) {
+          console.warn(`Playback capture at ${rate}x failed:`, playErr);
+          playedThrough = false;
+        }
+        if (playedThrough) break;
       }
       video.playbackRate = 1;
     }
@@ -2400,6 +2416,31 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         times.push(clampT((duration * i) / Math.max(sampleCount - 1, 1)));
       }
       framePoses = await scan(times, 'Scanning clip', true);
+
+      // A sweep spread over the whole clip is far too thin when the athlete
+      // crosses the shot in about a second: on a 7.9s clip that is roughly
+      // four samples a second, so a 1.2s run yields five frames -- under the
+      // track minimum, and refused. Once the sweep has found roughly where he
+      // is, go back and sample only that stretch densely. Seeking is slow,
+      // which is why this is a fallback and why it is aimed at one second of
+      // clip rather than all of it.
+      const seenTimes = times.filter((t, i) => framePoses[i] && framePoses[i].length);
+      if (landmarker && seenTimes.length && posedCount(framePoses) < MIN_TRACK_FRAMES) {
+        const pad = 1 / SCOUT_RATE;
+        const from = Math.max(0, Math.min(...seenTimes) - pad);
+        const to = Math.min(duration, Math.max(...seenTimes) + pad);
+        const step = 1 / DENSE_RATE;
+        const dense = [];
+        for (let t = from; t <= to && dense.length < DENSE_MAX_SAMPLES; t += step) dense.push(clampT(t));
+        if (dense.length) {
+          candidates.length = 0;
+          const denseRows = await scan(dense, 'Looking closer', true);
+          // Keep whichever pass actually found him. The dense pass is aimed
+          // at where he was seen, so it normally wins by a wide margin, but
+          // a bad seek run must not lose what the sweep already had.
+          if (posedCount(denseRows) > posedCount(framePoses)) framePoses = denseRows;
+        }
+      }
     }
     const secondsPerFrame = candidates.length > 1
       ? (candidates[candidates.length - 1].t - candidates[0].t) / (candidates.length - 1)

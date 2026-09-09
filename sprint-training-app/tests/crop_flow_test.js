@@ -153,6 +153,41 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   assert(sc.shotTrimmed === true, 'the scroll to a second reel was detected and trimmed off');
   assert(errors.length === 0, 'still no page errors: ' + JSON.stringify(errors));
 
+  // ---------- a clip the athlete only crosses briefly ----------
+  // The fallback used to be gated on how many frames were CAPTURED, not how
+  // many had anyone in them. On a 7.9s clip where the athlete runs through in
+  // about a second, 236 captured frames sails past the minimum of 8, so the
+  // clip was declared fine while pose had found him in five of them -- and
+  // the slower, more thorough path never ran. Stub pose to find nobody in
+  // most frames and check the capture stage does not call that a success.
+  const sparse = await page.evaluate(async (u) => {
+    const seen = [];
+    const real = window.getPoseLandmarker;
+    let n = 0;
+    window.getPoseLandmarker = async () => ({
+      detect: (source) => {
+        // Anyone at all in only a handful of frames, spread thinly.
+        const hit = (n++ % 40) === 0;
+        seen.push(hit);
+        if (!hit) return { landmarks: [] };
+        const lm = [];
+        for (let i = 0; i < 33; i++) {
+          lm.push({ x: 0.4 + (i % 5) * 0.02, y: 0.3 + (i / 32) * 0.4, visibility: 0.95 });
+        }
+        return { landmarks: [lm] };
+      },
+    });
+    const blob = await (await fetch(u)).blob();
+    const out = await extractFrames(blob, 6, 480, () => {});
+    window.getPoseLandmarker = real;
+    return { frames: out.capture.frames, withPose: out.capture.withPose, played: out.capture.played };
+  }, `http://localhost:${port}/clip/${CLIPS.blockStart}`);
+
+  assert(sparse.frames > sparse.withPose * 3,
+    `the stub leaves most frames empty, as the real clip did (${sparse.withPose} of ${sparse.frames})`);
+  assert(sparse.played === false,
+    `plenty of captured frames with almost nobody in them is not counted as a good read (${sparse.withPose} posed of ${sparse.frames} captured, played=${sparse.played})`);
+
   // ---------- the copy that gets stored ----------
   // Storage, not egress, is the free tier's real ceiling: clips average 9.5MB
   // off the phone and the 1GB limit arrives in about five weeks at a few a

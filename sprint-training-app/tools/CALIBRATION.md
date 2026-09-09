@@ -416,3 +416,39 @@ the two had already drifted once.
 **Not verified on iOS Safari.** These numbers are Chromium. Safari picks a
 different container and codec, and the fallback exists precisely because that
 path cannot be tested from here.
+
+## Counting the wrong frames
+
+Two clips graded cleanly offline but were refused in the app. The athlete
+reported one as "I was visible for 4 seconds and it said only 5 frames".
+
+He was visible for **1.2 seconds**, not four: on a 7.88s clip filmed from
+across the infield he enters at about 1.5s and is gone by 2.7s. Offline the
+pipeline finds him in 36 of 236 frames and grades 13 of them at 2.07-2.90s.
+
+The refusal came from the gate that decides whether playback capture worked:
+
+    playedThrough = framePoses.length >= MIN_TRACK_FRAMES;
+
+`framePoses.length` is frames CAPTURED, not frames the athlete is in. 236
+captured sails past the minimum of 8, so the read was declared good and the
+slower fallback never ran — while pose had found him in a handful. Measured
+with a stub that finds nobody in most frames: **3 posed of 95 captured, and
+the old code returns played=true.**
+
+Fixed by counting posed frames. Two further changes follow from it:
+
+- **A second play-through at 1x when 2x came back thin.** At double speed the
+  decoder has half as long per frame to decode *and* run pose, and what it
+  drops comes out of the small number of frames that contain the athlete.
+  Costs one extra pass, only on clips that needed it.
+- **The seek fallback samples densely where he was seen.** It swept the whole
+  clip at `SCOUT_RATE` — about four samples a second — which on a 1.2s run is
+  five frames, under the track minimum, refused again. It now sweeps, then
+  re-samples the stretch he appeared in at `DENSE_RATE`, keeping whichever
+  pass found more of him.
+
+**Framing note for the athlete, independent of any of this:** 1.2 seconds in
+shot is thin. The grader wants a few strides of continuous tracking, and every
+guard downstream is working from that second of footage. Filming from closer,
+or panning to hold him in frame, is worth more than any of these fixes.
