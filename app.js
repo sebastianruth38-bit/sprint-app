@@ -2960,7 +2960,14 @@ function renderAnalysisHtml(analysis) {
   const filmingNote = analysis.filming_note
     ? `<div class="hint">🎥 ${escapeHtml(analysis.filming_note)}</div>`
     : '';
-  const surfaceNote = `<div class="surface-note">⚠️ Ground and footwear change these numbers. Spikes and a stiff track let the foot stay rigid and bounce; trainers and grass absorb force, so the foot collapses more, contact is longer and angles read flatter. Compare like with like.</div>`;
+  // Folded away by default. It is a real caveat and it stays on every graded
+  // card, but as a permanent five-line yellow slab it shouted louder than the
+  // scores it was qualifying -- and something you read once and then skip
+  // forever is not earning that space.
+  const surfaceNote = `<details class="surface-note">
+    <summary>Ground and footwear change these numbers</summary>
+    <p>Spikes and a stiff track let the foot stay rigid and bounce; trainers and grass absorb force, so the foot collapses more, contact is longer and angles read flatter. Compare like with like.</p>
+  </details>`;
   const aiSummary = analysis.ai_summary
     ? `<div class="hint ai-note">🤖 ${escapeHtml(analysis.ai_summary)}</div>`
     : '';
@@ -2969,7 +2976,29 @@ function renderAnalysisHtml(analysis) {
   const basis = analysis.basis && rows
     ? `<div class="hint basis-note">${escapeHtml(analysis.basis)}</div>`
     : '';
+  // A hero reading, the way an instrument leads with its headline number.
+  //
+  // The MEAN of the scored measurements, to one decimal. Deliberately not a
+  // weighted or invented "grade": it is the average of what was measured on
+  // this clip and nothing more, and the label says how many went into it so a
+  // 5.0 off two measurements cannot pass for a 5.0 off eight.
+  const scored = [...(analysis.pinpoints || []), ...(analysis.additional_observations || [])]
+    .filter((p) => typeof p.score === 'number' && isFinite(p.score));
+  const hero = scored.length
+    ? `<div class="hero-score">
+         <div class="hero-halo" aria-hidden="true"></div>
+         <div class="hero-value">${(scored.reduce((a, p) => a + p.score, 0) / scored.length).toFixed(1)}</div>
+         <div class="hero-label">Overall</div>
+         <div class="hero-stats">
+           <div><span>Measurements</span><b>${scored.length}</b></div>
+           <div><span>Strongest</span><b>${Math.max(...scored.map((p) => p.score))}/5</b></div>
+           <div><span>Weakest</span><b>${Math.min(...scored.map((p) => p.score))}/5</b></div>
+         </div>
+       </div>`
+    : '';
+
   return `
+    ${hero}
     ${analysis.summary ? `<div>${escapeHtml(analysis.summary)}</div>` : ''}
     ${basis}
     ${rows}
