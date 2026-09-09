@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sprintr</title>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <!-- Barlow for reading, JetBrains Mono for anything that is a measurement.
-       Every number in this app is instrument output -- angles, scores, times,
-       frame counts -- and a mono face with tabular figures makes them read as
-       readings rather than prose, and stops them jittering as they change. -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=d57bc0f" />
+  <!-- Three faces, three jobs. Space Grotesk for headings and UI, because its
+       geometry reads modern where Barlow read sporty-generic. Inter for body
+       copy, which is the one thing that has to disappear when you read it.
+       JetBrains Mono for anything that is a measurement. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" />
+  <link rel="stylesheet" href="styles.css?v=8de0f65" />
 </head>
 <body>
   <!-- AUTH GATE -->
@@ -157,6 +157,11 @@
         </div>
       </div>
 
+      <div class="card" id="scoreTrendCard" hidden>
+        <h3>Overall, clip by clip</h3>
+        <div id="scoreTrend"></div>
+      </div>
+
       <h3>Past Sessions</h3>
       <p class="hint">Look back at previous clips and the weak points found in each. Video is kept for 30 days; your scores are kept for good.</p>
       <div id="diagnosisList" class="entry-list"></div>
@@ -243,6 +248,11 @@
         </div>
         <button id="saveTime" class="btn primary">Log Time</button>
       </div>
+      <div class="card" id="timeTrendCard" hidden>
+        <h3>Your times</h3>
+        <div class="segmented" id="timeDistancePicker" role="tablist"></div>
+        <div id="timeTrend"></div>
+      </div>
       <div id="timesList" class="entry-list"></div>
 
       <h3>Goals</h3>
@@ -296,7 +306,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=d57bc0f"></script>
-  <script src="app.js?v=d57bc0f"></script>
+  <script src="config.js?v=8de0f65"></script>
+  <script src="app.js?v=8de0f65"></script>
 </body>
 </html>
