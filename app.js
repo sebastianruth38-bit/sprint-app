@@ -2475,6 +2475,59 @@ function renderAnalysisHtml(analysis) {
   `;
 }
 
+// Signed URLs, reused rather than reissued.
+//
+// createSignedUrl mints a NEW url with a new token every call, and a url the
+// CDN has never seen cannot be a cache hit -- so re-signing on every render
+// turned every playback into a fresh origin fetch, billed as egress. Holding
+// each url until shortly before it expires lets the CDN serve the repeats.
+const signedUrlCache = new Map();
+const SIGNED_URL_TTL_S = 3600;
+const SIGNED_URL_REUSE_MS = (SIGNED_URL_TTL_S - 300) * 1000; // re-sign 5 min early
+
+async function signedVideoUrl(path) {
+  const hit = signedUrlCache.get(path);
+  if (hit && Date.now() - hit.at < SIGNED_URL_REUSE_MS) return hit.url;
+  const { data } = await supabaseClient.storage
+    .from('diagnosis-videos')
+    .createSignedUrl(path, SIGNED_URL_TTL_S);
+  if (!data) return null;
+  signedUrlCache.set(path, { url: data.signedUrl, at: Date.now() });
+  return data.signedUrl;
+}
+
+// A clip is 20-30MB and a phone records the index at the END of the file, so
+// a browser asked to show even a still frame downloads most of it. Attaching
+// <video src> for every entry meant opening this tab downloaded every clip in
+// the history -- the whole month's egress allowance in a few visits.
+//
+// So: nothing is fetched until the athlete asks for a specific clip. The
+// element carries no src at all until the tap, and preload="none" keeps the
+// browser from going after it once it has one.
+function videoPlaceholder(path) {
+  const holder = document.createElement('div');
+  holder.className = 'video-holder';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'video-load-btn';
+  btn.textContent = '▶  Play clip';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    const url = await signedVideoUrl(path);
+    if (!url) { btn.disabled = false; btn.textContent = '▶  Play clip'; return; }
+    const video = document.createElement('video');
+    video.controls = true;
+    video.preload = 'none';
+    video.playsInline = true;
+    video.src = url;
+    holder.replaceChildren(video);
+    video.play().catch(() => {});   // a blocked autoplay still leaves controls
+  });
+  holder.appendChild(btn);
+  return holder;
+}
+
 async function renderDiagnosis() {
   await purgeExpiredVideos();
   const { data, error } = await supabaseClient
@@ -2500,15 +2553,7 @@ async function renderDiagnosis() {
       ${renderAnalysisHtml(entry.analysis)}
     `;
     if (entry.video_path) {
-      const { data: signed } = await supabaseClient.storage
-        .from('diagnosis-videos')
-        .createSignedUrl(entry.video_path, 3600);
-      if (signed) {
-        const video = document.createElement('video');
-        video.controls = true;
-        video.src = signed.signedUrl;
-        div.appendChild(video);
-      }
+      div.appendChild(videoPlaceholder(entry.video_path));
     }
     div.querySelector('.delete-btn').addEventListener('click', async () => {
       if (entry.video_path) {
