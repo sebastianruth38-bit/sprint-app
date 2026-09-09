@@ -547,6 +547,15 @@ textarea {
 .entry-top .date { color: var(--muted); font-size: 0.85rem; }
 
 .entry video { width: 100%; max-width: 380px; border-radius: var(--r-sm); margin-top: 0.5rem; }
+.video-holder { margin-top: 0.5rem; max-width: 380px; }
+.video-holder video { margin-top: 0; }
+.video-load-btn {
+  width: 100%; padding: 0.85rem 1rem; border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); background: var(--surface-2); color: var(--text);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.video-load-btn:hover:not(:disabled) { background: var(--surface-3); }
+.video-load-btn:disabled { opacity: 0.6; cursor: default; }
 
 .score-row {
   display: flex;

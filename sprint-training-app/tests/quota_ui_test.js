@@ -13,7 +13,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));
 
-  let purgeCalls=[], removedPaths=null, updatedPatch=null;
+  let purgeCalls=[], removedPaths=null, updatedPatch=null, signCalls=[];
   const old = new Date(Date.now()-90*86400000).toISOString();
   const recent = new Date().toISOString();
   let entries=[
@@ -27,7 +27,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
     if(u.includes('/storage/v1/object/remove')||(u.includes('/storage/')&&m==='DELETE')){
       removedPaths=route.request().postData(); return json([]);
     }
-    if(u.includes('/storage/v1/object/sign')) return json({signedURL:'/x.mp4'});
+    if(u.includes('/storage/v1/object/sign')){signCalls.push(u);return json({signedURL:'/x.mp4?token='+(signCalls.length)});}
     if(u.includes('/rest/v1/diagnosis_entries')&&m==='GET'){
       purgeCalls.push(u);
       // the purge query filters on video_path not null + created_at older than cutoff
@@ -53,6 +53,37 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(!!removedPaths && removedPaths.includes('old.mp4'),'the 90-day-old clip is removed from storage: '+removedPaths);
   assert(!removedPaths || !removedPaths.includes('new.mp4'),'a recent clip is left alone');
   assert(!!updatedPatch && updatedPatch.includes('video_path')&&updatedPatch.includes('null'),'video_path is nulled after the file is deleted: '+updatedPatch);
+
+  // ---------- egress: browsing the history must not download the clips ----------
+  // A clip is 20-30MB and a phone puts the file index at the END, so a browser
+  // asked for even a still frame pulls most of the file down. Attaching a
+  // <video src> per entry meant opening this tab downloaded the whole history,
+  // and re-signing on every render defeated the CDN cache on top of that --
+  // together they burned a month of free-tier egress in a handful of visits.
+  assert(signCalls.length===0,
+    'opening the history signs no video urls at all, so nothing is fetched: '+signCalls.length+' calls');
+  const videoSrcs = await page.$$eval('#diagnosisList video',els=>els.map(e=>e.getAttribute('src')||''));
+  assert(videoSrcs.length===0,'no <video> element exists before the athlete asks for one');
+  const playBtns = await page.$$('#diagnosisList .video-load-btn');
+  assert(playBtns.length===2,'each stored clip offers a play button instead, got '+playBtns.length);
+
+  // Tapping one loads exactly that clip, and nothing else.
+  await playBtns[0].click();
+  await page.waitForSelector('#diagnosisList video');
+  assert(signCalls.length===1,'tapping play signs exactly one url: '+signCalls.length);
+  const loaded = await page.$$eval('#diagnosisList video',els=>els.map(e=>({src:e.getAttribute('src'),pre:e.getAttribute('preload')})));
+  assert(loaded.length===1,'only the clip that was tapped gets a video element, got '+loaded.length);
+  assert(loaded[0].pre==='none','the video does not preload beyond what playback needs');
+  assert(/x\.mp4/.test(loaded[0].src||''),'the tapped clip points at its signed url: '+loaded[0].src);
+
+  // Re-signing the same path would mint a new url, which the CDN has never
+  // seen and cannot serve from cache -- that is what made this cached egress.
+  const reused = await page.evaluate(async ()=>{
+    const a = await window.signedVideoUrl('u/new.mp4');
+    const b = await window.signedVideoUrl('u/new.mp4');
+    return a===b;
+  });
+  assert(reused,'a second request for the same clip reuses the signed url rather than minting a new one');
 
   // Retention notice is visible to the athlete
   const hint = await page.$$eval('#panel-diagnosis .hint',els=>els.map(e=>e.textContent).join(' '));
