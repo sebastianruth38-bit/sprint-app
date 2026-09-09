@@ -323,3 +323,59 @@ prefer windows containing strides, on the reasoning that a set position has
 none. Measured, the set position reports 2.5 strides — the same as the run.
 `footContacts` invents contacts from a stationary athlete, so stride count
 cannot be used to tell running from standing.
+
+## Contacts the foot was never on the ground for
+
+Hip Height and Support Stiffness contradicted each other on the same card:
+the relay clip scored 2/5 "hips collapsing" (48% of a leg length) alongside
+5/5 "stiff support" (5% settle per contact).
+
+Both were reading real numbers. Hip Height is the spread ACROSS the clip's
+touchdowns; Support Stiffness is the settle WITHIN one contact. They can
+legitimately differ. But 48% was still wrong, and the reason is visible in
+the per-touchdown hip heights:
+
+| clip | hip above foot at each detected touchdown (leg lengths) |
+|---|---|
+| relay | 1.267, 0.973, **1.243**, 0.786, 1.030 |
+| block start | 1.002, 0.958, 0.876, 0.876, 0.876 |
+| wide grass | 0.775, 0.776, 0.747, 0.885 |
+| start 1246 | 0.792, 0.915, 0.864, 0.875 |
+| start 1247 | 1.010, 0.984, 1.000, **1.079**, 0.925, **1.158** |
+
+`legLen` is measured along the limb, so it is always at least the
+straight-line hip-to-ankle distance. A planted foot therefore cannot sit more
+than **1.0** leg lengths below the hip — that is a fully straight leg.
+Readings of 1.08, 1.16, 1.24 and 1.27 are not touchdowns at all; they are
+flight frames `footContacts` mistook for contacts.
+
+Note which clips they appear in: the relay and 1247 are precisely the two
+clips that scored badly on Hip Height. Every other clip's worst reading is
+1.002.
+
+`CONTACT_DEPTH_MAX = 1.05` (one leg length plus landmark noise) now drops
+them, in both Hip Height and Support Stiffness:
+
+| clip | Hip Height before | after |
+|---|---|---|
+| relay | 2/5, 48% | 2/5, **24%** |
+| start 1247 | 2/5, 23% | **4/5, 8%** |
+| block start | 4/5, 13% | unchanged |
+| wide grass | 3/5, 14% | unchanged |
+| start 1246 | 4/5, 12% | unchanged |
+
+**Only the impossible end is filtered.** A LOW reading is the hip genuinely
+sinking, which is the entire point of the measurement — clipping that would
+delete the fault the metric exists to find. The bound is one-sided on
+purpose.
+
+One consequence worth knowing: the ghosts are *deeper* than real touchdowns,
+so `footContacts` prefers them and they displace real contacts from the list.
+Filtering afterwards can leave fewer than three, in which case Hip Height is
+withheld. That is the honest outcome, and better than a spread computed from
+frames the foot was in the air for.
+
+The bands were also reworded. They said "hips collapsing -- sitting in the
+stride", which claims Support Stiffness's subject and reads as a flat
+contradiction next to it. They now say what is actually measured: how much
+hip height varies between steps.

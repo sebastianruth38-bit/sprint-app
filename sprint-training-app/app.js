@@ -681,6 +681,15 @@ const MIN_CONTACTS = 2;
 // one leg length. Below this the "contact" is the lowest frame in a window
 // where the foot never actually planted.
 const CONTACT_DEPTH_MIN = 0.8;
+// A planted foot cannot sit more than one leg length below the hip -- that is
+// a fully straight leg, and legLen is measured along the limb so it is always
+// at least the straight-line hip-to-ankle distance. Anything past this is not
+// a contact at all: it is a flight frame that footContacts mistook for one.
+// Measured across five clips, real touchdowns land at 0.75-1.03; the readings
+// above this bound were 1.08, 1.16, 1.24 and 1.27, and they were what made
+// Hip Height report a 48% collapse on a clip whose support was measurably
+// stiff (5% settle per contact).
+const CONTACT_DEPTH_MAX = 1.05;
 // The ankle angle comes from the toe, the smallest and least stable landmark
 // the model tracks. On one clip it moved 115, 126, 139, 129, 122, 94 across
 // six consecutive frames a thirtieth of a second apart -- an ankle cannot do
@@ -1078,11 +1087,16 @@ const DORSI_BANDS = [
 ];
 
 // How much the hips drop through the stride, as a fraction of leg length.
+// This is the spread in hip height ACROSS the clip's touchdowns, not the
+// settle within one contact -- Support Stiffness measures that. Worded to say
+// so: the two read the same clip and can legitimately disagree, and the old
+// wording ("hips collapsing through contact") claimed the other metric's
+// subject and flatly contradicted it on the same card.
 const SINK_BANDS = [
-  { min: -Infinity, max: 0.08, score: 5, note: 'Hips stay tall' },
-  { min: 0.08, max: 0.13, score: 4, note: 'Slight hip drop' },
-  { min: 0.13, max: 0.2, score: 3, note: 'Hips sinking through contact' },
-  { min: 0.2, max: Infinity, score: 2, note: 'Hips collapsing -- sitting in the stride' },
+  { min: -Infinity, max: 0.08, score: 5, note: 'Hips ride at the same height every step' },
+  { min: 0.08, max: 0.13, score: 4, note: 'Hip height varies a little between steps' },
+  { min: 0.13, max: 0.2, score: 3, note: 'Hip height varies between steps' },
+  { min: 0.2, max: Infinity, score: 2, note: 'Riding much lower on some steps than others' },
 ];
 
 // Front swing vs back swing. 1.0 is balanced; below ~0.7 the leg is being
@@ -1208,7 +1222,11 @@ function scoreHipSink(metrics) {
   const heights = contactRows.map((m) => {
     const lowestFoot = Math.max(...m.legs.map((l) => l.ank[1]));
     return (lowestFoot - m.midHip[1]) / (median(m.legs.map((l) => l.legLen)) || legLen);
-  });
+  // Only the impossible end is filtered. A LOW reading is the hip actually
+  // sinking, which is the whole measurement -- clipping that would delete the
+  // fault this is here to find.
+  }).filter((h) => h <= CONTACT_DEPTH_MAX);
+  if (heights.length < 3) return null;
   // Percentiles, not min/max: one mistracked frame should not define the
   // athlete's whole range of hip height.
   const sorted = heights.slice().sort((a, b) => a - b);
@@ -1216,7 +1234,8 @@ function scoreHipSink(metrics) {
   const sink = at(0.95) - at(0.05);
   const band = bandFor(sink, SINK_BANDS);
   return { name: 'Hip Height', score: band.score,
-           note: `${band.note} (${(sink * 100).toFixed(0)}% of leg length)`, value: sink };
+           note: `${band.note} (${(sink * 100).toFixed(0)}% of a leg length between the highest and lowest touchdown)`,
+           value: sink };
 }
 
 // High knees on their own mean nothing -- an athlete can spin their legs
@@ -1625,7 +1644,7 @@ function supportDrops(metrics) {
       if (!row || !row.midHip) return;
       const height = (m, leg) => (leg.ank[1] - m.midHip[1]) / (leg.legLen || 1);
       const at = height(row, c.leg);
-      if (at < CONTACT_DEPTH_MIN) return;
+      if (at < CONTACT_DEPTH_MIN || at > CONTACT_DEPTH_MAX) return;
       // Follow the FOOT, not the hip height, to know when the contact ends.
       // Hip height falls both when the support collapses and when the foot
       // lifts off, so stopping on it cuts the measurement off exactly when
@@ -2353,6 +2372,17 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // frame. Surfaced so a regression here shows up as a number rather
       // than as quietly worse scores.
       cropped,
+      // What the decoder actually handed over on THIS device. A refusal is
+      // otherwise indistinguishable between "the clip is unusable" and "this
+      // phone only managed a handful of frames", and those want opposite
+      // fixes. Two clips that graded cleanly offline were refused on the
+      // athlete's phone with no way to tell which had happened.
+      capture: {
+        frames: framePoses.length,
+        withPose: framePoses.filter((p) => p.length).length,
+        played: playedThrough,
+        duration,
+      },
     };
   } finally {
     document.body.removeChild(video);
@@ -2445,7 +2475,17 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
             filming_note: `${Math.round(duplicateShare * 100)}% of the frames came back identical — this device could not decode the clip quickly enough. A shorter clip, or one recorded at a lower resolution, should work.`,
           }
         : rejection
-          ? { summary: 'This clip could not be graded.', pinpoints: [], flags: [], filming_note: rejection }
+          ? {
+              summary: 'This clip could not be graded.',
+              pinpoints: [], flags: [],
+              // The capture counts ride along with the refusal so a
+              // screenshot of it is enough to tell an unusable clip from a
+              // phone that only decoded a handful of frames -- those want
+              // opposite fixes, and the message alone distinguished neither.
+              // Two clips that graded cleanly offline were refused on the
+              // athlete's phone with no way to tell which had happened.
+              filming_note: `${rejection} (${capture.withPose} of ${capture.frames} frames over ${capture.duration.toFixed(1)}s had anyone in them${capture.played ? '' : '; the clip would not play through'})`,
+            }
           : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
       if (shotTrimmed && !rejection) {
         analysis.flags = [

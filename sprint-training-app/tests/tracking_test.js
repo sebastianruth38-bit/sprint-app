@@ -21,6 +21,7 @@ const names = ['frameMetrics', 'legMetrics', 'median', 'longestConsistentRun',
                'scoreDrivePosition', 'scoreAcceleration', 'bandFor', 'DRIVE_BANDS',
                'ANKLE_AGREEMENT_MAX', 'CONTACT_DEPTH_MIN',
                'scoreSupportStiffness', 'supportDrops', 'SUPPORT_AGREEMENT_MAX',
+               'CONTACT_DEPTH_MAX', 'scoreHipSink',
                'bestWindow', 'poseSignature', 'buildTracks', 'ATHLETE_MOTION_MIN',
                'passingFolds', 'scorePassingPosition', 'PASSING_FOOT_MAX_DEPTH',
                'PROGRESSION_MIN_STRIDES'];
@@ -408,6 +409,60 @@ const twoStills = stretch(30, 0.5, 0.001, 0.05).concat(lost, stretch(30, 0.2, 0.
 const stillOnly = ctx.bestWindow(twoStills, 1 / 30, 16);
 check('with nobody running it falls back to wherever he is biggest',
   stillOnly && stillOnly.from < 30, stillOnly && `frames ${stillOnly.from}-${stillOnly.to}`);
+
+// ---------- a "contact" the foot was never on the ground for ----------
+// legLen is measured along the limb, so a planted foot can never sit more
+// than one leg length below the hip -- that is a straight leg. Readings past
+// that are flight frames footContacts mistook for touchdowns, and they were
+// what made Hip Height report a 48% collapse on a clip whose support settled
+// a measured 5% per contact: two metrics contradicting each other on one card.
+function touchdownAt(depth) {
+  return {
+    torsoFromVertical: 6,
+    midHip: [100, 100],
+    legs: [
+      { ank: [100, 100 + depth * 80], legLen: 80, thighSwing: 20, facing: 1, kneeAngle: 150, hip: [100, 100] },
+      { ank: [100, 100 + 0.5 * 80], legLen: 80, thighSwing: -20, facing: 1, kneeAngle: 90, hip: [100, 100] },
+    ],
+  };
+}
+// Six frames per touchdown so footContacts sees a plant rather than a blip.
+// It keys on the deepest touchdowns, so every fixture here varies only the
+// depth of those -- a shallower "sinking" contact is not something this
+// fixture can express, and the low end is covered by real footage instead
+// (see the five-clip table in tools/CALIBRATION.md).
+const plantedRun = (depths) => depths.flatMap((d) => [
+  touchdownAt(d), touchdownAt(d), touchdownAt(0.5), touchdownAt(0.5), touchdownAt(0.5), touchdownAt(0.5),
+]);
+check('the impossible-depth bound is one leg length plus noise',
+  ctx.CONTACT_DEPTH_MAX > 1 && ctx.CONTACT_DEPTH_MAX < 1.15, 'got ' + ctx.CONTACT_DEPTH_MAX);
+
+// Same shape, same count -- only the last two touchdowns differ, between
+// plausible depths and ones past a straight leg.
+const realOnly = ctx.scoreHipSink(plantedRun([0.98, 0.95, 0.93, 0.96]));
+const withGhosts = ctx.scoreHipSink(plantedRun([0.98, 0.95, 1.27, 1.24]));
+check('a run of real touchdowns is scored', realOnly && realOnly.value < 0.15,
+  realOnly && `${realOnly.score}/5 spread ${(realOnly.value * 100).toFixed(0)}%`);
+// Filtering may only withhold or match -- never inflate. Withholding is a
+// legitimate outcome here and not a weaker one: the ghosts are deeper than
+// the real touchdowns, so footContacts prefers them and they displace real
+// contacts from the list. Dropping them afterwards can leave too few to
+// judge, which is the honest answer rather than a spread built from frames
+// the foot was never on the ground for.
+check('impossible depths can never inflate the hip-height spread',
+  withGhosts === null || withGhosts.value <= realOnly.value + 0.02,
+  realOnly && `real ${(realOnly.value * 100).toFixed(0)}%, with ghosts ${withGhosts ? (withGhosts.value * 100).toFixed(0) + '%' : 'withheld'}`);
+
+// The bound must not eat real contacts either: a leg at full extension reads
+// right at 1.0 and is the most ordinary touchdown there is.
+const extended = ctx.scoreHipSink(plantedRun([1.00, 0.97, 1.02, 0.99]));
+check('a fully extended leg at touchdown is still counted',
+  extended !== null && extended.value < 0.1,
+  extended && `spread ${(extended.value * 100).toFixed(0)}%`);
+
+// Too few plausible contacts is withheld rather than guessed from one.
+check('with almost every contact impossible, nothing is reported',
+  ctx.scoreHipSink(plantedRun([0.95, 1.27, 1.24, 1.30])) === null);
 
 // ---------- passing position ----------
 // The fold at the instant the thigh swings through vertical. The stance leg
