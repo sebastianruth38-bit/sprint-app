@@ -2455,7 +2455,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let thumb = null;
     try {
       saveBtn.textContent = 'Analyzing…';
-      const { frames, metrics, rejection, shotTrimmed, duplicateShare } =
+      const { frames, metrics, rejection, shotTrimmed, duplicateShare, capture } =
         await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
       thumb = await makeThumb(frames[0]);
 
