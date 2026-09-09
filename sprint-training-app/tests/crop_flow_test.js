@@ -153,6 +153,47 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   assert(sc.shotTrimmed === true, 'the scroll to a second reel was detected and trimmed off');
   assert(errors.length === 0, 'still no page errors: ' + JSON.stringify(errors));
 
+  // ---------- what each captured frame costs ----------
+  // Pose inference is the capture rate. Two runs a frame at ~50ms is 100ms,
+  // and the athlete's iPad measured exactly the 10 frames a second that
+  // implies -- where his clip needs 15/s to grade (at 10/s the longest
+  // continuous track is 7 frames against a minimum of 8). Once the crop is
+  // aimed and sized, most frames run the crop alone.
+  const cost = await page.evaluate(async (u) => {
+    let calls = 0;
+    const real = window.getPoseLandmarker;
+    let n = 0;
+    window.getPoseLandmarker = async () => ({
+      detect: (src) => {
+        calls++;
+        const isCrop = src.width / src.height > 0.6;
+        const span = isCrop ? 0.6 : 0.12, top = isCrop ? 0.2 : 0.4;
+        const swing = Math.sin(n++ * 0.9) * 0.25 * span;
+        const lm = [];
+        for (let i = 0; i < 33; i++) {
+          lm.push({ x: (isCrop ? 0.35 : 0.10) + (i % 5) * span * 0.04,
+                    y: top + (i / 32) * span + (i >= 25 ? swing : 0), visibility: 0.95 });
+        }
+        return { landmarks: [lm] };
+      },
+    });
+    const blob = await (await fetch(u)).blob();
+    const out = await extractFrames(blob, 6, 480, () => {});
+    window.getPoseLandmarker = real;
+    return { calls, frames: out.capture.frames, withPose: out.capture.withPose,
+             cropped: out.cropped, rejection: out.rejection };
+  }, `http://localhost:${port}/clip/${CLIPS.blockStart}`);
+
+  const perFrame = cost.calls / cost.frames;
+  assert(perFrame < 1.6,
+    `most frames cost one inference, not two (${perFrame.toFixed(2)} per frame over ${cost.frames} frames)`);
+  // The saving must not come from simply losing him.
+  assert(cost.withPose === cost.frames,
+    `and every frame still comes back with a pose (${cost.withPose} of ${cost.frames})`);
+  assert(cost.cropped > cost.frames * 0.5,
+    `cropping still happens on most frames (${cost.cropped} of ${cost.frames})`);
+  assert(!cost.rejection, `and the clip is still graded (${cost.rejection || 'no rejection'})`);
+
   // ---------- a clip the athlete only crosses briefly ----------
   // The fallback used to be gated on how many frames were CAPTURED, not how
   // many had anyone in them. On a 7.9s clip where the athlete runs through in

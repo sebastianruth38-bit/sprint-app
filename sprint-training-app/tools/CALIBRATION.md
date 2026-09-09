@@ -495,3 +495,46 @@ since that is the part the athlete can act on. Frame counts stay because they
 separate a device that could not decode from an athlete who was barely in the
 picture — and the frames-per-second line appears only when the device is
 clearly the problem.
+
+## The capture rate is pose inference, and it decides everything
+
+The athlete's iPad reported "10 frames a second" on a clip he is in shot for
+1.3 of 7.1 seconds. Subsampling his real clip's landmarks to simulate slower
+capture shows exactly where that lands:
+
+| capture | frames | posed | longest continuous track | verdict |
+|---|---|---|---|---|
+| 30/s | 236 | 36 | 24 | graded on 13 frames |
+| 15/s | 118 | 18 | 14 | graded on 13 frames |
+| **10/s** | 79 | 12 | **7** | **no window** |
+| 7/s | 59 | 8 | 6 | no window |
+
+`MIN_TRACK_FRAMES` is 8. **He misses by one frame.** And the cliff is between
+10/s and 15/s, so the answer is not to loosen the guard — it is to get the
+device above 15.
+
+Every captured frame cost TWO pose runs: once on the whole picture, then again
+on a crop aimed at him when he came back too small. At roughly 50ms each that
+is 100ms a frame, which is precisely the 10/s he measured.
+
+Once the crop is aimed and sized it can stand on its own, so the whole-frame
+pass now runs every `WHOLE_FRAME_EVERY` (4) frames rather than every frame.
+Measured in a browser against a real clip:
+
+| | inferences per captured frame |
+|---|---|
+| before | **2.00** |
+| after | **1.20** |
+
+1.65x, which should put that iPad near 16/s — over the line. Every frame still
+comes back with a pose (83 of 83) and every frame is still cropped, so the
+saving is not coming from losing him.
+
+Two rules keep the old crop-feedback bug dead:
+
+- **Only a whole-frame detection may set the crop's SIZE.** Unchanged, and the
+  reason the periodic whole-frame pass exists at all rather than being dropped
+  entirely.
+- **A crop-only frame that finds nobody immediately pays for a whole-frame
+  pass.** He has moved out of the box, changed size, or left — and silently
+  losing him is exactly how the track fragments that cause these refusals.

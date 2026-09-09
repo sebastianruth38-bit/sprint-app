@@ -2184,6 +2184,21 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // and how big the crop aimed at him was.
     let lastBox = null;
     let cropSidePx = 0;
+    // Frames since the last whole-frame inference.
+    //
+    // Every frame used to cost TWO pose runs -- once on the whole picture,
+    // then again on a crop aimed at the athlete when he came back too small.
+    // At roughly 50ms each that is 100ms a frame, and the athlete's iPad
+    // measured exactly the 10 frames a second that implies. Ten is not
+    // enough: on his clip the longest continuous track at 10/s is 7 frames
+    // against a minimum of 8, while the same clip at 15/s grades comfortably.
+    //
+    // So once the crop is aimed and sized, most frames run the crop alone.
+    // The whole-frame pass still happens every WHOLE_FRAME_EVERY frames --
+    // it is the only thing allowed to set the crop's SIZE, for the reasons
+    // below, and the only way to notice him re-entering somewhere else.
+    let sinceWholeFrame = Infinity;
+    const WHOLE_FRAME_EVERY = 4;
 
     // Walks a list of timestamps, measuring each one. Used twice: once
     // spread over the whole clip, once packed into the few strides that get
@@ -2299,8 +2314,14 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         const biggest = (list) =>
           list.reduce((a, b) => ((b.metrics.bodyFrac || 0) > (a.metrics.bodyFrac || 0) ? b : a), list[0]);
 
-        let found = measure(canvas, video.videoHeight);
+        // Aimed and sized from an earlier whole-frame pass, so the crop can
+        // stand on its own for a few frames.
+        const aimed = lastBox && cropSidePx > 0;
+        const wholeFrameNow = !aimed || sinceWholeFrame >= WHOLE_FRAME_EVERY;
+
+        let found = wholeFrameNow ? measure(canvas, video.videoHeight) : [];
         let lead = found.length ? biggest(found) : null;
+        if (wholeFrameNow) sinceWholeFrame = 0; else sinceWholeFrame++;
 
         // How big the crop should be is taken ONLY from a whole-frame
         // detection, where the athlete's size is in known frame units. Sizing
@@ -2355,6 +2376,22 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
                 };
               }
             }
+          }
+        }
+
+        // A crop-only frame that found nobody means he has moved out of the
+        // box, changed size, or left. Never silently lose him: pay for the
+        // whole-frame pass now and re-acquire.
+        if (!found.length && !wholeFrameNow) {
+          found = measure(canvas, video.videoHeight);
+          lead = found.length ? biggest(found) : null;
+          sinceWholeFrame = 0;
+          if (lead && lead.metrics.bodyFrac && !lead.metrics.bodyAtEdge) {
+            cropSidePx = lead.metrics.bodyFrac * video.videoHeight * CROP_PADDING;
+          }
+          if (lead) {
+            const b = poseBounds(lead.lms);
+            if (b) lastBox = b;
           }
         }
 
