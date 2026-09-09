@@ -1848,7 +1848,7 @@ function getPoseLandmarker() {
 // and accumulate forever, while an analysis is a few hundred bytes. After
 // the retention window the video file is dropped and the entry keeps its
 // scores, so history survives and storage stops growing without bound.
-const VIDEO_RETENTION_DAYS = 60;
+const VIDEO_RETENTION_DAYS = 30;
 
 async function purgeExpiredVideos() {
   if (!currentUser) return;
@@ -1872,6 +1872,110 @@ async function purgeExpiredVideos() {
     .from('diagnosis_entries')
     .update({ video_path: null })
     .in('id', data.map((e) => e.id));
+}
+
+// Re-encode a clip down before it goes into storage.
+//
+// Storage is the free tier's real ceiling, not egress: clips average 9.5MB
+// straight off the phone, and at a few a day the 1GB limit arrives in about
+// five weeks. Nothing is lost by shrinking them -- the grader downsamples to
+// 480px internally, so the measurements are identical either way, and this is
+// only about what gets kept for the athlete to watch back.
+//
+// Analysis runs on the ORIGINAL blob, before this. Only the stored copy is
+// re-encoded.
+//
+// Every failure path returns the original file. A save must never break
+// because the compressor could not run: MediaRecorder and captureStream
+// support varies across browsers and iOS versions, and an unwatchable clip is
+// a far worse outcome than a large one.
+const COMPRESS_MAX_EDGE = 720;
+const COMPRESS_BITRATE = 1_500_000;
+const COMPRESS_MIN_BYTES = 3 * 1024 * 1024;   // below this, not worth the wait
+const COMPRESS_TIMEOUT_MS = 90_000;
+
+function compressorMimeType() {
+  if (typeof MediaRecorder === 'undefined') return null;
+  // Safari records mp4; everything else webm. Ask in preference order and let
+  // the browser say what it can actually write.
+  const types = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return types.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || null;
+}
+
+async function compressForStorage(blob, onProgress) {
+  if (!blob || blob.size < COMPRESS_MIN_BYTES) return { blob, note: 'left as-is' };
+  const mimeType = compressorMimeType();
+  const video = document.createElement('video');
+  if (!mimeType || typeof video.captureStream !== 'function'
+      && typeof document.createElement('canvas').captureStream !== 'function') {
+    return { blob, note: 'compression unavailable on this browser' };
+  }
+
+  const url = URL.createObjectURL(blob);
+  video.src = url;
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.style.cssText = 'position:fixed;left:-10000px;width:1px;height:1px;';
+  document.body.appendChild(video);
+
+  try {
+    await waitForEvent(video, 'loadedmetadata', 6000);
+    if (!isFinite(video.duration) || video.duration <= 0) return { blob, note: 'unreadable duration' };
+
+    const longest = Math.max(video.videoWidth, video.videoHeight);
+    if (!longest) return { blob, note: 'no video track' };
+    const scale = Math.min(1, COMPRESS_MAX_EDGE / longest);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const ctx2d = canvas.getContext('2d');
+    if (typeof canvas.captureStream !== 'function') return { blob, note: 'canvas capture unavailable' };
+
+    // Recorded in real time, so the clip plays back at its true speed. Running
+    // the video faster would shorten the recording and speed up the result --
+    // useless for watching your own mechanics back.
+    const stream = canvas.captureStream();
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: COMPRESS_BITRATE });
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+
+    const done = new Promise((resolve) => { recorder.onstop = resolve; });
+    let painting = true;
+    const paint = () => {
+      if (!painting) return;
+      ctx2d.drawImage(video, 0, 0, canvas.width, canvas.height);
+      requestAnimationFrame(paint);
+    };
+
+    recorder.start();
+    video.currentTime = 0;
+    await video.play();
+    paint();
+    if (onProgress) onProgress('Shrinking clip for storage…');
+
+    await Promise.race([
+      waitForEvent(video, 'ended', Math.min(COMPRESS_TIMEOUT_MS, video.duration * 1000 + 5000)),
+      new Promise((r) => setTimeout(r, COMPRESS_TIMEOUT_MS)),
+    ]);
+    painting = false;
+    if (recorder.state !== 'inactive') recorder.stop();
+    await done;
+
+    const out = new Blob(chunks, { type: mimeType.split(';')[0] });
+    // A "compressed" file that came back bigger, or suspiciously tiny, means
+    // the recording went wrong. Keep the original.
+    if (!out.size || out.size >= blob.size || out.size < 20000) {
+      return { blob, note: `re-encode gave ${Math.round(out.size / 1024)}KB, kept original` };
+    }
+    return { blob: out, note: `${Math.round(blob.size / 1024 / 1024 * 10) / 10}MB to ${Math.round(out.size / 1024 / 1024 * 10) / 10}MB` };
+  } catch (e) {
+    return { blob, note: 'compression failed: ' + (e && e.message ? e.message : e) };
+  } finally {
+    try { video.pause(); } catch (e) { /* already gone */ }
+    document.body.removeChild(video);
+    URL.revokeObjectURL(url);
+  }
 }
 
 // Files in the bucket with no entry pointing at them.
@@ -2440,10 +2544,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     const nameExt = pendingBlob.name && pendingBlob.name.includes('.')
       ? pendingBlob.name.split('.').pop().toLowerCase()
       : null;
-    const contentType = pendingBlob.type || (nameExt && EXT_TO_MIME[nameExt]) || 'video/mp4';
-    const typeExt = contentType.includes('/') ? contentType.split('/').pop() : null;
-    const ext = nameExt || typeExt || 'mp4';
-    const videoPath = `${currentUser.id}/${id}.${ext}`;
+    const sourceType = pendingBlob.type || (nameExt && EXT_TO_MIME[nameExt]) || 'video/mp4';
 
     // Analysis runs BEFORE the upload. It reads pendingBlob off this device
     // and never needed the file to be in storage first; uploading first only
@@ -2524,11 +2625,25 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         : 'Clip saved, but analysis failed: ' + detail);
     }
 
-    setAnalysisStatus('Uploading video…');
+    // Shrink only the copy that gets kept. The grader has already run, on the
+    // original, at full quality.
+    saveBtn.textContent = 'Shrinking…';
+    const { blob: storedBlob, note: sizeNote } = await compressForStorage(pendingBlob, setAnalysisStatus);
+    console.info('clip for storage:', sizeNote);
+
+    // Name the file after what is actually being uploaded -- the compressor
+    // may have handed back mp4 or webm regardless of what came off the phone,
+    // and a .mov holding webm will not play.
+    const contentType = storedBlob.type || sourceType;
+    const typeExt = contentType.includes('/') ? contentType.split('/').pop() : null;
+    const ext = (storedBlob === pendingBlob ? nameExt : null) || typeExt || 'mp4';
+    const videoPath = `${currentUser.id}/${id}.${ext}`;
+
+    setAnalysisStatus(`Uploading video… (${sizeNote})`);
     saveBtn.textContent = 'Uploading…';
     const { error: uploadError } = await supabaseClient.storage
       .from('diagnosis-videos')
-      .upload(videoPath, pendingBlob, { contentType });
+      .upload(videoPath, storedBlob, { contentType });
     if (uploadError) {
       setAnalysisStatus('Upload failed: ' + uploadError.message);
       alert('Video upload failed: ' + uploadError.message);
