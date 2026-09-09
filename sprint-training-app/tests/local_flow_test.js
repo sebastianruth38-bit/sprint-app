@@ -71,7 +71,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   const bars = await page.evaluate((a) => {
     document.body.insertAdjacentHTML('beforeend', '<div id="barProbe">' + renderAnalysisHtml(a) + '</div>');
     const out = Array.from(document.querySelectorAll('#barProbe .score-bar .progress-fill'))
-      .map((e) => ({ w: e.style.width, c: e.style.background }));
+      .map((e) => ({ w: e.style.width, c: e.style.background, fill: e.style.getPropertyValue('--fill').trim() }));
     const names = Array.from(document.querySelectorAll('#barProbe .score-row span:first-child'))
       .map((e) => e.textContent);
     document.getElementById('barProbe').remove();
@@ -89,8 +89,12 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   });
   assert(bars.rows === 4, 'every measurement still gets a row, scored or not: ' + bars.rows);
   assert(bars.out.length === 3, 'only the scored ones get a bar: ' + bars.out.length);
-  assert(bars.out[0].w === '100%' && bars.out[1].w === '20%' && bars.out[2].w === '60%',
-    'the bar length tracks the score: ' + JSON.stringify(bars.out.map((b) => b.w)));
+  // The bar is full width and scaled, not a width that grows: animating width
+  // relays out the page every frame, and this app cannot spare the main thread.
+  assert(bars.out.every((b) => b.w === '100%'),
+    'every bar is full width, and scaled instead: ' + JSON.stringify(bars.out.map((b) => b.w)));
+  assert(bars.out[0].fill === '1' && bars.out[1].fill === '0.2' && bars.out[2].fill === '0.6',
+    'the scale tracks the score: ' + JSON.stringify(bars.out.map((b) => b.fill)));
   assert(new Set(bars.out.map((b) => b.c)).size === 3,
     'and each score band gets its own colour: ' + JSON.stringify(bars.out.map((b) => b.c)));
 
