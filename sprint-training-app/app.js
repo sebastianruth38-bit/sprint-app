@@ -2578,13 +2578,23 @@ function renderAnalysisHtml(analysis) {
     return `<div class="hint">Weak points: analysis coming soon</div>`;
   }
   const rows = [...(analysis.pinpoints || []), ...(analysis.additional_observations || [])]
-    .map((p) => `
+    .map((p) => {
+      // The same bar the profile uses, so a score means the same thing in
+      // both places. Some rows are measured but deliberately not scored
+      // (swing balance) -- those get the note and no bar, rather than a bar
+      // sitting at zero, which reads as the worst possible mark.
+      const scored = typeof p.score === 'number' && isFinite(p.score);
+      return `
       <div class="score-row">
         <span>${escapeHtml(p.name)}</span>
-        <span class="score-pill">${escapeHtml(String(p.score))}/5</span>
+        ${scored ? `<span class="score-pill">${escapeHtml(String(p.score))}/5</span>` : ''}
       </div>
+      ${scored ? `<div class="progress-bar score-bar">
+        <div class="progress-fill" style="width:${(p.score / 5) * 100}%;background:${scoreColor(p.score)}"></div>
+      </div>` : ''}
       ${p.note ? `<div class="hint score-note">${escapeHtml(p.note)}</div>` : ''}
-    `)
+    `;
+    })
     .join('');
   const flags = (analysis.flags || [])
     .map((f) => `<div class="hint">⚠️ ${escapeHtml(f)}</div>`)

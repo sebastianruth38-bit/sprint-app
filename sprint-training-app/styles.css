@@ -748,6 +748,10 @@ textarea {
   border-radius: var(--r-pill);
   transition: width 0.35s var(--ease);
 }
+/* Tighter than the profile's, because an analysis card stacks eight of them
+   and the profile shows one per criterion. The note belongs to the bar above
+   it, so the gap below is smaller than the gap above. */
+.score-bar { margin: 0.35rem 0 0.3rem; }
 .small-goal-row {
   display: flex;
   align-items: center;
