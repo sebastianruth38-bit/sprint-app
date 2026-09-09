@@ -1855,6 +1855,89 @@ async function purgeExpiredVideos() {
     .in('id', data.map((e) => e.id));
 }
 
+// Files in the bucket with no entry pointing at them.
+//
+// The retention purge walks entries, so a file that never got a row is
+// invisible to it and would sit there for good. They come from anything that
+// interrupted a save between the upload and the insert -- a closed tab, a
+// dropped connection. Reordering the save (analyse, then upload, then insert,
+// removing the file if the insert fails) closes the window; this clears what
+// is already there, and catches the case where the tab dies mid-save.
+//
+// Deliberately compares against ALL of the athlete's entries rather than a
+// date range: a file is orphaned or it is not, and the only safe test is that
+// nothing references it.
+const ORPHAN_GRACE_MS = 10 * 60 * 1000;
+
+async function purgeOrphanedVideos() {
+  if (!currentUser) return;
+  const { data: files, error: listError } = await supabaseClient.storage
+    .from('diagnosis-videos')
+    .list(currentUser.id, { limit: 1000 });
+  if (listError || !files || !files.length) return;
+
+  const { data: rows, error: rowError } = await supabaseClient
+    .from('diagnosis_entries')
+    .select('video_path')
+    .eq('user_id', currentUser.id)
+    .not('video_path', 'is', null);
+  // A failed read here would make every file look unreferenced. Never delete
+  // on a query that did not come back.
+  if (rowError || !rows) return;
+
+  const referenced = new Set(rows.map((r) => r.video_path));
+  // A file uploaded seconds ago may simply be a save still in flight -- its
+  // row is written after the upload, and a render in another tab (or this
+  // one, on the way back from the save) would otherwise catch it in that
+  // window and delete the clip out from under a save that then succeeds.
+  // Nothing is a genuine orphan until it has had time to get its row.
+  const settled = Date.now() - ORPHAN_GRACE_MS;
+  const orphans = files
+    .filter((f) => {
+      const at = Date.parse(f.created_at || f.updated_at || '');
+      return !isFinite(at) || at < settled;
+    })
+    .map((f) => `${currentUser.id}/${f.name}`)
+    .filter((p) => !referenced.has(p));
+  if (!orphans.length) return;
+
+  const { error: removeError } = await supabaseClient.storage
+    .from('diagnosis-videos')
+    .remove(orphans);
+  if (removeError) console.error('Could not clear orphaned clips:', removeError);
+}
+
+// A small still for the history list, stored in the entry row.
+//
+// The frame is already in hand from the analysis pass at 480px; this is only
+// a downscale. 240px at quality 0.5 lands around 10KB, which is the whole
+// point -- the alternative is letting the browser draw its own poster from
+// the <video>, and a phone clip puts its index at the end of the file, so
+// that costs most of a 20-30MB download per entry shown.
+const THUMB_WIDTH = 240;
+const THUMB_QUALITY = 0.5;
+
+function makeThumb(dataUrl) {
+  if (!dataUrl) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, THUMB_WIDTH / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', THUMB_QUALITY));
+      } catch (e) {
+        resolve(null);   // a preview is never worth failing a save over
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 // supabase-js reports any non-2xx from an Edge Function as the same opaque
 // "non-2xx status code" message, with the real body hidden on .context.
 // Dig the server's own message out so the athlete sees "Daily limit
@@ -2312,8 +2395,6 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
 
   try {
     const id = crypto.randomUUID();
-    setAnalysisStatus('Uploading video…');
-    saveBtn.textContent = 'Uploading…';
     // pendingBlob is the actual uploaded File -- use its real extension/type
     // instead of hardcoding one. Naming/labeling it wrong (e.g. a phone's
     // .mov as "video/webm") makes the browser unable to decode it at all,
@@ -2333,20 +2414,20 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     const typeExt = contentType.includes('/') ? contentType.split('/').pop() : null;
     const ext = nameExt || typeExt || 'mp4';
     const videoPath = `${currentUser.id}/${id}.${ext}`;
-    const { error: uploadError } = await supabaseClient.storage
-      .from('diagnosis-videos')
-      .upload(videoPath, pendingBlob, { contentType });
-    if (uploadError) {
-      setAnalysisStatus('Upload failed: ' + uploadError.message);
-      alert('Video upload failed: ' + uploadError.message);
-      return;
-    }
 
+    // Analysis runs BEFORE the upload. It reads pendingBlob off this device
+    // and never needed the file to be in storage first; uploading first only
+    // meant that anything failing afterwards -- the insert, a closed tab, a
+    // dead connection -- left a 20-30MB file in the bucket with no row
+    // pointing at it, invisible to the app and untouched by the retention
+    // purge, which walks entries. Six of those had accumulated, 101MB.
     let analysis = null;
+    let thumb = null;
     try {
       saveBtn.textContent = 'Analyzing…';
       const { frames, metrics, rejection, shotTrimmed, duplicateShare } =
         await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+      thumb = await makeThumb(frames[0]);
 
       // If most sampled frames came back identical, the clip was never really
       // read and nothing measured from it means anything. Say that, rather
@@ -2403,6 +2484,17 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         : 'Clip saved, but analysis failed: ' + detail);
     }
 
+    setAnalysisStatus('Uploading video…');
+    saveBtn.textContent = 'Uploading…';
+    const { error: uploadError } = await supabaseClient.storage
+      .from('diagnosis-videos')
+      .upload(videoPath, pendingBlob, { contentType });
+    if (uploadError) {
+      setAnalysisStatus('Upload failed: ' + uploadError.message);
+      alert('Video upload failed: ' + uploadError.message);
+      return;
+    }
+
     setAnalysisStatus('Saving session…');
     const { error } = await supabaseClient
       .from('diagnosis_entries')
@@ -2414,8 +2506,13 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         distance: distance || null,
         effort: effort || null,
         analysis,
+        thumb,
       });
     if (error) {
+      // Take the file back out. The row is what makes a clip reachable, so
+      // without this the upload above is exactly the orphan this reordering
+      // was meant to stop.
+      await supabaseClient.storage.from('diagnosis-videos').remove([videoPath]);
       setAnalysisStatus('Save failed: ' + error.message);
       alert('Save failed: ' + error.message);
       return;
@@ -2504,13 +2601,19 @@ async function signedVideoUrl(path) {
 // So: nothing is fetched until the athlete asks for a specific clip. The
 // element carries no src at all until the tap, and preload="none" keeps the
 // browser from going after it once it has one.
-function videoPlaceholder(path) {
+function videoPlaceholder(path, thumb) {
   const holder = document.createElement('div');
   holder.className = 'video-holder';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'video-load-btn';
   btn.textContent = '▶  Play clip';
+  // The preview is a ~10KB still that came down with the list query. Entries
+  // saved before thumbnails existed simply get the plain button.
+  if (thumb) {
+    btn.classList.add('has-thumb');
+    btn.style.backgroundImage = `url("${thumb}")`;
+  }
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     btn.textContent = 'Loading…';
@@ -2530,6 +2633,7 @@ function videoPlaceholder(path) {
 
 async function renderDiagnosis() {
   await purgeExpiredVideos();
+  await purgeOrphanedVideos();
   const { data, error } = await supabaseClient
     .from('diagnosis_entries')
     .select('*')
@@ -2553,7 +2657,7 @@ async function renderDiagnosis() {
       ${renderAnalysisHtml(entry.analysis)}
     `;
     if (entry.video_path) {
-      div.appendChild(videoPlaceholder(entry.video_path));
+      div.appendChild(videoPlaceholder(entry.video_path, entry.thumb));
     }
     div.querySelector('.delete-btn').addEventListener('click', async () => {
       if (entry.video_path) {

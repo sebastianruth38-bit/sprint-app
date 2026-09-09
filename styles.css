@@ -556,6 +556,16 @@ textarea {
 }
 .video-load-btn:hover:not(:disabled) { background: var(--surface-3); }
 .video-load-btn:disabled { opacity: 0.6; cursor: default; }
+/* With a preview behind it the label needs to stay readable over whatever
+   the frame happens to be -- a bright sky or a dark track. */
+.video-load-btn.has-thumb {
+  aspect-ratio: 16 / 9; background-size: cover; background-position: center;
+  color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+.video-load-btn.has-thumb:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.2);
+}
 
 .score-row {
   display: flex;
