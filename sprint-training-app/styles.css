@@ -1596,3 +1596,57 @@ body::before {
 .auth-legal { font-size: 0.72rem; margin-top: 0.9rem; }
 .auth-legal a { color: var(--muted); }
 .auth-legal a:hover { color: var(--text); }
+
+/* ---- What you're chasing ----
+   A ladder per distance, fastest at the top, with the athlete's own best in
+   the header so every row reads as a distance from something real. */
+.chase-group { margin-bottom: 1.1rem; }
+.chase-group:last-child { margin-bottom: 0; }
+.chase-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--glow);
+}
+.chase-mine { color: var(--muted); letter-spacing: 0.04em; }
+
+.chase-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.35rem;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid var(--border-strong);
+}
+.chase-row.caught { border-left-color: #2e7d32; background: rgba(46, 125, 50, 0.10); }
+.chase-row.chasing { border-left-color: var(--glow); }
+.chase-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.chase-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chase-gap {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+.chase-row.caught .chase-gap { color: #7fd18a; }
+.chase-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.chase-del { flex: 0 0 auto; padding: 0 0.2rem; }

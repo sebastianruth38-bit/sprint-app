@@ -224,3 +224,19 @@ create policy "owner_upload_own_videos"
 create policy "owner_delete_own_videos"
   on storage.objects for delete
   using (bucket_id = 'diagnosis-videos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------- Marks the athlete is chasing ----------
+-- Records, standards, a rival's time -- whatever they are actually running at.
+-- Free-form rather than a built-in table of records: what is worth chasing is
+-- personal, and a hard-coded record list goes stale with no way for the person
+-- looking at it to correct it.
+create table if not exists public.benchmarks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  distance text not null,          -- '100m', '60m', matches the times table
+  label text not null,             -- 'World record', 'State qualifier', 'Marcus'
+  seconds numeric not null,
+  created_at timestamptz not null default now()
+);
+alter table public.benchmarks enable row level security;
+create index if not exists benchmarks_user_distance on public.benchmarks (user_id, distance);
