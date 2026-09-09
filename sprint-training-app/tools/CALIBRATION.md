@@ -538,3 +538,40 @@ Two rules keep the old crop-feedback bug dead:
 - **A crop-only frame that finds nobody immediately pays for a whole-frame
   pass.** He has moved out of the box, changed size, or left — and silently
   losing him is exactly how the track fragments that cause these refusals.
+
+## The bands assume 30fps, and a slow phone breaks them
+
+An alt-account clip was refused with "nobody in this clip is moving like a
+sprinter" on a device that managed **4 frames a second** — 34 frames across
+9.0s, the athlete in shot for 4.3 of them.
+
+Subsampling real clips to simulate slower capture, keeping everything else
+identical:
+
+| capture | gap actually used | blockStart motion/s | relay motion/s |
+|---|---|---|---|
+| 30/s | 3fr = 0.10s | 1.32 | 3.13 |
+| 15/s | 1fr = 0.07s | 1.67 | 3.77 |
+| 10/s | 1fr = 0.10s | 2.95 | 3.22 |
+| 6/s | 1fr = 0.17s | 2.51 | 2.32 |
+| 4/s | 1fr = 0.27s | **1.31** | **1.40** |
+
+`MOTION_GAP_S` is 0.1s, and the fixed-time-gap fix that made this measure
+rate-invariant only works while the capture rate can actually deliver that
+gap. Below about 10/s the gap is already one frame and cannot get smaller, so
+the measurement stretches across a growing slice of the stride and the figure
+falls with the rate. The relay clip halves, 3.13 to 1.40, against a floor of
+0.9 — nothing about the running changed.
+
+So a modest clip captured slowly drops under the floor and is refused for not
+sprinting, which is a claim about the athlete drawn from a shortage of frames.
+
+**Refusing is still correct at that rate.** A stride is roughly 0.45s, so 4/s
+is about two samples per stride; a touchdown angle cannot be measured from
+that, and grading it would produce confident nonsense. What was wrong was the
+reason. Below `MEASURABLE_FPS_MIN` (10/s, about four samples per stride) the
+refusal now names the device and suggests a shorter or lower-resolution clip,
+instead of repeating whichever guard happened to trip first.
+
+The second clip from the same session, at 12/s, correctly kept its real
+reason: tracking jumping between overlapping people.

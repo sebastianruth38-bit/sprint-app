@@ -2104,6 +2104,36 @@ async function purgeOrphanedVideos() {
   if (removeError) console.error('Could not clear orphaned clips:', removeError);
 }
 
+// Below this the guards are being asked a question the frames cannot answer.
+//
+// A stride takes roughly 0.45s, so 10 frames a second is about four or five
+// samples per stride -- already the floor for seeing a peak position at all.
+// Every band in this file was calibrated against 30. Measured by subsampling
+// real clips, the motion figure that decides "is this a sprinter" falls with
+// the rate: one clip reads 3.13/s at 30fps and 1.40/s at 4fps, against a
+// floor of 0.9. Nothing about the running changed. So a modest clip captured
+// slowly drops under the floor and gets refused for not sprinting, which is
+// a claim about the athlete drawn from a shortage of frames.
+const MEASURABLE_FPS_MIN = 10;
+
+// Refusing is still right at that rate -- two samples a stride cannot measure
+// a touchdown angle -- but the REASON has to be honest. The guard that
+// happened to trip first is not the cause; the device is.
+function refusalReason(rejection, capture) {
+  const perSecond = capture && capture.frames && capture.duration
+    ? capture.frames / capture.duration
+    : null;
+  if (perSecond != null && perSecond < MEASURABLE_FPS_MIN) {
+    const inShot = capture.withPose / perSecond;
+    return `This phone only managed ${perSecond.toFixed(0)} frames a second — too few to measure a `
+      + `stride, so this is about the device rather than your running. A shorter clip, or one `
+      + `recorded at a lower resolution, gives it a chance. `
+      + `(you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s; `
+      + `${capture.withPose} of ${capture.frames} frames)`;
+  }
+  return `${rejection} ${describeCapture(capture)}`;
+}
+
 // Turn the capture counts into the thing the athlete can act on.
 //
 // "10 of 71 frames" is diagnostic but it is not advice. What matters to him
@@ -2824,7 +2854,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
               // opposite fixes, and the message alone distinguished neither.
               // Two clips that graded cleanly offline were refused on the
               // athlete's phone with no way to tell which had happened.
-              filming_note: `${rejection} ${describeCapture(capture)}`,
+              filming_note: refusalReason(rejection, capture),
             }
           : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
       if (shotTrimmed && !rejection) {

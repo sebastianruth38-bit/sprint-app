@@ -106,6 +106,29 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(degraded.startsWith('threw'),'pose loader rejects cleanly when the CDN is unreachable (sandbox): '+degraded);
   assert(errors.length===0,'…and that rejection does not surface as an uncaught page error');
 
+  // ---------- a slow device must not be blamed on the athlete ----------
+  // Every band in the grader was calibrated at 30fps. Subsampling real clips
+  // shows the motion figure that decides "is this a sprinter" falling with the
+  // capture rate -- one clip reads 3.13/s at 30fps and 1.40/s at 4fps against
+  // a floor of 0.9, with nothing about the running changed. Refusing is still
+  // right at that rate, since two samples a stride cannot measure a touchdown
+  // angle. Telling the athlete he was not sprinting is not.
+  const reasons = await page.evaluate(() => ({
+    slow: refusalReason('Nobody in this clip is moving like a sprinter.',
+      { frames: 34, withPose: 16, duration: 9.0, played: true }),
+    normal: refusalReason('Tracking jumped between overlapping people — film one athlete alone, side-on.',
+      { frames: 85, withPose: 16, duration: 7.1, played: true }),
+  }));
+  assert(/frames a second/.test(reasons.slow) && /about the device rather than your running/.test(reasons.slow),
+    'a 4fps capture blames the phone, not the athlete: ' + reasons.slow.slice(0, 90));
+  assert(!/moving like a sprinter/.test(reasons.slow),
+    'and drops the guard message that would read as a verdict on him: ' + reasons.slow.slice(0, 60));
+  assert(/in shot about 4\.2s of 9\.0s/.test(reasons.slow),
+    'while still carrying the numbers that make it diagnosable: ' + reasons.slow);
+  // At a workable rate the real reason must survive untouched.
+  assert(/overlapping people/.test(reasons.normal),
+    'a 12fps capture keeps the guard that actually tripped: ' + reasons.normal.slice(0, 70));
+
   // ---------- one-tap sign-in ----------
   // The point of the Google button is that a teammate standing on a track can
   // start using this without typing an email and inventing a password, which
