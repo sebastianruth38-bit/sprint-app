@@ -2030,6 +2030,29 @@ async function purgeOrphanedVideos() {
   if (removeError) console.error('Could not clear orphaned clips:', removeError);
 }
 
+// Turn the capture counts into the thing the athlete can act on.
+//
+// "10 of 71 frames" is diagnostic but it is not advice. What matters to him
+// is how long he was actually in shot -- on the clip that produced those
+// numbers he believed he was visible for four seconds and it was closer to
+// one, which is the whole reason it could not be graded. Frame counts stay in
+// the message because they separate a phone that could not decode the clip
+// from an athlete who was barely in it.
+function describeCapture(capture) {
+  if (!capture || !capture.frames || !capture.duration) return '';
+  const perSecond = capture.frames / capture.duration;
+  const inShot = perSecond > 0 ? capture.withPose / perSecond : 0;
+  const parts = [`you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s`];
+  parts.push(`${capture.withPose} of ${capture.frames} frames`);
+  // Well under the rate we ask for means the device could not keep up, which
+  // is a different problem from standing too far away and has a different fix.
+  if (perSecond < CAPTURE_RATE / 2) {
+    parts.push(`this device managed ${perSecond.toFixed(0)} frames a second`);
+  }
+  if (!capture.played) parts.push('the clip would not play through');
+  return `(${parts.join('; ')})`;
+}
+
 // A small still for the history list, stored in the entry row.
 //
 // The frame is already in hand from the analysis pass at 480px; this is only
@@ -2377,6 +2400,35 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // past the minimum, so the fallback never ran, while pose had found him
     // in five of them. That is exactly the clip the athlete reported.
     const posedCount = (rows) => rows.filter((p) => p.length).length;
+    // Comfortably more than the track minimum, not merely equal to it. The
+    // athlete needs MIN_TRACK_FRAMES of CONTINUOUS tracking, and detections
+    // scattered through a clip do not join up: a real refusal read "10 of 71
+    // frames over 7.1s had anyone in them", which clears a bare minimum of 8
+    // and still could not follow anyone. Accepting the fast pass at the bare
+    // minimum means never retrying on exactly the clips that need it.
+    const PLAYBACK_GOOD_ENOUGH = MIN_TRACK_FRAMES * 2;
+
+    // Every strategy below is an ATTEMPT, and the best one wins.
+    //
+    // Each was originally written to replace what came before it, which threw
+    // away good work three separate ways: the 1x retry overwrote the 2x pass,
+    // and the seek fallback overwrote both -- so a clip the fast pass had
+    // half-read came back with whatever the last attempt managed, sometimes
+    // nothing at all. `candidates` has to travel with its own poses, since it
+    // carries the stills the AI sees and the motion trace the shot splitter
+    // reads; taking poses from one pass and stills from another silently
+    // mismatches them.
+    const best = { rows: [], candidates: [] };
+    const keepIfBetter = () => {
+      if (posedCount(framePoses) <= posedCount(best.rows)) return;
+      best.rows = framePoses;
+      best.candidates = candidates.slice();
+    };
+    const takeBest = () => {
+      framePoses = best.rows;
+      candidates.length = 0;
+      best.candidates.forEach((c) => candidates.push(c));
+    };
 
     if (landmarker && canPlayThrough) {
       // Faster than real time where the decoder can keep up, then real time
@@ -2384,6 +2436,11 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // to decode AND run pose, and what it drops are frames we never
       // measure -- costly on a clip where the athlete is only in shot
       // briefly, since the drops come out of the handful that contain him.
+      //
+      // Each attempt is kept only if it found MORE of him than the last. A
+      // retry is an attempt to do better, not a replacement: a slower pass
+      // that happens to come back worse -- a stall, a decoder hiccup -- must
+      // not throw away what the first pass already had.
       for (const rate of [PLAYBACK_RATE, 1]) {
         try {
           framePoses = [];
@@ -2393,13 +2450,13 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
           await waitForEvent(video, 'seeked', 2000);
           await playThrough((t) => { framePoses.push(processFrame(t, true)); },
                             CAPTURE_RATE, rate === 1 ? 'Watching again, more slowly' : 'Watching the run');
-          playedThrough = posedCount(framePoses) >= MIN_TRACK_FRAMES;
         } catch (playErr) {
           console.warn(`Playback capture at ${rate}x failed:`, playErr);
-          playedThrough = false;
         }
-        if (playedThrough) break;
+        keepIfBetter();
+        if (posedCount(best.rows) >= PLAYBACK_GOOD_ENOUGH) break;
       }
+      playedThrough = posedCount(best.rows) >= PLAYBACK_GOOD_ENOUGH;
       video.playbackRate = 1;
     }
 
@@ -2416,6 +2473,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         times.push(clampT((duration * i) / Math.max(sampleCount - 1, 1)));
       }
       framePoses = await scan(times, 'Scanning clip', true);
+      keepIfBetter();
 
       // A sweep spread over the whole clip is far too thin when the athlete
       // crosses the shot in about a second: on a 7.9s clip that is roughly
@@ -2434,14 +2492,16 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         for (let t = from; t <= to && dense.length < DENSE_MAX_SAMPLES; t += step) dense.push(clampT(t));
         if (dense.length) {
           candidates.length = 0;
-          const denseRows = await scan(dense, 'Looking closer', true);
-          // Keep whichever pass actually found him. The dense pass is aimed
-          // at where he was seen, so it normally wins by a wide margin, but
-          // a bad seek run must not lose what the sweep already had.
-          if (posedCount(denseRows) > posedCount(framePoses)) framePoses = denseRows;
+          // Offered as its own attempt: framePoses and candidates must
+          // describe the SAME pass when they are handed over, and candidates
+          // was just cleared for this scan. The sweep was already offered
+          // above, so a dense pass that finds less simply loses.
+          framePoses = await scan(dense, 'Looking closer', true);
+          keepIfBetter();
         }
       }
     }
+    takeBest();
     const secondsPerFrame = candidates.length > 1
       ? (candidates[candidates.length - 1].t - candidates[0].t) / (candidates.length - 1)
       : duration / Math.max(candidates.length - 1, 1);
@@ -2626,7 +2686,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
               // opposite fixes, and the message alone distinguished neither.
               // Two clips that graded cleanly offline were refused on the
               // athlete's phone with no way to tell which had happened.
-              filming_note: `${rejection} (${capture.withPose} of ${capture.frames} frames over ${capture.duration.toFixed(1)}s had anyone in them${capture.played ? '' : '; the clip would not play through'})`,
+              filming_note: `${rejection} ${describeCapture(capture)}`,
             }
           : buildLocalAnalysis(metrics, clipType, document.getElementById('clipSurface').value);
       if (shotTrimmed && !rejection) {

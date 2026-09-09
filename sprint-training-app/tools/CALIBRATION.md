@@ -452,3 +452,46 @@ Fixed by counting posed frames. Two further changes follow from it:
 shot is thin. The grader wants a few strides of continuous tracking, and every
 guard downstream is working from that second of footage. Filming from closer,
 or panning to hold him in frame, is worth more than any of these fixes.
+
+## Every capture strategy is an attempt, and the best one wins
+
+A refusal from the athlete's iPad read:
+
+> Could not follow anyone through this clip. (10 of 71 frames over 7.1s had
+> anyone in them)
+
+Two things in that one line.
+
+**71 frames over 7.1s is 10 a second**, against a `CAPTURE_RATE` of 30. The
+device dropped two thirds of the frames while decoding and running pose at
+2x speed — confirmation that the fast pass is where the loss happens.
+
+**10 posed frames cleared the new gate and still failed.** `MIN_TRACK_FRAMES`
+is 8, so 10 passed, the retry never ran, and grading then failed anyway
+because those 8 frames have to be *continuous* and ten scattered detections do
+not join up. The acceptance bar is now `MIN_TRACK_FRAMES * 2`: a bare pass
+means retry, not proceed.
+
+Then the tests found the deeper problem. Each strategy had been written to
+**replace** the one before it, which threw away good work three separate ways:
+
+- the 1x retry cleared `framePoses` before running, so a worse second pass
+  overwrote a better first one;
+- the seek fallback cleared it again, so a clip the fast pass had half-read
+  came back with whatever the sweep managed;
+- and `candidates` — the stills the AI sees and the motion trace the shot
+  splitter reads — could end up describing a different pass than the poses.
+
+Caught by a stub that finds the athlete in 9 frames and then nobody: the
+result came back **0 posed**, because two later attempts had wiped the 9.
+
+There is now one rule, `keepIfBetter()`, applied after every attempt: 2x
+playback, 1x playback, the seek sweep, and the dense seek. Poses and stills
+are only ever offered together, so they cannot be mismatched. Same stub now
+returns 9 and correctly refuses to call it a good read.
+
+The refusal message also leads with seconds in shot rather than frame counts,
+since that is the part the athlete can act on. Frame counts stay because they
+separate a device that could not decode from an athlete who was barely in the
+picture — and the frames-per-second line appears only when the device is
+clearly the problem.

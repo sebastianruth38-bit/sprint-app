@@ -174,6 +174,11 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(/moving like a sprinter/.test(note), 'the refusal reason is kept: ' + note);
   assert(/16 of 63 frames/.test(note),
     'and it carries what the device actually decoded, so a screenshot is diagnosable: ' + note);
+  // Frame counts are diagnostic; seconds in shot is the thing he can act on.
+  // The athlete believed he was visible for four seconds on a clip where it
+  // was closer to one, and that was the whole reason it could not be graded.
+  assert(/in shot about 0\.5s of 2\.1s/.test(note),
+    'and says how long he was actually in shot, which is the actionable part: ' + note);
 
   await browser.close();server.close();
   console.log(`\n${pass} passed, ${fail} failed`);

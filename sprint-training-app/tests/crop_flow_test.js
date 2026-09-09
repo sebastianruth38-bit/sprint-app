@@ -188,6 +188,39 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   assert(sparse.played === false,
     `plenty of captured frames with almost nobody in them is not counted as a good read (${sparse.withPose} posed of ${sparse.frames} captured, played=${sparse.played})`);
 
+  // Just over the bare track minimum is still not enough. A real refusal read
+  // "10 of 71 frames over 7.1s had anyone in them" -- that clears a minimum of
+  // 8 and still could not follow anyone, because the athlete needs that many
+  // CONTINUOUS frames and scattered detections do not join up. Accepting the
+  // fast pass at the bare minimum means never retrying on the clips that need
+  // it most.
+  const justOver = await page.evaluate(async (u) => {
+    const real = window.getPoseLandmarker;
+    let hits = 0;
+    const target = MIN_TRACK_FRAMES + 1;
+    window.getPoseLandmarker = async () => ({
+      detect: () => {
+        if (hits >= target) return { landmarks: [] };
+        hits++;
+        const lm = [];
+        for (let i = 0; i < 33; i++) {
+          lm.push({ x: 0.4 + (i % 5) * 0.02, y: 0.3 + (i / 32) * 0.4, visibility: 0.95 });
+        }
+        return { landmarks: [lm] };
+      },
+    });
+    const blob = await (await fetch(u)).blob();
+    const out = await extractFrames(blob, 6, 480, () => {});
+    window.getPoseLandmarker = real;
+    return { withPose: out.capture.withPose, played: out.capture.played,
+             min: MIN_TRACK_FRAMES };
+  }, `http://localhost:${port}/clip/${CLIPS.blockStart}`);
+
+  assert(justOver.withPose > justOver.min,
+    `the stub clears the bare track minimum (${justOver.withPose} posed vs minimum ${justOver.min})`);
+  assert(justOver.played === false,
+    `but scraping past the minimum is not treated as a good read (${justOver.withPose} posed, played=${justOver.played})`);
+
   // ---------- the copy that gets stored ----------
   // Storage, not egress, is the free tier's real ceiling: clips average 9.5MB
   // off the phone and the 1GB limit arrives in about five weeks at a few a
