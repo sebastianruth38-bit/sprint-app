@@ -13,6 +13,38 @@ function setAuthMessage(msg, isError = false) {
   authMessage.style.color = isError ? 'var(--accent)' : 'var(--muted)';
 }
 
+// Where Google sends the athlete back to.
+//
+// Derived from the address bar rather than hard-coded, so the same build works
+// on GitHub Pages, on a local server, and on any future domain without an
+// edit. The query and hash are stripped: Supabase puts the auth code on the
+// URL itself, and carrying an old one back into the redirect confuses it.
+function authRedirectUrl() {
+  return window.location.origin + window.location.pathname;
+}
+
+document.getElementById('authGoogle').addEventListener('click', async () => {
+  const btn = document.getElementById('authGoogle');
+  btn.disabled = true;
+  setAuthMessage('Opening Google…');
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: authRedirectUrl() },
+  });
+  // On success the browser has already navigated away, so reaching here at
+  // all means it did not start -- usually the provider is not enabled on the
+  // project yet, which is worth saying plainly rather than as a raw error.
+  if (error) {
+    btn.disabled = false;
+    setAuthMessage(
+      /provider is not enabled/i.test(error.message)
+        ? 'Google sign-in is not switched on for this app yet — use email below for now.'
+        : error.message,
+      true
+    );
+  }
+});
+
 document.getElementById('authSignIn').addEventListener('click', async () => {
   const email = authEmail.value.trim();
   const password = authPassword.value;

@@ -334,7 +334,11 @@ main {
   color: var(--muted);
   line-height: 1.5;
 }
-p.hint { margin-top: -0.6rem; }
+/* Tucks a subtitle up under the heading it belongs to. Scoped to exactly that
+   job: as a blanket rule it silently pulled every other .hint paragraph over
+   whatever sat above it -- it ate the chart axis dates once and the auth
+   legal line once -- and each time the fix was another specificity fight. */
+h1 + p.hint, h2 + p.hint, h3 + p.hint, h4 + p.hint { margin-top: -0.6rem; }
 
 /* ---------- Cards: big radii, hairline borders, no hard shadows ---------- */
 .card {
@@ -1498,10 +1502,7 @@ body::before {
   text-transform: uppercase;
   color: var(--muted);
 }
-/* p.hint carries a negative top margin to tuck subtitles under headings, and
-   it outranks a bare class -- which dragged this line up over the axis dates.
-   Matched on the element too so it wins. */
-p.chart-foot { margin-top: 0.75rem; font-size: 0.78rem; }
+.chart-foot { margin-top: 0.75rem; font-size: 0.78rem; }
 .chart-foot b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
 .chart-empty { margin: 0.4rem 0 0; }
 
@@ -1554,3 +1555,44 @@ p.chart-foot { margin-top: 0.75rem; font-size: 0.78rem; }
   .chart-line { animation: none; stroke-dashoffset: 0; }
   .chart-dot { animation: none; }
 }
+
+/* ---- Google sign-in ----
+   Deliberately NOT the gradient. Google's brand guidance wants their mark on a
+   neutral surface, and a provider button that looks like the app's own primary
+   action reads as "sign up" rather than "hand off to Google". */
+.google-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: #fff;
+  color: #1f1f1f;
+  font-weight: 600;
+  padding: 0.8rem 1.25rem;
+}
+.google-btn:hover:not(:disabled) { background: #f1f1f4; }
+.google-btn svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.google-btn:disabled { opacity: 0.6; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 0.85rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.auth-divider::before, .auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.auth-legal { font-size: 0.72rem; margin-top: 0.9rem; }
+.auth-legal a { color: var(--muted); }
+.auth-legal a:hover { color: var(--text); }
