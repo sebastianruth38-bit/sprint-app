@@ -887,3 +887,48 @@ blockquote {
   opacity: 0.75;
   font-size: 0.82rem;
 }
+
+/* ---- Settings menu footer: the legal pages ---- */
+.settings-legal {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.settings-legal a { color: var(--muted); text-decoration: none; }
+.settings-legal a:hover { color: var(--text); text-decoration: underline; }
+
+/* ---- Privacy / Terms pages ----
+   Plain reading pages. They reuse the app's shell so they do not look like a
+   different site, but they are static HTML with no script: the App Store needs
+   a privacy policy at a public URL that loads without signing in. */
+.legal-page main { max-width: 46rem; margin: 0 auto; padding-bottom: 4rem; }
+.legal-page h2 {
+  margin: 2rem 0 0.6rem;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+.legal-page p, .legal-page li { line-height: 1.65; color: var(--muted); }
+.legal-page ul { padding-left: 1.2rem; margin: 0.6rem 0; }
+.legal-page li { margin-bottom: 0.5rem; }
+.legal-page strong { color: var(--text); }
+/* --accent is white here, which reads as emphasis rather than a link in
+   running text, so legal-page links get an underline to stay recognisable. */
+.legal-page a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.legal-page .app-header h1 { font-size: 1.1rem; }
+
+/* Destructive action. Deliberately not styled like the buttons beside it --
+   Sign Out and Delete Account sit next to each other in a small menu, and
+   they must not be one mis-tap apart in appearance as well as position. */
+.danger-btn {
+  background: transparent;
+  color: #e5484d;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+}
+.danger-btn:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.12);
+  border-color: #e5484d;
+}
+.danger-btn:disabled { opacity: 0.6; }

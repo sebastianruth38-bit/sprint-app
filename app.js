@@ -46,6 +46,47 @@ document.getElementById('signOutBtn').addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
 });
 
+// Deleting an account is irreversible and there is no undo, no export, and no
+// backup to restore from. So it asks twice, and the second one cannot be
+// dismissed by tapping OK without reading: it wants the word typed out. A
+// confirm() dialog alone is one careless tap away from destroying a season of
+// training data.
+document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('deleteAccountBtn');
+  if (!confirm(
+    'Delete your account?\n\n'
+    + 'This removes your clips, scores, workouts, times and goals permanently. '
+    + 'It cannot be undone.'
+  )) return;
+
+  const typed = prompt('This is permanent. Type DELETE to confirm.');
+  if (typed === null) return;
+  if (typed.trim().toUpperCase() !== 'DELETE') {
+    alert('Not deleted — the confirmation did not match.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
+  try {
+    // Server-side: removing a row from auth.users needs the service role,
+    // which must never reach the browser. The function deletes whoever the
+    // JWT says is calling, so this request carries no user id to tamper with.
+    const { data, error } = await supabaseClient.functions.invoke('delete-account');
+    if (error) throw new Error(await readFunctionError(error));
+    if (!data || !data.ok) throw new Error((data && data.error) || 'Account was not deleted.');
+    alert('Your account and everything in it have been deleted.');
+    await supabaseClient.auth.signOut();
+    location.reload();
+  } catch (e) {
+    console.error('Account deletion failed:', e);
+    alert('Could not delete your account: ' + (e.message || e)
+      + '\n\nNothing was deleted. Please try again, or get in touch.');
+    btn.disabled = false;
+    btn.textContent = 'Delete Account';
+  }
+});
+
 // ---------- Settings menu ----------
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsMenu = document.getElementById('settingsMenu');
