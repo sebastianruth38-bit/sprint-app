@@ -1,4 +1,4 @@
--- Sprint Lab schema
+-- Sprintr schema
 -- Run this once in your Supabase project's SQL Editor (Project > SQL Editor > New query).
 -- Every table is scoped to auth.uid() via Row Level Security, so each signed-in
 -- user only ever sees their own rows.
