@@ -2685,6 +2685,19 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
   }
 }
 
+// Marks the whole app as busy while a clip is being measured.
+//
+// Ambient animation stops for the duration. Pose inference IS the capture
+// rate -- two model runs per frame measured out at 10 frames a second on the
+// athlete's iPad, which is the margin between a clip grading and being
+// refused -- so anything decorative competing for the main thread is taken
+// straight out of frames the grader needs.
+function setAnalysing(busy) {
+  document.body.classList.toggle('is-analysing', !!busy);
+  const ring = document.getElementById('analysisRing');
+  if (ring) ring.hidden = !busy;
+}
+
 function setAnalysisStatus(msg) {
   const el = document.getElementById('analysisStatus');
   if (!el) return;
@@ -2709,11 +2722,13 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   // status always get released after this. This is a last-resort net on
   // top of the per-step timeouts already inside extractFrames/the
   // analysis call, not a replacement for them.
+  setAnalysing(true);
   let finished = false;
   const hardTimeout = setTimeout(() => {
     if (finished) return;
     finished = true;
     setAnalysisStatus('Gave up after 2 minutes -- something is stuck. Send a screenshot of this status line.');
+    setAnalysing(false);
     saveBtn.disabled = false;
     saveBtn.textContent = originalLabel;
   }, 120000);
@@ -2870,6 +2885,11 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     videoUpload.value = '';
     renderDiagnosis();
   } finally {
+    // Outside the guard on purpose. The hard timeout may already have set
+    // `finished` and handed the button back, and if the busy flag were only
+    // cleared in here the app would stay frozen in its measuring state for
+    // the rest of the session.
+    setAnalysing(false);
     if (!finished) {
       finished = true;
       clearTimeout(hardTimeout);
@@ -2890,13 +2910,19 @@ function renderAnalysisHtml(analysis) {
       // (swing balance) -- those get the note and no bar, rather than a bar
       // sitting at zero, which reads as the worst possible mark.
       const scored = typeof p.score === 'number' && isFinite(p.score);
+      // The bar is full width and scaled down, rather than a narrow bar that
+      // grows. Animating width lays the page out again on every frame -- on
+      // the device this app has to be quick on, that is the one thing worth
+      // avoiding. A transform is composited and costs the main thread nothing.
+      // The fill rides in a custom property so the animation can read it; no
+      // JavaScript has to run after the markup lands.
       return `
       <div class="score-row">
         <span>${escapeHtml(p.name)}</span>
         ${scored ? `<span class="score-pill">${escapeHtml(String(p.score))}/5</span>` : ''}
       </div>
       ${scored ? `<div class="progress-bar score-bar">
-        <div class="progress-fill" style="width:${(p.score / 5) * 100}%;background:${scoreColor(p.score)}"></div>
+        <div class="progress-fill" style="width:100%;--fill:${p.score / 5};background:${scoreColor(p.score)}"></div>
       </div>` : ''}
       ${p.note ? `<div class="hint score-note">${escapeHtml(p.note)}</div>` : ''}
     `;

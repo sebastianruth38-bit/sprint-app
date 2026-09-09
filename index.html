@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sprintr</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@500;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=5e9347e" />
+  <link rel="stylesheet" href="styles.css?v=3f37fcc" />
 </head>
 <body>
   <!-- AUTH GATE -->
@@ -146,7 +146,10 @@
         </label>
 
         <button id="saveDiagnosis" class="btn primary">Analyze</button>
-        <p id="analysisStatus" class="hint"></p>
+        <div class="analysis-live">
+          <div id="analysisRing" class="analysis-ring" hidden aria-hidden="true"></div>
+          <p id="analysisStatus" class="hint" role="status" aria-live="polite"></p>
+        </div>
       </div>
 
       <h3>Past Sessions</h3>
@@ -288,7 +291,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=5e9347e"></script>
-  <script src="app.js?v=5e9347e"></script>
+  <script src="config.js?v=3f37fcc"></script>
+  <script src="app.js?v=3f37fcc"></script>
 </body>
 </html>
