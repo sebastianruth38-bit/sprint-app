@@ -68,8 +68,16 @@ create table if not exists public.diagnosis_entries (
   distance text,
   effort text,
   analysis jsonb, -- AI-generated: { summary, pinpoints[], additional_observations[], flags[] }
+  -- A ~240px JPEG data url of one graded frame, kept in the row rather than
+  -- in storage on purpose. It arrives with the list query the app already
+  -- makes, so the history can show a preview without signing a url or
+  -- fetching a file per entry. The clips themselves are 20-30MB and a phone
+  -- writes the file index at the end of the file, so anything that makes the
+  -- browser touch the video just to draw a still costs most of the clip.
+  thumb text,
   created_at timestamptz not null default now()
 );
+alter table public.diagnosis_entries add column if not exists thumb text;
 
 -- ---------- Form analysis criteria (per-athlete custom good/bad cues) ----------
 create table if not exists public.form_criteria (
