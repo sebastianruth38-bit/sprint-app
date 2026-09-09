@@ -31,8 +31,8 @@
 
 body {
   margin: 0;
-  font-family: 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-weight: 500;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 400;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -43,7 +43,7 @@ button, input, select, textarea { font-family: inherit; }
 
 /* Sentence-case, tightly-tracked headings -- no boxy all-caps slabs. */
 h1, h2, h3, h4 {
-  font-family: 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -57,7 +57,7 @@ h2 {
 h3 { font-size: 1.1rem; }
 
 .tab-label, .type {
-  font-family: 'Barlow', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-weight: 600;
 }
 
@@ -1179,7 +1179,7 @@ body::after {
 }
 
 /* ---- Readings are set in mono ----
-   Scoped to the things that ARE readings. Body copy stays in Barlow: a whole
+   Scoped to the things that ARE readings. Body copy stays in Inter: a whole
    interface in monospace is a costume, not a design. */
 .score-pill,
 .day-badge,
@@ -1461,4 +1461,96 @@ body::before {
 
 @media (prefers-reduced-motion: reduce) {
   .hero-halo { animation: none; }
+}
+
+/* ---- Charts ----
+   The SVG is stretched with preserveAspectRatio="none", so stroke width has
+   to be vector-effect'd or the line thins and thickens as the box changes. */
+.chart { position: relative; }
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--glow);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 6px var(--glow-dim));
+}
+.chart-dot {
+  fill: #fff;
+  stroke: var(--glow);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* p.hint carries a negative top margin to tuck subtitles under headings, and
+   it outranks a bare class -- which dragged this line up over the axis dates.
+   Matched on the element too so it wins. */
+p.chart-foot { margin-top: 0.75rem; font-size: 0.78rem; }
+.chart-foot b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.chart-empty { margin: 0.4rem 0 0; }
+
+/* The line draws itself in. Stroke-dash is a paint-only property here, and
+   it runs once per render rather than continuously. */
+.chart-line {
+  stroke-dasharray: 260;
+  stroke-dashoffset: 260;
+  animation: draw 1s var(--ease) forwards;
+}
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.chart-dot { animation: dot-in 0.4s var(--ease) both 0.55s; }
+@keyframes dot-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- Segmented control ---- */
+.segmented {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  margin-bottom: 0.9rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.segmented::-webkit-scrollbar { display: none; }
+.seg-btn {
+  flex: 1 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s var(--ease), background 0.25s var(--ease);
+}
+.seg-btn.active {
+  background: var(--grad);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 4px 18px -6px var(--glow-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-line { animation: none; stroke-dashoffset: 0; }
+  .chart-dot { animation: none; }
 }

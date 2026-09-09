@@ -2925,6 +2925,63 @@ function countUpScores(root) {
   });
 }
 
+// A gradient area chart, as SVG, with no library.
+//
+// `points` is [{ t: Date|number, v: number, label }] in any order. Returns
+// markup, so callers drop it wherever they like. The path is drawn in a
+// 100x40 viewBox and stretched by CSS -- the shape is resolution-independent
+// and nothing has to be recomputed when the phone rotates.
+//
+// Two things it refuses to do rather than mislead: it will not draw a line
+// through a single point, and it does not smooth. A spline through five
+// sprint times invents values between them that were never run.
+let chartSeq = 0;
+function areaChart(points, opts = {}) {
+  const pts = (points || [])
+    .filter((p) => typeof p.v === 'number' && isFinite(p.v))
+    .sort((a, b) => new Date(a.t) - new Date(b.t));
+  if (pts.length < 2) {
+    return `<p class="hint chart-empty">${escapeHtml(opts.empty || 'Not enough logged yet to draw a trend.')}</p>`;
+  }
+  const vals = pts.map((p) => p.v);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (opts.min != null) lo = Math.min(lo, opts.min);
+  if (opts.max != null) hi = Math.max(hi, opts.max);
+  // A flat series would divide by zero and draw nothing; give it a band.
+  if (hi - lo < 1e-9) { hi += 0.5; lo -= 0.5; }
+  const W = 100, H = 40, pad = 3;
+  const x = (i) => (i / (pts.length - 1)) * W;
+  // Lower is better for times, higher for scores -- the caller says which.
+  const y = (v) => {
+    const norm = (v - lo) / (hi - lo);
+    return pad + (1 - (opts.lowerIsBetter ? 1 - norm : norm)) * (H - pad * 2);
+  };
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(p.v).toFixed(2)}`).join('');
+  const id = `cg${++chartSeq}`;
+  const dots = pts.map((p, i) =>
+    `<circle cx="${x(i).toFixed(2)}" cy="${y(p.v).toFixed(2)}" r="0.9"
+             class="chart-dot"><title>${escapeHtml(String(p.label ?? p.v))}</title></circle>`).join('');
+  return `
+    <div class="chart">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+           aria-label="${escapeHtml(opts.title || 'Trend')}">
+        <defs>
+          <linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--violet)" stop-opacity="0.55" />
+            <stop offset="100%" stop-color="var(--azure)" stop-opacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d="${line}L${W},${H}L0,${H}Z" fill="url(#${id})" />
+        <path d="${line}" class="chart-line" />
+        ${dots}
+      </svg>
+      <div class="chart-axis">
+        <span>${escapeHtml(pts[0].label != null ? String(pts[0].axis ?? '') : '')}</span>
+        <span>${escapeHtml(String(pts[pts.length - 1].axis ?? ''))}</span>
+      </div>
+    </div>`;
+}
+
 function renderAnalysisHtml(analysis) {
   if (!analysis || (!analysis.summary && !(analysis.pinpoints || []).length)) {
     return `<div class="hint">Weak points: analysis coming soon</div>`;
@@ -3106,6 +3163,39 @@ async function renderDiagnosis() {
     list.appendChild(div);
   }
   countUpScores(list);
+  renderScoreTrend(data);
+}
+
+// Overall score per clip, oldest to newest.
+//
+// Uses the same mean the hero shows, so the trend and the number on each card
+// cannot disagree. Clips that were refused have no scores and are skipped
+// rather than plotted as zero -- a refusal is a missing measurement, not a
+// bad one, and drawing it as the floor would invent a slump.
+function renderScoreTrend(entries) {
+  const host = document.getElementById('scoreTrend');
+  const card = document.getElementById('scoreTrendCard');
+  if (!host || !card) return;
+  const points = (entries || []).map((e) => {
+    const scored = [...((e.analysis && e.analysis.pinpoints) || [])]
+      .filter((p) => typeof p.score === 'number' && isFinite(p.score));
+    if (!scored.length) return null;
+    const mean = scored.reduce((a, p) => a + p.score, 0) / scored.length;
+    const when = new Date(e.created_at);
+    return {
+      t: when, v: mean,
+      label: `${mean.toFixed(1)}/5 — ${when.toLocaleDateString()}`,
+      axis: when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    };
+  }).filter(Boolean);
+
+  card.hidden = points.length < 2;
+  if (card.hidden) return;
+  host.innerHTML = areaChart(points, {
+    title: 'Overall score per clip',
+    min: 1, max: 5,
+    empty: 'Grade a couple more clips and a trend will appear here.',
+  });
 }
 
 // =====================================================
@@ -4078,6 +4168,62 @@ document.getElementById('saveTime').addEventListener('click', async () => {
   renderTimes();
 });
 
+// Times, one distance at a time.
+//
+// Distances are never plotted together: 11.4 for a 100m and 52.0 for a 400m
+// on one axis makes both meaningless, and a shared axis would squash every
+// real difference flat. The segmented control picks which one you are
+// looking at, and only distances with at least two logged times appear --
+// there is no trend through a single point.
+//
+// Faster is better, so the line goes UP as times come down. A chart where
+// improvement points downward is technically honest and reads as failure.
+let timeTrendDistance = null;
+function renderTimeTrend(times) {
+  const card = document.getElementById('timeTrendCard');
+  const picker = document.getElementById('timeDistancePicker');
+  const host = document.getElementById('timeTrend');
+  if (!card || !picker || !host) return;
+
+  const byDistance = new Map();
+  (times || []).forEach((t) => {
+    const v = parseFloat(t.time);
+    if (!isFinite(v)) return;
+    if (!byDistance.has(t.distance)) byDistance.set(t.distance, []);
+    byDistance.get(t.distance).push({
+      t: t.logged_date || t.created_at,
+      v,
+      label: `${v}s — ${t.logged_date || ''}`,
+      axis: new Date(t.logged_date || t.created_at)
+        .toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    });
+  });
+
+  const usable = [...byDistance.entries()].filter(([, pts]) => pts.length >= 2);
+  card.hidden = usable.length === 0;
+  if (card.hidden) return;
+
+  if (!usable.some(([d]) => d === timeTrendDistance)) timeTrendDistance = usable[0][0];
+
+  picker.innerHTML = usable.map(([d]) => `
+    <button type="button" role="tab" class="seg-btn${d === timeTrendDistance ? ' active' : ''}"
+            data-distance="${escapeHtml(d)}" aria-selected="${d === timeTrendDistance}">${escapeHtml(d)}</button>
+  `).join('');
+  picker.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      timeTrendDistance = btn.dataset.distance;
+      renderTimeTrend(times);
+    });
+  });
+
+  const pts = byDistance.get(timeTrendDistance) || [];
+  const best = Math.min(...pts.map((p) => p.v));
+  host.innerHTML = areaChart(pts, {
+    title: `${timeTrendDistance} times`,
+    lowerIsBetter: true,
+  }) + `<p class="hint chart-foot">Best ${timeTrendDistance}: <b>${best}s</b> over ${pts.length} logged</p>`;
+}
+
 async function renderTimes() {
   const { data, error } = await supabaseClient
     .from('times')
@@ -4105,6 +4251,8 @@ async function renderTimes() {
     });
     list.appendChild(div);
   });
+
+  renderTimeTrend(data);
 }
 
 document.getElementById('addBigGoal').addEventListener('click', async () => {
