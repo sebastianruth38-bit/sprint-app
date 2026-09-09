@@ -102,6 +102,24 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(degraded.startsWith('threw'),'pose loader rejects cleanly when the CDN is unreachable (sandbox): '+degraded);
   assert(errors.length===0,'…and that rejection does not surface as an uncaught page error');
 
+  // ---------- compression falls back rather than failing a save ----------
+  // Storage is the free tier's real ceiling. But an unwatchable clip is worse
+  // than a large one, so every path that cannot produce a smaller playable
+  // file must hand back the original untouched.
+  const fallbacks = await page.evaluate(async () => {
+    const small = new Blob([new Uint8Array(1000)], { type: 'video/mp4' });
+    const smallOut = await compressForStorage(small, () => {});
+    // Large enough to be worth compressing, but not a video at all.
+    const junk = new Blob([new Uint8Array(4 * 1024 * 1024)], { type: 'video/mp4' });
+    const junkOut = await compressForStorage(junk, () => {});
+    return {
+      smallSame: smallOut.blob === small, smallNote: smallOut.note,
+      junkSame: junkOut.blob === junk, junkNote: junkOut.note,
+    };
+  });
+  assert(fallbacks.smallSame, 'a clip already small enough is passed through untouched: ' + fallbacks.smallNote);
+  assert(fallbacks.junkSame, 'a file that cannot be decoded falls back to the original: ' + fallbacks.junkNote);
+
   // ---------- the save path, for a clip that gets refused ----------
   // buildLocalAnalysis above is called directly, so nothing here had ever
   // exercised saveDiagnosis itself. A refusal reads several values out of

@@ -132,7 +132,12 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
 
   // Retention notice is visible to the athlete
   const hint = await page.$$eval('#panel-diagnosis .hint',els=>els.map(e=>e.textContent).join(' '));
-  assert(/60 days/.test(hint),'the 60-day retention is stated in the UI');
+  // Asserted against the constant, not a hard-coded number: the two drifted
+  // apart the moment retention changed, and the UI kept promising 60 days
+  // while the purge had already moved to 30.
+  const days = await page.evaluate(() => VIDEO_RETENTION_DAYS);
+  assert(new RegExp(days + ' days').test(hint),
+    `the UI states the same retention the purge uses (${days} days): ` + hint);
 
   await browser.close();server.close();
   console.log(`\n${pass} passed, ${fail} failed`);

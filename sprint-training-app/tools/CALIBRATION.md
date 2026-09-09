@@ -379,3 +379,40 @@ The bands were also reworded. They said "hips collapsing -- sitting in the
 stride", which claims Support Stiffness's subject and reads as a flat
 contradiction next to it. They now say what is actually measured: how much
 hip height varies between steps.
+
+## Storage, not egress, is the free tier's ceiling
+
+After the egress fixes, browsing costs ~150KB. Storage is what runs out:
+clips average **9.5MB** straight off the phone, and at a few a day the 1GB
+free limit arrives in about five weeks.
+
+The grader downsamples every frame to 480px on the longest edge before pose
+runs, so the stored copy has no effect whatsoever on scoring. It only has to
+stay watchable. Re-encoded at 720px and 1.5Mbps:
+
+| | before | after |
+|---|---|---|
+| block start clip | 16.5MB | **0.7MB** |
+
+Twenty-plus times smaller, still playable, still portrait, still 4.27s.
+
+**Recording runs in real time on purpose.** MediaRecorder captures a canvas
+against the wall clock, so playing the source at 2x to save a few seconds
+hands back a clip that plays at double speed — useless for watching your own
+mechanics. The cost is that compressing takes roughly as long as the clip.
+
+**Every failure path returns the original file.** MediaRecorder codec support
+and `captureStream` availability vary by browser and by iOS version, and an
+unwatchable clip is far worse than a large one. Anything unexpected — no
+supported mime type, no canvas capture, an unreadable duration, output that
+came back bigger or implausibly small — keeps the upload as it was. Verified
+against a file that is large enough to compress but is not a video at all.
+
+Retention also went 60 days to 30, which halves the ceiling. The UI text and
+the purge had to be changed together; the test now reads
+`VIDEO_RETENTION_DAYS` out of the page rather than hard-coding a number, since
+the two had already drifted once.
+
+**Not verified on iOS Safari.** These numbers are Chromium. Safari picks a
+different container and codec, and the fallback exists precisely because that
+path cannot be tested from here.

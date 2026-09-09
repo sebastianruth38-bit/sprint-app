@@ -153,6 +153,30 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   assert(sc.shotTrimmed === true, 'the scroll to a second reel was detected and trimmed off');
   assert(errors.length === 0, 'still no page errors: ' + JSON.stringify(errors));
 
+  // ---------- the copy that gets stored ----------
+  // Storage, not egress, is the free tier's real ceiling: clips average 9.5MB
+  // off the phone and the 1GB limit arrives in about five weeks at a few a
+  // day. The grader downsamples to 480px internally, so shrinking the stored
+  // copy costs nothing in scoring -- this only has to stay watchable.
+  const shrunk = await page.evaluate(async (u) => {
+    const src = await (await fetch(u)).blob();
+    const { blob, note } = await compressForStorage(src, () => {});
+    const v = document.createElement('video');
+    v.src = URL.createObjectURL(blob); v.muted = true;
+    await new Promise((r) => { v.onloadedmetadata = r; v.onerror = r; setTimeout(r, 5000); });
+    return { inB: src.size, outB: blob.size, note, w: v.videoWidth, h: v.videoHeight,
+             dur: v.duration, srcDur: 4.27 };
+  }, `http://localhost:${port}/clip/${CLIPS.blockStart}`);
+  assert(shrunk.outB < shrunk.inB / 4,
+    `the stored copy is much smaller than the upload (${(shrunk.inB/1048576).toFixed(1)}MB -> ${(shrunk.outB/1048576).toFixed(2)}MB)`);
+  assert(shrunk.w > 0 && shrunk.h > 0, `and is still a playable video (${shrunk.w}x${shrunk.h})`);
+  assert(Math.max(shrunk.w, shrunk.h) <= 720, `capped at 720 on the long edge (${shrunk.w}x${shrunk.h})`);
+  // Recording runs in real time for exactly this reason: playing the source
+  // faster to save time would shorten the recording and hand back a clip that
+  // plays at double speed, which is useless for watching your own mechanics.
+  assert(Math.abs(shrunk.dur - shrunk.srcDur) < 0.5,
+    `and plays at the original speed, not faster (${shrunk.dur.toFixed(2)}s vs ${shrunk.srcDur}s)`);
+
   console.log(`\ntiming: blockStart ${bs.ms}ms, scrolled ${sc.ms}ms`);
   console.log(`\n${pass} passed, ${fail} failed`);
   await browser.close();
