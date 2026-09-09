@@ -918,3 +918,17 @@ blockquote {
    running text, so legal-page links get an underline to stay recognisable. */
 .legal-page a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
 .legal-page .app-header h1 { font-size: 1.1rem; }
+
+/* Destructive action. Deliberately not styled like the buttons beside it --
+   Sign Out and Delete Account sit next to each other in a small menu, and
+   they must not be one mis-tap apart in appearance as well as position. */
+.danger-btn {
+  background: transparent;
+  color: #e5484d;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+}
+.danger-btn:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.12);
+  border-color: #e5484d;
+}
+.danger-btn:disabled { opacity: 0.6; }

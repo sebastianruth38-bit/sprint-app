@@ -57,12 +57,17 @@ check('the policy states that same number',
 // ---------- promises the app has to be able to keep ----------
 check('per-clip deletion, which the policy promises, exists',
   /delete-btn/.test(app) && /storage[\s\S]{0,120}\.remove\(/.test(app));
-// Account deletion does NOT exist yet. The policy must not claim it does.
-const claimsInAppDeletion = /delete your account (in|from) the app|Delete Account/i.test(privacy);
-check('the policy does not claim in-app account deletion, which does not exist',
-  !claimsInAppDeletion);
-check('and it says so plainly instead',
-  /not yet available/i.test(privacy));
+// Account deletion exists now, so the policy has to describe it -- and the
+// button it points at has to be there. A policy promising a button that does
+// not exist is the exact failure this file is here to catch.
+check('the policy tells you how to delete your account',
+  /Delete Account/.test(privacy));
+check('and that button exists in the app',
+  /id="deleteAccountBtn"/.test(index));
+check('and it is wired to the server function',
+  /invoke\('delete-account'\)/.test(app));
+check('the policy warns there is no undo',
+  /no undo|cannot be undone/i.test(privacy));
 
 // ---------- reachable ----------
 check('both pages are linked from the app', index.includes('privacy.html') && index.includes('terms.html'));
