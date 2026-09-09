@@ -2899,6 +2899,32 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
   }
 });
 
+// Counts each score up from zero alongside its bar filling.
+//
+// Text, so this one IS main-thread work -- which is why it is capped at a few
+// steps per pill, runs only on cards that have just been inserted, and never
+// while a clip is being measured. Six numbers ticking for half a second is
+// nothing; the same idea applied to every number in the app would not be.
+const COUNT_MS = 700;
+function countUpScores(root) {
+  if (!root || document.body.classList.contains('is-analysing')) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  root.querySelectorAll('.score-pill').forEach((pill) => {
+    const target = parseInt(pill.textContent, 10);
+    if (!isFinite(target) || target <= 0) return;
+    const start = performance.now();
+    pill.textContent = `0/5`;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / COUNT_MS);
+      // Ease out, so it settles onto the number rather than snapping.
+      const shown = Math.round(target * (1 - Math.pow(1 - t, 3)));
+      pill.textContent = `${shown}/5`;
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
 function renderAnalysisHtml(analysis) {
   if (!analysis || (!analysis.summary && !(analysis.pinpoints || []).length)) {
     return `<div class="hint">Weak points: analysis coming soon</div>`;
@@ -3050,6 +3076,7 @@ async function renderDiagnosis() {
     });
     list.appendChild(div);
   }
+  countUpScores(list);
 }
 
 // =====================================================
