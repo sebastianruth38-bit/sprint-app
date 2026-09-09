@@ -266,3 +266,60 @@ on the full frame:
 
 Both clear the 25% threshold comfortably, so the size refusal on those two
 was an artefact of the offline harness (which does not crop), not the app.
+
+## Which stretch of the clip gets graded
+
+`bestWindow` searched only the longest track. That is exactly backwards: a
+stationary athlete is easy to follow, so a set position reliably produces the
+longest track in the clip, while the sprint moves fast enough to break
+association and comes back as a shorter one.
+
+Measured on a real block start, tracks across the whole clip:
+
+| track | time | frames | subject size | motion |
+|---|---|---|---|---|
+| 0 | 0.05–2.03s | **61** | 35% | 1.32/s — set in the blocks |
+| 1 | 2.27–3.73s | 44 | 45% | 4.09/s — the actual run |
+| 2 | 1.97–2.23s | 7 | 71% | 4.25/s — the transition |
+
+Track 0 won on length, and the run was discarded before the size preference
+ever saw it. The clip graded the set position: torso 69° from vertical, 1.21/s
+motion against a floor of 0.90 — 34% of headroom on a clip that contains a
+perfectly good sprint at 4.09/s.
+
+Two consequences, and the second is the worse one:
+
+- **Refusals.** A start filmed slightly further away drops that 1.21 under
+  0.90 and the clip is refused with "nobody in this clip is moving like a
+  sprinter" — while the sprint the athlete actually filmed sits untouched in
+  another track.
+- **Silently wrong grades.** A clip that stays above the floor is graded on
+  the set position and says nothing about it. That is worse than a refusal,
+  because the athlete gets a plausible-looking score for a second of footage
+  in which he has not moved.
+
+Now every track of at least `MIN_TRACK_FRAMES` is searched, and the existing
+preference — among stretches where he is moving like a sprinter, take the one
+where he is easiest to see — decides between them. The fix needed no new
+heuristic; the existing one was right and was being shown one track.
+
+Re-measured across all five clips available, only the block start changes:
+
+| clip | before | after |
+|---|---|---|
+| block start | 0.27–1.27s @ 1.21/s | **2.27–3.33s @ 4.23/s** |
+| relay run | 1.37–2.40s @ 3.58/s | unchanged |
+| wide grass | 2.47–3.50s @ 3.81/s | unchanged |
+| start 1246 | 0.05–1.03s @ 3.22/s | unchanged |
+| start 1247 | 0.30–0.80s @ 4.14/s | unchanged |
+
+The relay clip is the regression to watch: it is the one whose post-handoff
+noise motivated preferring size in the first place, and it still grades the
+run rather than the noisy tail (tracks of 13, 12, 4 and 2 frames at 5.8–6.9s,
+one of them reading 42/s, all correctly below the track-length floor).
+
+**Foot contacts do not discriminate here.** The obvious alternative was to
+prefer windows containing strides, on the reasoning that a set position has
+none. Measured, the set position reports 2.5 strides — the same as the run.
+`footContacts` invents contacts from a stationary athlete, so stride count
+cannot be used to tell running from standing.

@@ -898,53 +898,76 @@ function longestConsistentRun(metrics) {
 // where he is easiest to see. Size is a direct proxy for how much the
 // measurement can be trusted, which is the whole argument of the framing
 // work above.
+//
+// Every track gets searched, not just the longest one. Taking the longest
+// looks reasonable and is exactly backwards: a stationary athlete is easy to
+// follow, so a standing or set phase reliably produces the LONGEST track in
+// the clip, while the sprint -- which moves fast enough to break association
+// and be re-acquired -- comes back as a shorter one. On a block start that
+// measured 61 frames of him set in the blocks (35% of frame, 1.32/s) against
+// 44 frames of the actual run (45% of frame, 4.09/s), and graded the blocks.
+// The size preference below would have chosen the run; it never saw it.
 function bestWindow(framePoses, secondsPerFrame, maxFrames) {
   if (!(secondsPerFrame > 0)) return null;
-  const tracks = buildTracks(framePoses, secondsPerFrame);
+  const tracks = buildTracks(framePoses, secondsPerFrame)
+    .filter((t) => t.history.length >= MIN_TRACK_FRAMES);
   if (!tracks.length) return null;
-  const track = tracks.reduce((a, b) => (b.history.length > a.history.length ? b : a));
-  const n = track.history.length;
-  if (n < MIN_TRACK_FRAMES) return null;
 
   const gap = Math.max(1, Math.round(MOTION_GAP_S / secondsPerFrame));
-  // Local rate of change and local visibility, per position along the track.
-  const rate = [];
-  const size = [];
-  for (let i = 0; i < n; i++) {
-    const j = Math.min(n - 1, i + gap);
-    const seconds = (track.history[j].fi - track.history[i].fi) * secondsPerFrame;
-    const partial = track.metrics[i].bodyAtEdge || track.metrics[j].bodyAtEdge;
-    rate.push(seconds > 0 && !partial
-      ? signatureDistance(track.history[i].norm, track.history[j].norm) / seconds
-      : null);
-    size.push(track.metrics[i].bodyFrac || 0);
-  }
-
-  const span = Math.max(MIN_TRACK_FRAMES, Math.min(maxFrames, n));
   let best = null;
-  for (let start = 0; start + span <= n; start++) {
-    const rates = rate.slice(start, start + span).filter((r) => r != null);
-    if (rates.length < span / 2) continue;
-    // Most of the window has to be running, not just its middle value. A
-    // median alone lets a window straddle a standing stretch and a running
-    // one and still pass, which measures half of each.
-    const inBand = rates.filter((r) => r >= ATHLETE_MOTION_MIN && r <= ATHLETE_MOTION_MAX);
-    if (inBand.length < rates.length * WINDOW_RUNNING_SHARE) continue;
-    const seen = median(size.slice(start, start + span));
-    if (!best || seen > best.seen) best = { start, seen, moving: median(inBand) };
-  }
-  // Nothing in the window met the movement test -- fall back to wherever he
-  // is biggest, which is still the most measurable stretch on offer.
-  if (!best) {
-    for (let start = 0; start + span <= n; start++) {
-      const seen = median(size.slice(start, start + span));
-      if (!best || seen > best.seen) best = { start, seen, moving: null };
-    }
-  }
+
+  // Two passes over every track: windows where he is moving like a sprinter,
+  // and -- only if none of them are -- windows anywhere at all. Both passes
+  // have to finish across all tracks before falling back, or a clip whose
+  // first track never runs would settle for that track's best stretch while a
+  // later track is running through the whole thing.
+  const scan = (requireRunning) => {
+    tracks.forEach((track) => {
+      const n = track.history.length;
+      const span = Math.max(MIN_TRACK_FRAMES, Math.min(maxFrames, n));
+      if (span > n) return;
+
+      // Local rate of change and local visibility, per position along the track.
+      const rate = [];
+      const size = [];
+      for (let i = 0; i < n; i++) {
+        const j = Math.min(n - 1, i + gap);
+        const seconds = (track.history[j].fi - track.history[i].fi) * secondsPerFrame;
+        const partial = track.metrics[i].bodyAtEdge || track.metrics[j].bodyAtEdge;
+        rate.push(seconds > 0 && !partial
+          ? signatureDistance(track.history[i].norm, track.history[j].norm) / seconds
+          : null);
+        size.push(track.metrics[i].bodyFrac || 0);
+      }
+
+      for (let start = 0; start + span <= n; start++) {
+        const rates = rate.slice(start, start + span).filter((r) => r != null);
+        let moving = null;
+        if (requireRunning) {
+          if (rates.length < span / 2) continue;
+          // Most of the window has to be running, not just its middle value. A
+          // median alone lets a window straddle a standing stretch and a running
+          // one and still pass, which measures half of each.
+          const inBand = rates.filter((r) => r >= ATHLETE_MOTION_MIN && r <= ATHLETE_MOTION_MAX);
+          if (inBand.length < rates.length * WINDOW_RUNNING_SHARE) continue;
+          moving = median(inBand);
+        }
+        const seen = median(size.slice(start, start + span));
+        if (!best || seen > best.seen) best = { track, start, span, seen, moving };
+      }
+    });
+  };
+
+  scan(true);
+  // Nothing anywhere met the movement test -- fall back to wherever he is
+  // biggest, which is still the most measurable stretch on offer.
+  if (!best) scan(false);
   if (!best) return null;
+
+  const h = best.track.history;
   return {
-    from: track.history[best.start].fi,
-    to: track.history[Math.min(n - 1, best.start + span - 1)].fi,
+    from: h[best.start].fi,
+    to: h[Math.min(h.length - 1, best.start + best.span - 1)].fi,
     seen: best.seen,
   };
 }

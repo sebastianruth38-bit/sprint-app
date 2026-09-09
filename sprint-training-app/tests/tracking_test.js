@@ -372,6 +372,43 @@ check('a big stationary body is not preferred over a smaller running one',
 check('too short a track has no window to choose',
   ctx.bestWindow(stretch(4, 0.5, 0.1, 0.2), 1 / 30, 16) === null);
 
+// A stationary athlete is EASY to follow, so a set position reliably produces
+// the longest track in the clip; the sprint moves fast enough to break
+// association and comes back shorter. Searching only the longest track
+// therefore grades the blocks every time. On a real block start that was 61
+// frames of him set (35% of frame, 1.32/s) against 44 frames of the run (45%,
+// 4.09/s) -- and it graded the set position.
+//
+// Separated by a few frames where he is not detected at all, which is how the
+// two tracks come to exist in the real clip: association gives up after three
+// missed frames. Placing them far apart in the frame is not enough on its own
+// -- the earlier parked/moving pair above stays close enough to associate,
+// which is why that test exercises one track and this one exercises two.
+const lost = Array.from({ length: 4 }, () => []);
+const setPosition = stretch(60, 0.35, 0.001, 0.05);
+const theRun = stretch(20, 0.45, 0.1, 0.75);
+const overBoth = ctx.bestWindow(setPosition.concat(lost, theRun), 1 / 30, 16);
+check('the run is measured even though the set position tracks for longer',
+  overBoth && overBoth.from >= 64,
+  overBoth && `frames ${overBoth.from}-${overBoth.to}, body ${(overBoth.seen * 100).toFixed(0)}%`);
+
+// And the movement test has to beat size ACROSS tracks, not just within one:
+// a stationary stretch that is both longer and bigger still must not win.
+const bigSet = stretch(60, 0.6, 0.001, 0.05);
+const smallRun = stretch(20, 0.3, 0.1, 0.75);
+const overBoth2 = ctx.bestWindow(bigSet.concat(lost, smallRun), 1 / 30, 16);
+check('a longer AND bigger stationary track still loses to a running one',
+  overBoth2 && overBoth2.from >= 64,
+  overBoth2 && `frames ${overBoth2.from}-${overBoth2.to}`);
+
+// With nothing running anywhere, the fallback still has to work -- and it must
+// not fire while some other track is running, which is why both passes run
+// over every track before either concludes.
+const twoStills = stretch(30, 0.5, 0.001, 0.05).concat(lost, stretch(30, 0.2, 0.001, 0.75));
+const stillOnly = ctx.bestWindow(twoStills, 1 / 30, 16);
+check('with nobody running it falls back to wherever he is biggest',
+  stillOnly && stillOnly.from < 30, stillOnly && `frames ${stillOnly.from}-${stillOnly.to}`);
+
 // ---------- passing position ----------
 // The fold at the instant the thigh swings through vertical. The stance leg
 // crosses vertical every stride too, nearly straight with the foot planted,
