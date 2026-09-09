@@ -415,6 +415,7 @@ async function refreshAllData() {
   renderDiagnosis();
   renderFavorites();
   renderMotivationLinks();
+  renderChasing();
   document.getElementById('newQuote').click();
 }
 
@@ -4392,6 +4393,102 @@ const MOTIVATION_LINKS = [
   { title: "Sha'Carri Richardson Highlights", url: ytSearch("Sha'Carri Richardson 100m highlights") },
   { title: 'Sprint Technique Breakdown (Elite Athletes)', url: ytSearch('elite sprint technique breakdown slow motion') },
 ];
+
+// What the athlete is chasing, against what he has actually run.
+//
+// Deliberately NOT a built-in table of world rankings. There is no free,
+// reliable feed of current marks, and a hard-coded list would be stale the
+// week it shipped, wrong in places, and impossible for the person reading it
+// to correct -- inventing numbers and presenting them as records is worse
+// than showing nothing. So the marks are his: a record he looked up, a
+// qualifying standard, the team-mate he wants to beat.
+async function renderChasing() {
+  const host = document.getElementById('chasingBoard');
+  if (!host || !currentUser) return;
+
+  const [{ data: marks }, { data: times }] = await Promise.all([
+    supabaseClient.from('benchmarks').select('*').eq('user_id', currentUser.id),
+    supabaseClient.from('times').select('distance, time').eq('user_id', currentUser.id),
+  ]);
+
+  if (!marks || !marks.length) {
+    host.innerHTML = `<p class="hint">Nothing yet. Add a mark below — a record, a
+      qualifying time, or whoever you are trying to catch.</p>`;
+    return;
+  }
+
+  // Best (lowest) time per distance, from what is already logged.
+  const best = new Map();
+  (times || []).forEach((t) => {
+    const v = parseFloat(t.time);
+    if (!isFinite(v)) return;
+    if (!best.has(t.distance) || v < best.get(t.distance)) best.set(t.distance, v);
+  });
+
+  // Grouped by distance, each group fastest first, so the ladder reads as one.
+  const groups = new Map();
+  marks.forEach((m) => {
+    if (!groups.has(m.distance)) groups.set(m.distance, []);
+    groups.get(m.distance).push(m);
+  });
+
+  host.innerHTML = [...groups.entries()].map(([distance, list]) => {
+    const mine = best.get(distance);
+    const rows = list
+      .slice()
+      .sort((a, b) => Number(a.seconds) - Number(b.seconds))
+      .map((m) => {
+        const target = Number(m.seconds);
+        const gap = mine != null ? mine - target : null;
+        // A gap of zero or less is caught. Anything else is how much is left.
+        const state = gap == null ? 'unknown' : gap <= 0 ? 'caught' : 'chasing';
+        const gapText = gap == null ? 'no time logged'
+          : gap <= 0 ? `you are ${Math.abs(gap).toFixed(2)}s faster`
+          : `${gap.toFixed(2)}s to go`;
+        return `
+          <div class="chase-row ${state}" data-id="${m.id}">
+            <div class="chase-who">
+              <span class="chase-label">${escapeHtml(m.label)}</span>
+              <span class="chase-gap">${escapeHtml(gapText)}</span>
+            </div>
+            <span class="chase-time">${target.toFixed(2)}</span>
+            <button class="delete-btn chase-del" aria-label="Remove">✕</button>
+          </div>`;
+      }).join('');
+    return `
+      <div class="chase-group">
+        <div class="chase-head">
+          <span>${escapeHtml(distance)}</span>
+          <span class="chase-mine">${mine != null ? `your best ${mine.toFixed(2)}` : 'no time logged'}</span>
+        </div>
+        ${rows}
+      </div>`;
+  }).join('');
+
+  host.querySelectorAll('.chase-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.chase-row').dataset.id;
+      await supabaseClient.from('benchmarks').delete().eq('id', id);
+      renderChasing();
+    });
+  });
+}
+
+document.getElementById('addBenchmark').addEventListener('click', async () => {
+  const label = document.getElementById('benchLabel').value.trim();
+  const distance = document.getElementById('benchDistance').value.trim();
+  const seconds = parseFloat(document.getElementById('benchSeconds').value);
+  if (!label || !distance) return alert('Give the mark a name and a distance.');
+  if (!isFinite(seconds) || seconds <= 0) return alert('Enter the time in seconds, e.g. 10.85');
+  const { error } = await supabaseClient.from('benchmarks').insert({
+    user_id: currentUser.id, label, distance, seconds,
+  });
+  if (error) return alert('Could not save: ' + error.message);
+  document.getElementById('benchLabel').value = '';
+  document.getElementById('benchDistance').value = '';
+  document.getElementById('benchSeconds').value = '';
+  renderChasing();
+});
 
 function renderMotivationLinks() {
   const grid = document.getElementById('motivationLinks');

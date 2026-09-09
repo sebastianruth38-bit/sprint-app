@@ -10,7 +10,7 @@
        copy, which is the one thing that has to disappear when you read it.
        JetBrains Mono for anything that is a measurement. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=4c23235" />
+  <link rel="stylesheet" href="styles.css?v=a107202" />
 </head>
 <body>
   <!-- AUTH GATE -->
@@ -297,6 +297,18 @@
       </div>
 
       <div class="card">
+        <h3>What you're chasing</h3>
+        <p class="hint">Your best against the marks that matter to you. Add a record, a qualifying standard, or the person you're trying to beat.</p>
+        <div id="chasingBoard"></div>
+        <div class="form-grid" style="margin-top:0.9rem">
+          <input type="text" id="benchLabel" placeholder="Who or what, e.g. State qualifier" />
+          <input type="text" id="benchDistance" placeholder="Distance, e.g. 100m" />
+          <input type="text" id="benchSeconds" placeholder="Time, e.g. 10.85" inputmode="decimal" />
+        </div>
+        <button id="addBenchmark" class="btn primary">Add a mark</button>
+      </div>
+
+      <div class="card">
         <h3>Watch fast people run</h3>
         <div id="motivationLinks" class="link-grid"></div>
       </div>
@@ -326,7 +338,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=4c23235"></script>
-  <script src="app.js?v=4c23235"></script>
+  <script src="config.js?v=a107202"></script>
+  <script src="app.js?v=a107202"></script>
 </body>
 </html>
