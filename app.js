@@ -425,8 +425,8 @@ async function refreshAllData() {
   renderDiagnosis();
   renderChasing();
   // Dropped so a changed workout or a newly graded clip is picked up. The
-  // cache exists only so moving the day picker does not re-query the week.
-  warmupSessions = null;
+  // cache exists only so moving the picker does not re-query everything.
+  warmupData = null;
   renderWarmup();
 }
 
@@ -4662,7 +4662,7 @@ const WARMUP_PHASES = [
     items: [
       { name: 'Glute bridges', detail: '2 x 12. Squeeze at the top, ribs down.',
         measures: ['Hip Height', 'Drive Position'] },
-      { name: 'Banded lateral walks', detail: '2 x 10 each way, if you have a band.',
+      { name: 'Single-leg glute bridges', detail: '2 x 8 each leg. Hips level the whole way — do not let one side drop.',
         measures: ['Hip Height', 'Support Stiffness'] },
       { name: 'Pogo hops', detail: '3 x 10. Toes up, bounce off the front of the foot, short contacts.',
         measures: ['Support Stiffness', 'Ankle at Touchdown'] },
@@ -4699,7 +4699,8 @@ const WARMUP_SPECIFIC = {
       { name: 'Wall drives', detail: '3 x 5 each leg.', measures: ['Drive Position', 'Acceleration Posture'] },
       { name: 'Push-up starts', detail: '3 x 20m. Flat on the ground, up and go.',
         measures: ['Drive Position'] },
-      { name: 'Block exits', detail: '4 x 20m, full effort on the last two.', measures: ['Acceleration Posture'] },
+      { name: 'Three-point starts', detail: '4 x 20m, full effort on the last two. One hand down, no blocks needed.',
+        measures: ['Acceleration Posture'] },
     ],
   },
   'Hill Sprints': {
@@ -4712,7 +4713,7 @@ const WARMUP_SPECIFIC = {
   'Max Velocity (flys/build-ups)': {
     note: 'Everything here is about being tall and relaxed at the top end.',
     items: [
-      { name: 'Wicket runs', detail: '3 x 6 wickets, if you have hurdles. They set the posture for you.',
+      { name: 'Tall high-knee run into a stride', detail: '3 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
         measures: ['Upright Posture', 'Hip Height', 'Torso-to-Thigh at Peak Lift'] },
       { name: 'Build-ups', detail: '3 x 50-60m, rising to 95%. Walk back between.',
         measures: ['Smoothness / Consistency'] },
@@ -4739,7 +4740,7 @@ const WARMUP_SPECIFIC = {
   'Race Modeling': {
     note: 'Rehearse the race, not just the running.',
     items: [
-      { name: 'Starts', detail: '2 from blocks or a three-point stance.', measures: ['Drive Position'] },
+      { name: 'Starts', detail: '2 from a three-point stance.', measures: ['Drive Position'] },
       { name: 'One at race rhythm', detail: '1 x 60m run the way you intend to run it.',
         measures: ['Smoothness / Consistency'] },
     ],
@@ -4771,7 +4772,7 @@ const WARMUP_SPECIFIC = {
     note: 'Enough to be warm for the bar.',
     items: [
       { name: 'Easy strides', detail: '2 x 40m.', measures: [] },
-      { name: 'Empty-bar sets', detail: '2 sets of the first movement, bar only.', measures: [] },
+      { name: 'Bodyweight squats and hinges', detail: '2 x 10 of each, grooving the pattern before you load it.', measures: [] },
     ],
   },
   'Recovery / Mobility': {
@@ -4786,6 +4787,13 @@ const WARMUP_SPECIFIC = {
   },
   'Rest Day': { note: null, items: [] },
 };
+
+// The order the picker offers them in, straight off the phase IV table so a
+// session can never appear in the dropdown without work behind it. Rest Day is
+// included on purpose: a plan can say rest, and an athlete who opens this tab
+// on one should be told that rather than shown an acceleration warm-up they
+// were not looking for.
+const WARMUP_SESSIONS = Object.keys(WARMUP_SPECIFIC);
 
 // Which clip type's scores speak to which session. A max-velocity warm-up
 // should be flagged from what the max-velocity clips showed, not from a block
@@ -4904,44 +4912,49 @@ function todaysDayName() {
   return DAYS[(new Date().getDay() + 6) % 7];
 }
 
-// The day being shown. Starts on today; the picker moves it, so an athlete can
-// look at tomorrow's warm-up the night before -- which is when they would
-// actually read it.
-let warmupDay = null;
-// The whole week's sessions, fetched once and reused as the picker moves.
-let warmupSessions = null;
+// The workout being warmed up for. Chosen directly rather than by picking a
+// day: the athlete knows what session they are about to do, and going through
+// the calendar to say so is a step that adds nothing. Today's planned session
+// is only the starting value.
+let warmupSession = null;
+// The week's plan and the athlete's scores, fetched once and reused as the
+// picker moves.
+let warmupData = null;
 
 async function renderWarmup() {
   const host = document.getElementById('warmupContent');
   if (!host || !currentUser) return;
-  if (!warmupDay) warmupDay = todaysDayName();
   host.innerHTML = '<p class="hint">Loading…</p>';
 
-  if (!warmupSessions) {
+  if (!warmupData) {
     const [{ data: workouts }, { data: entries }] = await Promise.all([
       supabaseClient.from('workouts').select('day, type').eq('user_id', currentUser.id),
       supabaseClient.from('diagnosis_entries').select('clip_type, analysis, created_at')
         .eq('user_id', currentUser.id).not('analysis', 'is', null)
         .order('created_at', { ascending: false }),
     ]);
-    warmupSessions = { byDay: {}, scores: latestScores(entries) };
-    (workouts || []).forEach((w) => { warmupSessions.byDay[w.day] = w.type; });
+    const byDay = {};
+    (workouts || []).forEach((w) => { byDay[w.day] = w.type; });
+    warmupData = { byDay, scores: latestScores(entries) };
   }
 
-  const sessionType = warmupSessions.byDay[warmupDay] || null;
-  const plan = buildWarmup(warmupSessions.scores, sessionType);
+  const planned = warmupData.byDay[todaysDayName()] || null;
+  // Default to what is actually on the plan for today, so the common case is
+  // no taps at all. An unrecognised stored session falls back rather than
+  // rendering a phase IV nobody wrote.
+  if (!warmupSession || !(warmupSession in WARMUP_SPECIFIC)) {
+    warmupSession = (planned && planned in WARMUP_SPECIFIC) ? planned : WARMUP_SESSIONS[0];
+  }
+  const plan = buildWarmup(warmupData.scores, warmupSession);
 
   const picker = `
     <div class="warmup-day">
-      <label class="season-label" for="warmupDayPick">Which day</label>
-      <select id="warmupDayPick">
-        ${DAYS.map((d) => `<option value="${d}"${d === warmupDay ? ' selected' : ''}>${d}${
-          d === todaysDayName() ? ' — today' : ''}${
-          warmupSessions.byDay[d] ? '' : ' (no session set)'}</option>`).join('')}
+      <label class="season-label" for="warmupSessionPick">Warming up for</label>
+      <select id="warmupSessionPick">
+        ${WARMUP_SESSIONS.map((t) => `<option value="${escapeHtml(t)}"${
+          t === warmupSession ? ' selected' : ''}>${escapeHtml(t)}${
+          t === planned ? " — today's session" : ''}</option>`).join('')}
       </select>
-      <p class="hint">${sessionType
-        ? `<b>${escapeHtml(sessionType)}</b>`
-        : 'No session set for this day. Phases I–III still apply.'}</p>
     </div>`;
 
   const flagged = Object.entries(plan.flags);
@@ -4973,8 +4986,8 @@ async function renderWarmup() {
 
   if (plan.resting) {
     host.innerHTML = picker + `<div class="card"><h3>Rest day</h3>
-      <p class="hint">Nothing to warm up for. Pick another day above to look ahead.</p></div>`;
-    wireWarmupDay();
+      <p class="hint">Nothing to warm up for. Pick a session above if you are training after all.</p></div>`;
+    wireWarmupPicker();
     return;
   }
 
@@ -4986,11 +4999,11 @@ async function renderWarmup() {
         ? `<ul class="warmup-list">${p.items.map(item).join('')}</ul>`
         : '<p class="hint">Nothing extra for this session.</p>'}
     </div>`).join('');
-  wireWarmupDay();
+  wireWarmupPicker();
 }
 
-function wireWarmupDay() {
-  const pick = document.getElementById('warmupDayPick');
+function wireWarmupPicker() {
+  const pick = document.getElementById('warmupSessionPick');
   if (!pick) return;
-  pick.addEventListener('change', () => { warmupDay = pick.value; renderWarmup(); });
+  pick.addEventListener('change', () => { warmupSession = pick.value; renderWarmup(); });
 }
