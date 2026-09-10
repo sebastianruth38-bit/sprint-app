@@ -115,7 +115,7 @@ warm-up is a timed static hold.
 A lift day is the exception to the four phases. There is no room to run
 indoors, so it takes phase I and skips the running drills in II and III;
 phase IV is the loading ramp instead — the movement empty, then 25%, 50%,
-75%, 90%, then the working sets. A recovery day is phase I and stops. The
+75%, 90%, then the working sets. The
 picker chooses the **workout**, not the day, and defaults to whatever is on the
 plan for today: you already know what session you are about to do, and finding
 the day it falls on is a step that adds nothing.
