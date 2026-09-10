@@ -22,14 +22,57 @@ const check = (name, cond, extra) => {
   if (cond) pass++; else fails.push(name + (extra ? ' — ' + extra : ''));
 };
 
-// ---------- retention ----------
+// ---------- the video never leaves the phone ----------
+// This is now the policy's strongest promise, and the easiest to break by
+// accident: one .upload() handed the clip instead of a frame and every page
+// saying "never uploaded" becomes a lie, silently, with nothing failing.
+const uploads = [...app.matchAll(/\.upload\(([^)]*)\)/g)].map((m) => m[1]);
+check('the app uploads something', uploads.length > 0);
+check('nothing the app uploads is the clip itself',
+  uploads.every((u) => !/pendingBlob|storedBlob|videoBlob/.test(u)), uploads.join(' | '));
+check('the only thing uploaded is an image',
+  uploads.every((u) => /image\//.test(u)), uploads.join(' | '));
+check('and the compressor that existed only to shrink stored video is gone',
+  !/compressForStorage/.test(app));
+check('the policy says the video is never uploaded',
+  /never uploaded|never leaves your phone/i.test(privacy));
+// Saying it once somewhere is not enough: the pages are long, and a stale
+// paragraph saying the opposite is what a reader acts on. Checking only that
+// the promise appears passed a copy whose "what is stored" section had been
+// flipped to "the video itself is uploaded and stored", because an unrelated
+// mention further down still matched.
+const contradictions = [
+  [privacy, 'the privacy policy'],
+  [terms, 'the terms'],
+  [index, 'the app'],
+].filter(([doc]) => /(video|clip)[^.]{0,60}\bis uploaded\b|\bis uploaded and stored\b/i.test(doc));
+check('and nothing anywhere still says the opposite',
+  contradictions.length === 0, contradictions.map((c) => c[1]).join(', '));
+check('the terms say it too', /never uploaded|is never uploaded/i.test(terms));
+check('and the app itself says so where clips are listed',
+  /never leaves your phone/i.test(index));
+
+// ---------- what is kept instead ----------
+check('the app stores key frames', /key_frames:/.test(app));
+check('the policy says still frames are what is kept',
+  /still frames/i.test(privacy) && /kept<\/strong>\s*\n?\s*until you delete them/i.test(privacy));
+// Key frames are the permanent record now. A purge that walked them would
+// quietly delete a season of sessions, so there must not be one.
+check('nothing expires the key frames',
+  !/key_frames[\s\S]{0,400}VIDEO_RETENTION_DAYS/.test(app));
+
+// ---------- the legacy clips still expire, and the policy still says so ----------
 const retention = (app.match(/const VIDEO_RETENTION_DAYS = (\d+)/) || [])[1];
-check('the app declares a retention period', !!retention);
-check('the privacy policy states the same retention the purge enforces',
-  privacy.includes(`${retention} days`),
-  `code says ${retention} days`);
-check('the terms state it too', terms.includes(`${retention} days`));
-check('and so does the app itself', index.includes(`${retention} days`));
+check('the app still declares the retention its old clips were promised', !!retention);
+check('the purge that clears them still exists',
+  /purgeExpiredVideos/.test(app) && /video_path/.test(app));
+check('the privacy policy still states that retention for the clips it applies to',
+  privacy.includes(`${retention} days`), `code says ${retention} days`);
+// An orphan sweep that only knows about video_path deletes every key frame in
+// the account ten minutes after it is written. This came within one query of
+// shipping.
+check('the orphan sweep knows key frames are referenced too',
+  /select\('video_path, key_frames'\)/.test(app));
 
 // ---------- what leaves the device ----------
 // The policy's central claim is that grading is local and only the opt-in AI

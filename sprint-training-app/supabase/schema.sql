@@ -63,7 +63,15 @@ create table if not exists public.diagnosis_entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   notes text,
+  -- Entries saved before 2026-09-10 have a clip in the bucket and keep
+  -- playing it until the retention purge takes it. Nothing is stored here
+  -- for entries saved since: key_frames replaced it.
   video_path text,
+  -- Stills at the moments the grader actually measured, in place of the
+  -- clip: [{ path, label, measure, t }]. A handful of ~40KB JPEGs against a
+  -- 3MB video, and each one is the exact instant a score refers to, which
+  -- the video never told you.
+  key_frames jsonb,
   clip_type text, -- 'Acceleration' | 'Max Velocity' | 'Speed Endurance'
   distance text,
   effort text,
@@ -78,6 +86,7 @@ create table if not exists public.diagnosis_entries (
   created_at timestamptz not null default now()
 );
 alter table public.diagnosis_entries add column if not exists thumb text;
+alter table public.diagnosis_entries add column if not exists key_frames jsonb;
 
 -- ---------- Form analysis criteria (per-athlete custom good/bad cues) ----------
 create table if not exists public.form_criteria (

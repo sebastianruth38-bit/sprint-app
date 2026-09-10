@@ -15,8 +15,8 @@ storage are Supabase.
 
 **The pose model runs in your browser, on your phone.** MediaPipe Tasks reads
 the video off the device, finds the joints, and the measurements happen
-locally. The video is not uploaded in order to be graded — it is uploaded
-afterwards only so you can watch it back from the history list.
+locally. **The video is never uploaded at all** — not to be graded, and not
+afterwards. What gets kept is a handful of stills.
 
 Everything measured is **scale-free**: angles, or lengths expressed as a
 fraction of the athlete's own leg. Nobody knows how far the camera was or how
@@ -53,6 +53,21 @@ which of those failed when it will not grade.
 The `How to film it` panel above the Analyze button exists because every one
 of those refusals is decided before the phone starts recording.
 
+### What it keeps: the moments, not the clip
+
+Storing the video meant storing 3MB to show the athlete a few tenths of a
+second that mattered, and then leaving them to find those tenths by scrubbing.
+So the clip is not kept. `keyMoments()` picks the instants the scores were
+actually read at — the deepest touchdown, the peak of the thigh carry, the
+tightest heel fold, the extreme of the torso angle — and those frames are
+saved, captioned with the measure each one belongs to.
+
+Three or four stills at ~40KB against 3MB of video, and each is the moment a
+number is talking about. Every metric row carries the timestamp it was
+captured at, which is what makes the match exact; two moments landing closer
+than `KEY_FRAME_MIN_GAP_S` are one photograph with two captions, so they
+collapse.
+
 ### AI coach notes are opt-in and off by default
 
 Tick the box and six still frames go through an edge function to Anthropic's
@@ -63,12 +78,16 @@ and never at all if the box is unticked. Ten a day per account.
 
 Sign in with email + password, a magic link, or Google. Every table is scoped
 to `auth.uid()` by Row Level Security, so the database itself refuses to hand
-one athlete's rows to another regardless of what the client asks for. Clips
-live in a private bucket reached through short-lived signed URLs.
+one athlete's rows to another regardless of what the client asks for. Key
+frames live in a private bucket reached through short-lived signed URLs, and
+are loaded only when the athlete taps to see them — attaching them to every
+row cost 2MB of egress to open a history of twenty.
 
-**Video is deleted after 30 days.** Scores and training data are kept, so the
-history stays useful once the clip is gone. Settings → Delete Account removes
-everything, including the clips, via the `delete-account` function.
+**Key frames, scores and training data are kept** until you delete them.
+There is no video to expire. Clips uploaded before 10 September 2026, when the
+app still stored them, are cleared 30 days after upload by `purgeExpiredVideos`
+— which is all `VIDEO_RETENTION_DAYS` is still for. Settings → Delete Account
+removes everything via the `delete-account` function.
 
 `privacy.html` and `terms.html` describe exactly this, and `tests/legal_test.js`
 reads the constants out of `app.js` to check they still agree — a policy that

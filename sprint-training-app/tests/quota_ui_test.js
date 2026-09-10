@@ -23,12 +23,22 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
     {name:'stranded2.mov',created_at:hourAgo},
     // Uploaded seconds ago: a save whose row has not been written yet.
     {name:'inflight.mov',created_at:new Date().toISOString()},
+    // A key frame. Referenced from key_frames, never from video_path, and old
+    // enough to be past the grace period -- so a sweep that only reads
+    // video_path calls it an orphan and deletes the record of a session.
+    {name:'d3-k0.jpg',created_at:hourAgo},
   ];
   const old = new Date(Date.now()-90*86400000).toISOString();
   const recent = new Date().toISOString();
   let entries=[
     {id:'d1',created_at:old,clip_type:'Max Velocity',video_path:'u/old.mp4',analysis:{summary:'Old clip',pinpoints:[]}},
     {id:'d2',created_at:recent,clip_type:'Acceleration',video_path:'u/new.mp4',thumb:'data:image/jpeg;base64,/9j/4AAQSkZJRg==',analysis:{summary:'Recent clip',pinpoints:[]}},
+    // Saved the way sessions are saved now: frames, no clip. Deliberately as
+    // old as the expired one, because key frames are kept for good and the
+    // retention purge must not touch them however old they get.
+    {id:'d3',created_at:old,clip_type:'Max Velocity',
+     key_frames:[{path:'u/d3-k0.jpg',label:'Touchdown',measure:'Foot Strike vs Hips',t:1.8}],
+     analysis:{summary:'Frames only',pinpoints:[]}},
   ];
 
   await page.route('**/*supabase.co/**',async route=>{
@@ -50,6 +60,10 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
       // other clip was unreferenced.
       if(u.includes('video_path=not.is.null')&&u.includes('created_at=lt.'))
         return json(entries.filter(e=>e.video_path&&e.created_at===old));
+      // The orphan sweep asks for both columns now: a row is referenced if it
+      // has a clip OR any key frames.
+      if(u.includes('or=')&&u.includes('key_frames'))
+        return json(entries.filter(e=>e.video_path||e.key_frames));
       if(u.includes('video_path=not.is.null'))
         return json(entries.filter(e=>e.video_path));
       return json(entries);
@@ -87,8 +101,18 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
     'opening the history signs no video urls at all, so nothing is fetched: '+signCalls.length+' calls');
   const videoSrcs = await page.$$eval('#diagnosisList video',els=>els.map(e=>e.getAttribute('src')||''));
   assert(videoSrcs.length===0,'no <video> element exists before the athlete asks for one');
-  const playBtns = await page.$$('#diagnosisList .video-load-btn');
-  assert(playBtns.length===2,'each stored clip offers a play button instead, got '+playBtns.length);
+  // Two kinds of button share the class: a clip offers Play, a session saved
+  // as frames offers the frames. Counted separately so neither can silently
+  // start rendering as the other.
+  const byKind = await page.$$eval('#diagnosisList .video-load-btn',
+    els=>els.map(e=>e.textContent.trim()));
+  const playBtns = (await page.$$('#diagnosisList .video-load-btn'))
+    .filter((_,i)=>byKind[i].startsWith('\u25b6'));
+  assert(playBtns.length===2,'each stored clip offers a play button instead, got '+JSON.stringify(byKind));
+  assert(byKind.filter(t=>t.startsWith('\u25a6')).length===1,
+    'and a session saved as frames offers its frames, not a dead player: '+JSON.stringify(byKind));
+  assert(/1 key frame\b/.test(byKind.find(t=>t.startsWith('\u25a6'))||''),
+    'labelled with how many there are, singular when there is one: '+JSON.stringify(byKind));
 
   // Counted before the tap below, which swaps one button out for a video.
   const thumbed = await page.$$eval('#diagnosisList .video-load-btn.has-thumb',
@@ -96,8 +120,12 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(thumbed.length===1,'the entry that has a stored still shows it, got '+thumbed.length);
   assert(/^url\("data:image\/jpeg/.test(thumbed[0]||''),
     'the preview comes from the row, not a fetched file: '+(thumbed[0]||'').slice(0,40));
-  const plainBtns = await page.$$('#diagnosisList .video-load-btn:not(.has-thumb)');
-  assert(plainBtns.length===1,'an entry saved before thumbnails existed still gets a plain button');
+  const plainBtns = await page.$$eval('#diagnosisList .video-load-btn:not(.has-thumb)',
+    els=>els.map(e=>e.textContent.trim()));
+  assert(plainBtns.length===2,
+    'entries with no stored still get a plain button: '+JSON.stringify(plainBtns));
+  assert(plainBtns.some(t=>t.startsWith('\u25b6')),
+    'including one saved before thumbnails existed: '+JSON.stringify(plainBtns));
 
   // Tapping one loads exactly that clip, and nothing else.
   await playBtns[0].click();
@@ -111,8 +139,8 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   // Re-signing the same path would mint a new url, which the CDN has never
   // seen and cannot serve from cache -- that is what made this cached egress.
   const reused = await page.evaluate(async ()=>{
-    const a = await window.signedVideoUrl('u/new.mp4');
-    const b = await window.signedVideoUrl('u/new.mp4');
+    const a = await window.signedFileUrl('u/new.mp4');
+    const b = await window.signedFileUrl('u/new.mp4');
     return a===b;
   });
   assert(reused,'a second request for the same clip reuses the signed url rather than minting a new one');
@@ -130,14 +158,23 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(!/inflight\.mov/.test(removedAll),
     'a file uploaded seconds ago is left alone, in case its save is still in flight: '+removedAll);
 
-  // Retention notice is visible to the athlete
+  // The key frames of a session are its permanent record. Sweeping them as
+  // orphans would delete it, and the sweep is the one thing in the app that
+  // deletes files nobody asked it to.
+  assert(!/d3-k0\.jpg/.test(removedAll),
+    'key frames are not swept as orphans, however old they are: '+removedAll);
+  assert(!(updatedPatch||'').includes('key_frames'),
+    'and the retention purge does not expire them either: '+updatedPatch);
+
+  // What the athlete is told about their video has to match what happens to
+  // it. The UI promised "60 days" once while the purge had moved to 30; it
+  // now promises something stronger -- that the clip is never uploaded at
+  // all -- and that is only true while nothing uploads it.
   const hint = await page.$$eval('#panel-diagnosis .hint',els=>els.map(e=>e.textContent).join(' '));
-  // Asserted against the constant, not a hard-coded number: the two drifted
-  // apart the moment retention changed, and the UI kept promising 60 days
-  // while the purge had already moved to 30.
-  const days = await page.evaluate(() => VIDEO_RETENTION_DAYS);
-  assert(new RegExp(days + ' days').test(hint),
-    `the UI states the same retention the purge uses (${days} days): ` + hint);
+  assert(/never leaves your phone/i.test(hint),
+    'the athlete is told the video stays on the device: ' + hint);
+  assert(/kept for good|still frame/i.test(hint),
+    'and what is kept in its place: ' + hint);
 
   await browser.close();server.close();
   console.log(`\n${pass} passed, ${fail} failed`);

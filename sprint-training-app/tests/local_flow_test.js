@@ -157,23 +157,41 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(auth.legalLinks.includes('terms.html') && auth.legalLinks.includes('privacy.html'),
     'the gate links the terms and privacy policy someone is agreeing to: ' + JSON.stringify(auth.legalLinks));
 
-  // ---------- compression falls back rather than failing a save ----------
-  // Storage is the free tier's real ceiling. But an unwatchable clip is worse
-  // than a large one, so every path that cannot produce a smaller playable
-  // file must hand back the original untouched.
-  const fallbacks = await page.evaluate(async () => {
-    const small = new Blob([new Uint8Array(1000)], { type: 'video/mp4' });
-    const smallOut = await compressForStorage(small, () => {});
-    // Large enough to be worth compressing, but not a video at all.
-    const junk = new Blob([new Uint8Array(4 * 1024 * 1024)], { type: 'video/mp4' });
-    const junkOut = await compressForStorage(junk, () => {});
+  // ---------- key frames degrade rather than failing a save ----------
+  // The clip is no longer stored: a session's record is its scores plus a few
+  // stills. The scores are the part that matters, so every step of the
+  // picture-taking has to be able to come back empty-handed without taking
+  // the save down with it -- the same trade the compressor used to make when
+  // it handed back an unshrunk file rather than none.
+  const frames = await page.evaluate(async () => {
+    const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+    const real = dataUrlToBlob(jpeg);
+    const moment = { t: 1.5, label: 'Touchdown', measure: 'Foot Strike vs Hips' };
     return {
-      smallSame: smallOut.blob === small, smallNote: smallOut.note,
-      junkSame: junkOut.blob === junk, junkNote: junkOut.note,
+      realType: real && real.type,
+      realSize: real && real.size,
+      junk: dataUrlToBlob('not a data url'),
+      empty: dataUrlToBlob(''),
+      nothingCaptured: framesForMoments([], [moment]).length,
+      noMoments: framesForMoments([{ t: 1.5, dataUrl: jpeg }], []).length,
+      matched: framesForMoments([{ t: 1.5, dataUrl: jpeg }], [moment]).length,
+      // A picture from a different instant is worse than no picture: it would
+      // be captioned with a measurement that was not read there.
+      farOff: framesForMoments([{ t: 9.0, dataUrl: jpeg }], [moment]).length,
+      unmeasured: keyMoments([], 'Acceleration').length,
+      noTimestamps: keyMoments([{ thighRise: 40 }], 'Acceleration').length,
     };
   });
-  assert(fallbacks.smallSame, 'a clip already small enough is passed through untouched: ' + fallbacks.smallNote);
-  assert(fallbacks.junkSame, 'a file that cannot be decoded falls back to the original: ' + fallbacks.junkNote);
+  assert(frames.realType === 'image/jpeg' && frames.realSize > 0,
+    'a captured frame becomes an uploadable jpeg: ' + frames.realType + ' ' + frames.realSize);
+  assert(frames.junk === null && frames.empty === null,
+    'anything that is not a data url comes back null instead of throwing');
+  assert(frames.matched === 1, 'a moment with a frame at that instant keeps it');
+  assert(frames.farOff === 0, 'a frame from a different instant is dropped, not mislabelled');
+  assert(frames.nothingCaptured === 0 && frames.noMoments === 0,
+    'no stills or no moments yields no frames, quietly');
+  assert(frames.unmeasured === 0 && frames.noTimestamps === 0,
+    'a clip that could not be measured asks for no pictures');
 
   // ---------- the save path, for a clip that gets refused ----------
   // buildLocalAnalysis above is called directly, so nothing here had ever
@@ -234,6 +252,12 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   // was closer to one, and that was the whole reason it could not be graded.
   assert(/in shot about 0\.5s of 2\.1s/.test(note),
     'and says how long he was actually in shot, which is the actionable part: ' + note);
+  // Nothing was gradeable, so there is no moment to photograph -- and, more
+  // to the point, the clip itself must not be uploaded in its place.
+  assert(row && !row.key_frames,
+    'a refused clip stores no key frames: ' + JSON.stringify(row && row.key_frames));
+  assert(row && !row.video_path,
+    'and no video path, because the clip is never uploaded: ' + JSON.stringify(row && row.video_path));
 
   await browser.close();server.close();
   console.log(`\n${pass} passed, ${fail} failed`);
