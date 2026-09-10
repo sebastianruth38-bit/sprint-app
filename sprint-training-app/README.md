@@ -97,10 +97,16 @@ misdescribes the app is worse than no policy.
 
 Every session gets the same warm-up: **I Mobility, II Movement, III
 Activation, IV Workout Specific**. Phases I–III never change. Phase IV is
-keyed to the session set for that day in Workouts — accelerations and wall
-drives before a block day, wickets and build-ups before a fly day, nothing at
-all on a rest day. A day picker moves between the seven days, so tomorrow's
-warm-up can be read the night before.
+the session the athlete picks — accelerations and wall drives for a block day,
+build-ups and a fly for a max-velocity day, nothing at all for a rest day. The
+picker chooses the **workout**, not the day, and defaults to whatever is on the
+plan for today: you already know what session you are about to do, and finding
+the day it falls on is a step that adds nothing.
+
+Nothing in it needs equipment. Every drill works on a track with an empty kit
+bag, so bands, hurdles, sleds and blocks are out and `warmup_test.js` fails if
+one creeps back in — a drill the athlete skips leaves a hole in the warm-up,
+which is worse than a shorter one that is whole.
 
 The scores do not change the warm-up. Every item is tagged with the measures
 it addresses, and the ones addressing a measure the athlete scored 3/5 or
@@ -126,7 +132,7 @@ it).
 - **Workouts** — a session type per day of the week, with the lifts that go with it, and somewhere to log what you actually ran and lifted.
 - **Reference** — sprint-complementary lifts and plyos with how-to videos.
 - **Times** — times per distance with a trend, a goal broken into small goals, and a board of the marks you're chasing.
-- **Warm-up** — four phases for any day of the week, with the parts that fix your weak points starred.
+- **Warm-up** — four phases for whichever workout you pick, needing no equipment, with the parts that fix your weak points starred.
 
 ## Running it locally
 

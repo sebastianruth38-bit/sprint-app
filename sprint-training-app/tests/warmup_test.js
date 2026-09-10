@@ -26,7 +26,7 @@ vm.runInContext(
   + 'function ytSearch(q){return "https://example.test/?q=" + encodeURIComponent(q);}\n'
   + src.slice(from, to)
   + '\n' + ['WARMUP_PHASES', 'WARMUP_SPECIFIC', 'SESSION_TO_CLIP', 'WARMUP_WEAK_MAX',
-            'measureScores', 'warmupFlags', 'buildWarmup']
+            'measureScores', 'warmupFlags', 'buildWarmup', 'WARMUP_SESSIONS']
       .map((n) => `globalThis.${n}=${n};`).join(''), ctx);
 
 let pass = 0;
@@ -170,8 +170,32 @@ check('a day with no session still gets phases I-III',
   noSession.phases.length === 4 && noSession.phases.slice(0, 3).every((p) => p.items.length));
 check('and phase IV says how to fill it in rather than sitting empty and unexplained',
   /Workouts/.test(noSession.phases[3].why), noSession.phases[3].why);
-check('the day picker offers every day', /id="warmupDayPick"/.test(src)
-  && /DAYS\.map/.test(src.slice(from)));
+// ---------- the picker ----------
+// Chosen by workout, not by day: the athlete knows what session they are about
+// to do, and making them find the day it falls on adds a step and nothing else.
+check('the picker chooses a workout', /id="warmupSessionPick"/.test(src));
+check('and offers every session phase IV knows',
+  /const WARMUP_SESSIONS = Object\.keys\(WARMUP_SPECIFIC\)/.test(src));
+check('so nothing can be offered without work behind it',
+  ctx.WARMUP_SESSIONS.every((t) => t in ctx.WARMUP_SPECIFIC));
+
+// ---------- nothing needs equipment ----------
+// The athlete warms up on a track with nothing but their own kit bag. A drill
+// that needs a band, a hurdle or a sled is a drill they skip, and a warm-up
+// with holes in it is worse than a shorter one that is whole.
+const KIT = /\b(bands?|hurdles?|wickets?|sleds?|barbells?|dumbbells?|kettlebells?|blocks|plyo box|medicine ball|bar only)\b/i;
+const needsKit = [];
+[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_SPECIFIC)].forEach((group) => {
+  (group.items || []).forEach((d) => {
+    const text = `${d.name} ${d.detail}`;
+    // "no blocks needed" names the kit only to say it is not wanted.
+    if (KIT.test(text) && !/\bno (blocks|bands?|hurdles?|kit|equipment)\b/i.test(text)) {
+      needsKit.push(d.name);
+    }
+  });
+});
+check('no drill needs equipment the athlete has to own', needsKit.length === 0,
+  needsKit.join(', '));
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) { fails.forEach((f) => console.log('  FAIL: ' + f)); process.exit(1); }
