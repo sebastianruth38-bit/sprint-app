@@ -1756,11 +1756,101 @@ function scoreSupportStiffness(metrics) {
   };
 }
 
+// Two key moments closer together than this are the same picture twice.
+//
+// Capture runs at CAPTURE_RATE, so anything under 1/30s is literally the same
+// frame and 1/30 apart is the neighbouring one -- on real clips this put
+// "Touchdown" and "Drive angle" 0.03s apart twice, which is one photograph
+// with two captions. Two frames' separation is the floor; a stride is ~0.22s,
+// so there is still room for four distinct instants inside one.
+const KEY_FRAME_MIN_GAP_S = 2 / CAPTURE_RATE;
+
 // How many strides the graded frames actually cover: each foot touching down
 // once is one stride.
 function stridesMeasured(metrics) {
   const contacts = footContacts(metrics, 0).length + footContacts(metrics, 1).length;
   return contacts / 2;
+}
+
+// The instants worth keeping a picture of.
+//
+// Storing the clip meant storing 3MB to show the athlete a few tenths of a
+// second that mattered, and then leaving them to find those tenths by
+// scrubbing. These are the frames the scores were actually read at -- the
+// peak of the thigh carry, the deepest touchdown, the tightest fold -- so a
+// still is not a worse video, it is the thing the number is talking about.
+//
+// Every metric row carries the timestamp it was captured at (metrics.t, set
+// in extractFrames), which is what lets a moment be matched back to a frame.
+//
+// Returns at most one moment per instant, newest selection winning, ordered
+// through the stride. A clip that could not be measured returns nothing and
+// the caller falls back to the plain preview frame.
+function keyMoments(allMetrics, clipType) {
+  if (!allMetrics || !allMetrics.length) return [];
+  // The same trim buildLocalAnalysis applies before scoring, and applied here
+  // for the same reason it is applied there: over a long clip the athlete is
+  // still changing gear. Without it a caption can name a measure that was
+  // read across a few strides while the picture comes from somewhere else in
+  // the run -- a frame that is real, correctly labelled, and not the one the
+  // number came from.
+  const metrics = limitToStrides(allMetrics);
+  const timed = metrics.filter((m) => m.t != null);
+  if (!timed.length) return [];
+
+  const pick = (rows, better, label, measure) => {
+    const best = rows.reduce((a, b) => (better(b, a) ? b : a), rows[0]);
+    return best ? { t: best.t, label, measure } : null;
+  };
+  const out = [];
+
+  // The deepest touchdown across both feet: the instant Foot Strike vs Hips
+  // and Ankle at Touchdown are both read at.
+  const contacts = [...footContacts(timed, 0), ...footContacts(timed, 1)]
+    .map((c) => timed[c.i])
+    .filter((m) => m && m.t != null);
+  if (contacts.length) {
+    out.push(pick(contacts, (b, a) => (b.legs && a.legs && b.midHip && a.midHip
+      ? (Math.max(...b.legs.map((l) => l.ank[1])) - b.midHip[1])
+        > (Math.max(...a.legs.map((l) => l.ank[1])) - a.midHip[1])
+      : false), 'Touchdown', 'Foot Strike vs Hips'));
+  }
+
+  // Peak thigh carry. Named for what is visible rather than for one score,
+  // because two different measures are read here depending on clip type.
+  const lifted = timed.filter((m) => m.thighRise != null);
+  if (lifted.length) {
+    out.push(pick(lifted, (b, a) => b.thighRise > a.thighRise, 'Peak knee lift',
+      clipType === 'Acceleration' ? 'Drive Position' : 'Thigh Separation (scissor)'));
+  }
+
+  // The tightest the heel gets to the backside on the way through.
+  const folded = timed.filter((m) => m.kneeFold != null);
+  if (folded.length && clipType !== 'Acceleration') {
+    out.push(pick(folded, (b, a) => b.kneeFold < a.kneeFold, 'Heel recovery',
+      'Heel Recovery (knee fold)'));
+  }
+
+  // Out of the blocks the interesting extreme is the most forward lean; at
+  // top speed it is the most upright the torso gets. Same measurement, and
+  // the fault it shows is at opposite ends of the range.
+  const leaning = timed.filter((m) => m.torsoFromVertical != null);
+  if (leaning.length) {
+    out.push(clipType === 'Acceleration'
+      ? pick(leaning, (b, a) => b.torsoFromVertical > a.torsoFromVertical,
+        'Drive angle', 'Acceleration Posture')
+      : pick(leaning, (b, a) => b.torsoFromVertical < a.torsoFromVertical,
+        'Tallest posture', 'Upright Posture'));
+  }
+
+  // Two moments a frame apart are the same picture twice. Keep the first
+  // claim on an instant and drop the rest, then run them in clip order so
+  // they read as a sequence rather than as a ranking.
+  const kept = [];
+  out.filter(Boolean).forEach((m) => {
+    if (!kept.some((k) => Math.abs(k.t - m.t) < KEY_FRAME_MIN_GAP_S)) kept.push(m);
+  });
+  return kept.sort((a, b) => a.t - b.t);
 }
 
 function buildLocalAnalysis(allMetrics, clipType, surface) {
@@ -1918,10 +2008,15 @@ function getPoseLandmarker() {
   return poseLandmarkerPromise;
 }
 
-// Stored clips are the app's dominant storage cost -- they're 20-30MB each
-// and accumulate forever, while an analysis is a few hundred bytes. After
-// the retention window the video file is dropped and the entry keeps its
-// scores, so history survives and storage stops growing without bound.
+// Clips are no longer stored at all -- a session keeps its key frames and its
+// scores, and the video never leaves the phone. This is what clears out the
+// ones uploaded before that change: they are the app's whole storage problem
+// (20-30MB each off the camera, 3MB even compressed, against ~40KB for a
+// still) and every one of them is now dead weight behind a Play button.
+//
+// The window stays at 30 days because that is what the athletes who uploaded
+// those clips were told when they uploaded them. Once the last of them has
+// aged out this constant and its purge have nothing left to do.
 const VIDEO_RETENTION_DAYS = 30;
 
 async function purgeExpiredVideos() {
@@ -1948,110 +2043,6 @@ async function purgeExpiredVideos() {
     .in('id', data.map((e) => e.id));
 }
 
-// Re-encode a clip down before it goes into storage.
-//
-// Storage is the free tier's real ceiling, not egress: clips average 9.5MB
-// straight off the phone, and at a few a day the 1GB limit arrives in about
-// five weeks. Nothing is lost by shrinking them -- the grader downsamples to
-// 480px internally, so the measurements are identical either way, and this is
-// only about what gets kept for the athlete to watch back.
-//
-// Analysis runs on the ORIGINAL blob, before this. Only the stored copy is
-// re-encoded.
-//
-// Every failure path returns the original file. A save must never break
-// because the compressor could not run: MediaRecorder and captureStream
-// support varies across browsers and iOS versions, and an unwatchable clip is
-// a far worse outcome than a large one.
-const COMPRESS_MAX_EDGE = 720;
-const COMPRESS_BITRATE = 1_500_000;
-const COMPRESS_MIN_BYTES = 3 * 1024 * 1024;   // below this, not worth the wait
-const COMPRESS_TIMEOUT_MS = 90_000;
-
-function compressorMimeType() {
-  if (typeof MediaRecorder === 'undefined') return null;
-  // Safari records mp4; everything else webm. Ask in preference order and let
-  // the browser say what it can actually write.
-  const types = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-  return types.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || null;
-}
-
-async function compressForStorage(blob, onProgress) {
-  if (!blob || blob.size < COMPRESS_MIN_BYTES) return { blob, note: 'left as-is' };
-  const mimeType = compressorMimeType();
-  const video = document.createElement('video');
-  if (!mimeType || typeof video.captureStream !== 'function'
-      && typeof document.createElement('canvas').captureStream !== 'function') {
-    return { blob, note: 'compression unavailable on this browser' };
-  }
-
-  const url = URL.createObjectURL(blob);
-  video.src = url;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = 'auto';
-  video.style.cssText = 'position:fixed;left:-10000px;width:1px;height:1px;';
-  document.body.appendChild(video);
-
-  try {
-    await waitForEvent(video, 'loadedmetadata', 6000);
-    if (!isFinite(video.duration) || video.duration <= 0) return { blob, note: 'unreadable duration' };
-
-    const longest = Math.max(video.videoWidth, video.videoHeight);
-    if (!longest) return { blob, note: 'no video track' };
-    const scale = Math.min(1, COMPRESS_MAX_EDGE / longest);
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    const ctx2d = canvas.getContext('2d');
-    if (typeof canvas.captureStream !== 'function') return { blob, note: 'canvas capture unavailable' };
-
-    // Recorded in real time, so the clip plays back at its true speed. Running
-    // the video faster would shorten the recording and speed up the result --
-    // useless for watching your own mechanics back.
-    const stream = canvas.captureStream();
-    const chunks = [];
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: COMPRESS_BITRATE });
-    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-
-    const done = new Promise((resolve) => { recorder.onstop = resolve; });
-    let painting = true;
-    const paint = () => {
-      if (!painting) return;
-      ctx2d.drawImage(video, 0, 0, canvas.width, canvas.height);
-      requestAnimationFrame(paint);
-    };
-
-    recorder.start();
-    video.currentTime = 0;
-    await video.play();
-    paint();
-    if (onProgress) onProgress('Shrinking clip for storage…');
-
-    await Promise.race([
-      waitForEvent(video, 'ended', Math.min(COMPRESS_TIMEOUT_MS, video.duration * 1000 + 5000)),
-      new Promise((r) => setTimeout(r, COMPRESS_TIMEOUT_MS)),
-    ]);
-    painting = false;
-    if (recorder.state !== 'inactive') recorder.stop();
-    await done;
-
-    const out = new Blob(chunks, { type: mimeType.split(';')[0] });
-    // A "compressed" file that came back bigger, or suspiciously tiny, means
-    // the recording went wrong. Keep the original.
-    if (!out.size || out.size >= blob.size || out.size < 20000) {
-      return { blob, note: `re-encode gave ${Math.round(out.size / 1024)}KB, kept original` };
-    }
-    return { blob: out, note: `${Math.round(blob.size / 1024 / 1024 * 10) / 10}MB to ${Math.round(out.size / 1024 / 1024 * 10) / 10}MB` };
-  } catch (e) {
-    return { blob, note: 'compression failed: ' + (e && e.message ? e.message : e) };
-  } finally {
-    try { video.pause(); } catch (e) { /* already gone */ }
-    document.body.removeChild(video);
-    URL.revokeObjectURL(url);
-  }
-}
-
 // Files in the bucket with no entry pointing at them.
 //
 // The retention purge walks entries, so a file that never got a row is
@@ -2073,16 +2064,25 @@ async function purgeOrphanedVideos() {
     .list(currentUser.id, { limit: 1000 });
   if (listError || !files || !files.length) return;
 
+  // Both columns, and this is not optional: key frames live in the same
+  // bucket and are referenced from key_frames, not video_path. Reading only
+  // video_path here would mark every key frame in the account as an orphan
+  // and delete it as soon as it aged past the grace period -- taking the
+  // permanent record of a session with it, ten minutes after it was saved.
   const { data: rows, error: rowError } = await supabaseClient
     .from('diagnosis_entries')
-    .select('video_path')
+    .select('video_path, key_frames')
     .eq('user_id', currentUser.id)
-    .not('video_path', 'is', null);
+    .or('video_path.not.is.null,key_frames.not.is.null');
   // A failed read here would make every file look unreferenced. Never delete
   // on a query that did not come back.
   if (rowError || !rows) return;
 
-  const referenced = new Set(rows.map((r) => r.video_path));
+  const referenced = new Set();
+  rows.forEach((r) => {
+    if (r.video_path) referenced.add(r.video_path);
+    (r.key_frames || []).forEach((f) => { if (f && f.path) referenced.add(f.path); });
+  });
   // A file uploaded seconds ago may simply be a save still in flight -- its
   // row is written after the upload, and a render in another tab (or this
   // one, on the way back from the save) would otherwise catch it in that
@@ -2166,6 +2166,41 @@ function describeCapture(capture) {
 // that costs most of a 20-30MB download per entry shown.
 const THUMB_WIDTH = 240;
 const THUMB_QUALITY = 0.5;
+
+// A captured frame, ready to upload. The capture path already produced a
+// JPEG data url, so this only unwraps it -- re-encoding through a canvas
+// again would cost quality for nothing.
+function dataUrlToBlob(dataUrl) {
+  try {
+    const [head, b64] = String(dataUrl).split(',');
+    if (!b64) return null;
+    const type = (head.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type });
+  } catch (e) {
+    return null;
+  }
+}
+
+// Marries the moments the grader picked to the pictures the capture kept.
+//
+// Both come out of the same pass, so a moment's timestamp is a frame's
+// timestamp and the match is exact. The tolerance is only a guard: if the
+// nearest picture is from a different instant, no picture is better than one
+// captioned with a measurement that was not read there.
+function framesForMoments(stills, moments) {
+  if (!stills || !stills.length || !moments || !moments.length) return [];
+  return moments
+    .map((m) => {
+      const near = stills.reduce(
+        (a, b) => (Math.abs(b.t - m.t) < Math.abs(a.t - m.t) ? b : a), stills[0]);
+      if (!near || Math.abs(near.t - m.t) > KEY_FRAME_MIN_GAP_S) return null;
+      return { label: m.label, measure: m.measure, t: m.t, dataUrl: near.dataUrl };
+    })
+    .filter(Boolean);
+}
 
 function makeThumb(dataUrl) {
   if (!dataUrl) return Promise.resolve(null);
@@ -2716,6 +2751,11 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
 
     return {
       frames: chosen.map((c) => c.dataUrl),
+      // Every frame the grader looked at, with the time it was taken. The
+      // clip is no longer kept, so this is the only chance to pull a picture
+      // of a moment the scores refer to -- the decoded video is gone the
+      // moment this function returns.
+      stills: candidates.slice(shotStart, shotEnd).map((c) => ({ t: c.t, dataUrl: c.dataUrl })),
       // Only the chosen athlete's frames inform the score. Every frame they
       // appear in counts -- there's no per-frame cost locally.
       metrics: measured,
@@ -2798,22 +2838,10 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
 
   try {
     const id = crypto.randomUUID();
-    // pendingBlob is the actual uploaded File -- use its real extension/type
-    // instead of hardcoding one. Naming/labeling it wrong (e.g. a phone's
-    // .mov as "video/webm") makes the browser unable to decode it at all,
-    // for both playback and frame extraction. iOS sometimes reports an
-    // empty File.type for video picked from the photo library, so fall
-    // back to guessing from the filename extension.
-    const EXT_TO_MIME = {
-      mov: 'video/quicktime', qt: 'video/quicktime',
-      mp4: 'video/mp4', m4v: 'video/mp4',
-      webm: 'video/webm', ogv: 'video/ogg',
-      '3gp': 'video/3gpp', avi: 'video/x-msvideo',
-    };
-    const nameExt = pendingBlob.name && pendingBlob.name.includes('.')
-      ? pendingBlob.name.split('.').pop().toLowerCase()
-      : null;
-    const sourceType = pendingBlob.type || (nameExt && EXT_TO_MIME[nameExt]) || 'video/mp4';
+    // The clip's own mime type used to matter here, because the clip was
+    // uploaded and had to be named so a browser could decode it later.
+    // Nothing is uploaded now but JPEGs the app encoded itself, so the
+    // guessing that iOS's empty File.type used to force is gone with it.
 
     // Analysis runs BEFORE the upload. It reads pendingBlob off this device
     // and never needed the file to be in storage first; uploading first only
@@ -2823,10 +2851,21 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     // purge, which walks entries. Six of those had accumulated, 101MB.
     let analysis = null;
     let thumb = null;
+    // Declared out here on purpose: the key frames are saved after this
+    // block, and anything destructured inside it is gone by then. A previous
+    // change used exactly one such variable past its scope and every refused
+    // clip threw a ReferenceError on the way to being saved -- which the
+    // catch below swallowed into a generic "analysis failed", so it looked
+    // like a grading bug for a day.
+    let stills = [];
+    let measured = [];
     try {
       saveBtn.textContent = 'Analyzing…';
-      const { frames, metrics, rejection, shotTrimmed, duplicateShare, capture } =
+      const { frames, metrics, rejection, shotTrimmed, duplicateShare, capture,
+              stills: captured } =
         await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
+      stills = captured || [];
+      measured = metrics || [];
       thumb = await makeThumb(frames[0]);
 
       // If most sampled frames came back identical, the clip was never really
@@ -2894,29 +2933,34 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         : 'Clip saved, but analysis failed: ' + detail);
     }
 
-    // Shrink only the copy that gets kept. The grader has already run, on the
-    // original, at full quality.
-    saveBtn.textContent = 'Shrinking…';
-    const { blob: storedBlob, note: sizeNote } = await compressForStorage(pendingBlob, setAnalysisStatus);
-    console.info('clip for storage:', sizeNote);
-
-    // Name the file after what is actually being uploaded -- the compressor
-    // may have handed back mp4 or webm regardless of what came off the phone,
-    // and a .mov holding webm will not play.
-    const contentType = storedBlob.type || sourceType;
-    const typeExt = contentType.includes('/') ? contentType.split('/').pop() : null;
-    const ext = (storedBlob === pendingBlob ? nameExt : null) || typeExt || 'mp4';
-    const videoPath = `${currentUser.id}/${id}.${ext}`;
-
-    setAnalysisStatus(`Uploading video… (${sizeNote})`);
-    saveBtn.textContent = 'Uploading…';
-    const { error: uploadError } = await supabaseClient.storage
-      .from('diagnosis-videos')
-      .upload(videoPath, storedBlob, { contentType });
-    if (uploadError) {
-      setAnalysisStatus('Upload failed: ' + uploadError.message);
-      alert('Video upload failed: ' + uploadError.message);
-      return;
+    // The clip itself is not kept. What gets stored is a handful of stills at
+    // the instants the scores were read at -- roughly 40KB each against 3MB
+    // for a compressed clip, and each one is the moment a number refers to
+    // rather than a video the athlete has to scrub through to find it.
+    //
+    // A frame that fails to upload is dropped, not fatal. The scores are the
+    // record; a picture alongside them is a bonus, and losing the whole
+    // session because one JPEG did not land would be the wrong trade.
+    saveBtn.textContent = 'Saving frames…';
+    const keyFrames = [];
+    const uploaded = [];
+    const wanted = framesForMoments(stills, keyMoments(measured, clipType));
+    for (let i = 0; i < wanted.length; i++) {
+      setAnalysisStatus(`Saving frames… ${i + 1}/${wanted.length}`);
+      const blob = dataUrlToBlob(wanted[i].dataUrl);
+      if (!blob) continue;
+      const framePath = `${currentUser.id}/${id}-k${i}.jpg`;
+      const { error: frameError } = await supabaseClient.storage
+        .from('diagnosis-videos')
+        .upload(framePath, blob, { contentType: blob.type || 'image/jpeg' });
+      if (frameError) { console.warn('key frame upload failed:', frameError.message); continue; }
+      uploaded.push(framePath);
+      keyFrames.push({
+        path: framePath,
+        label: wanted[i].label,
+        measure: wanted[i].measure,
+        t: Number(wanted[i].t.toFixed(2)),
+      });
     }
 
     setAnalysisStatus('Saving session…');
@@ -2925,7 +2969,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       .insert({
         id,
         user_id: currentUser.id,
-        video_path: videoPath,
+        key_frames: keyFrames.length ? keyFrames : null,
         clip_type: clipType || null,
         distance: distance || null,
         effort: effort || null,
@@ -2933,10 +2977,12 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         thumb,
       });
     if (error) {
-      // Take the file back out. The row is what makes a clip reachable, so
-      // without this the upload above is exactly the orphan this reordering
+      // Take the files back out. The row is what makes them reachable, so
+      // without this the uploads above are exactly the orphan this ordering
       // was meant to stop.
-      await supabaseClient.storage.from('diagnosis-videos').remove([videoPath]);
+      if (uploaded.length) {
+        await supabaseClient.storage.from('diagnosis-videos').remove(uploaded);
+      }
       setAnalysisStatus('Save failed: ' + error.message);
       alert('Save failed: ' + error.message);
       return;
@@ -3139,7 +3185,7 @@ const signedUrlCache = new Map();
 const SIGNED_URL_TTL_S = 3600;
 const SIGNED_URL_REUSE_MS = (SIGNED_URL_TTL_S - 300) * 1000; // re-sign 5 min early
 
-async function signedVideoUrl(path) {
+async function signedFileUrl(path) {
   const hit = signedUrlCache.get(path);
   if (hit && Date.now() - hit.at < SIGNED_URL_REUSE_MS) return hit.url;
   const { data } = await supabaseClient.storage
@@ -3158,6 +3204,57 @@ async function signedVideoUrl(path) {
 // So: nothing is fetched until the athlete asks for a specific clip. The
 // element carries no src at all until the tap, and preload="none" keeps the
 // browser from going after it once it has one.
+// The stills kept in place of the clip, each captioned with the moment it is
+// and the measure that was read there.
+//
+// Loaded on a tap for the same reason the video was: three 40KB frames per
+// entry is over 2MB of egress to open a history of twenty, and the athlete
+// is usually looking at the scores, not the pictures. The row already
+// carries a preview thumbnail that costs nothing extra.
+function keyFrameStrip(frames, thumb) {
+  const holder = document.createElement('div');
+  holder.className = 'video-holder';
+  const label = `${frames.length} key frame${frames.length === 1 ? '' : 's'}`;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'video-load-btn';
+  btn.textContent = `▦  ${label}`;
+  if (thumb) {
+    btn.classList.add('has-thumb');
+    btn.style.backgroundImage = `url("${thumb}")`;
+  }
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    const urls = await Promise.all(frames.map((f) => signedFileUrl(f.path)));
+    // Every frame failed to sign -- offline, or the files are gone. Hand the
+    // button back rather than replacing it with an empty strip.
+    if (!urls.some(Boolean)) {
+      btn.disabled = false;
+      btn.textContent = `▦  ${label}`;
+      return;
+    }
+    const strip = document.createElement('div');
+    strip.className = 'key-frames';
+    frames.forEach((f, i) => {
+      if (!urls[i]) return;
+      const fig = document.createElement('figure');
+      const img = document.createElement('img');
+      img.src = urls[i];
+      img.alt = f.label || 'Key frame';
+      img.loading = 'lazy';
+      const cap = document.createElement('figcaption');
+      cap.innerHTML = `<b>${escapeHtml(f.label || '')}</b>`
+        + (f.measure ? `<span>${escapeHtml(f.measure)}</span>` : '');
+      fig.append(img, cap);
+      strip.appendChild(fig);
+    });
+    holder.replaceChildren(strip);
+  });
+  holder.appendChild(btn);
+  return holder;
+}
+
 function videoPlaceholder(path, thumb) {
   const holder = document.createElement('div');
   holder.className = 'video-holder';
@@ -3174,7 +3271,7 @@ function videoPlaceholder(path, thumb) {
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     btn.textContent = 'Loading…';
-    const url = await signedVideoUrl(path);
+    const url = await signedFileUrl(path);
     if (!url) { btn.disabled = false; btn.textContent = '▶  Play clip'; return; }
     const video = document.createElement('video');
     video.controls = true;
@@ -3213,12 +3310,21 @@ async function renderDiagnosis() {
       ${tags ? `<div class="day-badges"><span class="day-badge">${escapeHtml(tags)}</span></div>` : ''}
       ${renderAnalysisHtml(entry.analysis)}
     `;
-    if (entry.video_path) {
+    // Key frames are what new sessions keep. Entries saved before the change
+    // still have a clip in the bucket and keep playing it until the retention
+    // purge takes it, at which point they fall through to neither and show
+    // their scores alone -- which is what they were always going to do.
+    if (entry.key_frames && entry.key_frames.length) {
+      div.appendChild(keyFrameStrip(entry.key_frames, entry.thumb));
+    } else if (entry.video_path) {
       div.appendChild(videoPlaceholder(entry.video_path, entry.thumb));
     }
     div.querySelector('.delete-btn').addEventListener('click', async () => {
-      if (entry.video_path) {
-        await supabaseClient.storage.from('diagnosis-videos').remove([entry.video_path]);
+      const files = [];
+      if (entry.video_path) files.push(entry.video_path);
+      (entry.key_frames || []).forEach((f) => { if (f && f.path) files.push(f.path); });
+      if (files.length) {
+        await supabaseClient.storage.from('diagnosis-videos').remove(files);
       }
       await supabaseClient.from('diagnosis_entries').delete().eq('id', entry.id);
       renderDiagnosis();

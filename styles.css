@@ -571,6 +571,50 @@ textarea {
   box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.2);
 }
 
+/* The stills kept in place of the clip. Scrolls sideways rather than
+   stacking: they are one stride in sequence, and reading them along a line
+   is what makes the sequence visible at all. */
+.key-frames {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.25rem;
+}
+.key-frames figure {
+  margin: 0;
+  flex: 0 0 148px;
+  scroll-snap-align: start;
+}
+/* A fixed box with the frame contained inside it, not cropped to fill.
+   Clips arrive both portrait and landscape and the athlete is the subject:
+   cropping to a uniform shape is exactly as likely to cut off the foot at
+   touchdown, which is the thing the caption is pointing at. */
+.key-frames img {
+  width: 100%;
+  height: 190px;
+  object-fit: contain;
+  display: block;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+.key-frames figcaption {
+  margin-top: 0.3rem;
+  line-height: 1.3;
+}
+.key-frames figcaption b {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.key-frames figcaption span {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
 .score-row {
   display: flex;
   justify-content: space-between;
