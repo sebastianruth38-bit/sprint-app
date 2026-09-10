@@ -4770,35 +4770,25 @@ const WARMUP_PHASES = [
 
 // Phase IV. Everything above is the same on any day; this is the part that
 // knows what the session is.
-const WARMUP_SPECIFIC = {
-  'Acceleration (0-30m)': {
+// Phase IV. Six warm-ups, not fourteen -- sessions that want the same
+// preparation share one rather than each carrying a near-copy that drifts.
+// Speed endurance and special endurance are the same warm-up by the athlete's
+// own call; blocks and hills are acceleration days; a meet day warms up the
+// way a pre-meet does.
+const WARMUP_PLANS = {
+  accel: {
     note: 'Short and sharp. The whole point is the angle out of the first few steps.',
     items: [
       { name: 'Wall drives', detail: '3 x 5 each leg, holding the lean.',
         measures: ['Drive Position', 'Acceleration Posture'] },
       { name: 'Falling starts', detail: '4 x 15m. Lean until you have to run.',
         measures: ['Drive Position', 'Acceleration Posture'] },
-      { name: 'Accelerations', detail: '4 x 20-30m, building to full by the last one.', measures: [] },
-    ],
-  },
-  'Blocks / Starts': {
-    note: 'Rehearse the exit before you ask it to be fast.',
-    items: [
-      { name: 'Wall drives', detail: '3 x 5 each leg.', measures: ['Drive Position', 'Acceleration Posture'] },
-      { name: 'Push-up starts', detail: '3 x 20m. Flat on the ground, up and go.',
-        measures: ['Drive Position'] },
-      { name: 'Three-point starts', detail: '4 x 20m, full effort on the last two. One hand down, no blocks needed.',
+      { name: 'Three-point starts', detail: '3 x 20m, full effort on the last one. One hand down, no blocks needed.',
         measures: ['Acceleration Posture'] },
+      { name: 'Accelerations', detail: '3 x 20-30m, building to full by the last one.', measures: [] },
     ],
   },
-  'Hill Sprints': {
-    note: 'Get the flat mechanics in before the hill changes them.',
-    items: [
-      { name: 'Accelerations on the flat', detail: '3 x 20m.', measures: ['Acceleration Posture'] },
-      { name: 'Short hill efforts', detail: '2 easy at 70% before the first hard one.', measures: [] },
-    ],
-  },
-  'Max Velocity (flys/build-ups)': {
+  maxv: {
     note: 'Everything here is about being tall and relaxed at the top end.',
     items: [
       { name: 'Tall high-knee run into a stride', detail: '3 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
@@ -4809,83 +4799,83 @@ const WARMUP_SPECIFIC = {
         measures: [] },
     ],
   },
-  'Speed Endurance (60-150m)': {
-    note: 'Rhythm rather than raw speed — the session is long enough to punish a bad one.',
+  speedEnd: {
+    note: 'Rhythm rather than raw speed. The reps are long enough to punish a bad one.',
     items: [
       { name: 'Build-ups', detail: '2 x 60m, rising to 90%.', measures: ['Smoothness / Consistency'] },
       { name: 'One at race rhythm', detail: '1 x 60m at the pace the session is meant to hold.',
         measures: ['Smoothness / Consistency'] },
     ],
   },
-  'Special Endurance (150-300m)': {
-    note: 'Long reps. Warm enough to run them properly, fresh enough to finish them.',
-    items: [
-      { name: 'Build-ups', detail: '2 x 60m, rising to 90%.', measures: ['Smoothness / Consistency'] },
-      { name: 'One at goal pace', detail: '1 x 80m at the pace you intend to hold.',
-        measures: ['Smoothness / Consistency'] },
-    ],
-  },
-  'Race Modeling': {
-    note: 'Rehearse the race, not just the running.',
-    items: [
-      { name: 'Starts', detail: '2 from a three-point stance.', measures: ['Drive Position'] },
-      { name: 'One at race rhythm', detail: '1 x 60m run the way you intend to run it.',
-        measures: ['Smoothness / Consistency'] },
-    ],
-  },
-  'Pre-Meet': {
-    note: 'Sharpen, do not train. Leave it in the tank.',
-    items: [
-      { name: 'Accelerations', detail: '2 x 20m, crisp, then stop.', measures: [] },
-    ],
-  },
-  'Meet Day': {
-    note: 'Time it to finish close to your call-up, then keep moving.',
-    items: [
-      { name: 'Accelerations', detail: '3 x 20-30m, last one at race effort.', measures: [] },
-      // A cue rather than a drill: there is no rep count for "do not go cold
-      // on the call-up bench", and inventing one would be worse than saying it
-      // plainly. Marked so the check for countable work knows to skip it.
-      { name: 'Stay warm', cue: true,
-        detail: 'Keep moving until you are called. Do not sit down in spikes.', measures: [] },
-    ],
-  },
-  'Tempo (extensive/aerobic)': {
+  tempo: {
     note: 'Nothing here goes near maximum.',
     items: [
       { name: 'Easy strides', detail: '2 x 60m at 70%.', measures: [] },
     ],
   },
-  'Lift Only': {
-    note: 'Enough to be warm for the bar.',
+  preMeet: {
+    note: 'Sharpen, do not train. Finish close to your call-up and keep moving after.',
     items: [
-      { name: 'Easy strides', detail: '2 x 40m.', measures: [] },
-      { name: 'Bodyweight squats and hinges', detail: '2 x 10 of each, grooving the pattern before you load it.', measures: [] },
+      { name: 'Accelerations', detail: '3 x 20-30m, last one at race effort.', measures: [] },
+      { name: 'Stay warm', cue: true,
+        detail: 'Keep moving until you are called. Do not sit down in spikes.', measures: [] },
     ],
   },
-  'Recovery / Mobility': {
-    note: 'Keep everything easy. Phases I and II are the session.',
+  // A lift day happens indoors with no room to run, so the sprint drills in
+  // phases II and III are not on offer -- mobility is. What replaces them is
+  // the part of a lifting session people skip: working up to the weight
+  // instead of starting at it.
+  gym: {
+    note: 'No room to run, so phase I is the movement prep. Then work up to the weight rather than starting at it.',
+    mobilityOnly: true,
+    items: [
+      { name: 'Base exercise, empty', detail: '1 x 5. The bar or the movement itself, no load.', measures: [] },
+      { name: '25% of working weight', detail: '1 x 5.', measures: [] },
+      { name: '50% of working weight', detail: '1 x 3.', measures: [] },
+      { name: '75% of working weight', detail: '1 x 2.', measures: [] },
+      { name: '90% of working weight', detail: '1 x 1.', measures: [] },
+      // A cue, not a drill: the count lives in the day's lift prescription
+      // on the Workouts tab, and repeating it here is how the two drift apart.
+      { name: 'Working sets', cue: true,
+        detail: 'As prescribed for the day. Repeat the ramp for each main lift.', measures: [] },
+    ],
+  },
+  // A recovery day is the mobility work and nothing after it. It shares the
+  // gym day's "no running drills" shape and none of its loading.
+  recovery: {
+    note: 'Phase I is the session. Keep everything easy and stop there.',
+    mobilityOnly: true,
     items: [],
   },
-  'Custom': {
-    note: 'Whatever you wrote in, a general build-up fits in front of it.',
-    items: [
-      { name: 'Build-ups', detail: '3 x 60m, rising to 90%.', measures: ['Smoothness / Consistency'] },
-    ],
-  },
-  'Rest Day': { note: null, items: [] },
+  rest: { note: null, items: [] },
 };
 
-// The order the picker offers them in, straight off the phase IV table so a
-// session can never appear in the dropdown without work behind it. Rest Day is
-// included on purpose: a plan can say rest, and an athlete who opens this tab
-// on one should be told that rather than shown an acceleration warm-up they
-// were not looking for.
-const WARMUP_SESSIONS = Object.keys(WARMUP_SPECIFIC);
+// Which warm-up each session gets. Every session the planner offers has to
+// appear here or it loses its fourth phase, which warmup_test checks.
+const SESSION_WARMUP = {
+  'Acceleration (0-30m)': 'accel',
+  'Blocks / Starts': 'accel',
+  'Hill Sprints': 'accel',
+  'Max Velocity (flys/build-ups)': 'maxv',
+  'Speed Endurance (60-150m)': 'speedEnd',
+  'Special Endurance (150-300m)': 'speedEnd',
+  'Race Modeling': 'speedEnd',
+  'Pre-Meet': 'preMeet',
+  'Meet Day': 'preMeet',
+  'Tempo (extensive/aerobic)': 'tempo',
+  'Custom': 'tempo',
+  'Lift Only': 'gym',
+  'Recovery / Mobility': 'recovery',
+  'Rest Day': 'rest',
+};
 
-// Which clip type's scores speak to which session. A max-velocity warm-up
-// should be flagged from what the max-velocity clips showed, not from a block
-// start filmed in March.
+// The picker offers the sessions, in the planner's own order.
+const WARMUP_SESSIONS = Object.keys(SESSION_WARMUP);
+
+function warmupPlanFor(sessionType) {
+  return WARMUP_PLANS[SESSION_WARMUP[sessionType]] || null;
+}
+
 const SESSION_TO_CLIP = {
   'Acceleration (0-30m)': 'Acceleration',
   'Blocks / Starts': 'Acceleration',
@@ -4970,8 +4960,13 @@ function buildWarmup(scores, sessionType) {
     };
   };
 
-  const specific = WARMUP_SPECIFIC[sessionType] || null;
-  const phases = resting ? [] : WARMUP_PHASES.map((p) => ({
+  const specific = warmupPlanFor(sessionType);
+  // A lift day has no room for the running drills in II and III, so it takes
+  // phase I and goes straight to the bar.
+  const general = specific && specific.mobilityOnly
+    ? WARMUP_PHASES.filter((p) => p.numeral === 'I')
+    : WARMUP_PHASES;
+  const phases = resting ? [] : general.map((p) => ({
     numeral: p.numeral, name: p.name, why: p.why, items: p.items.map(decorate),
   }));
   if (!resting) {
@@ -5030,8 +5025,8 @@ async function renderWarmup() {
   // Default to what is actually on the plan for today, so the common case is
   // no taps at all. An unrecognised stored session falls back rather than
   // rendering a phase IV nobody wrote.
-  if (!warmupSession || !(warmupSession in WARMUP_SPECIFIC)) {
-    warmupSession = (planned && planned in WARMUP_SPECIFIC) ? planned : WARMUP_SESSIONS[0];
+  if (!warmupSession || !(warmupSession in SESSION_WARMUP)) {
+    warmupSession = (planned && planned in SESSION_WARMUP) ? planned : WARMUP_SESSIONS[0];
   }
   const plan = buildWarmup(warmupData.scores, warmupSession);
 
