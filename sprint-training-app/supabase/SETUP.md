@@ -1,18 +1,40 @@
 # Backend setup (Supabase)
 
-This gets Sprint Lab off local-only storage and onto a real account, so your
-data follows you across your phone and laptop. Supabase's free tier covers
-this comfortably for one user.
+The project is already stood up and its URL and anon key are in `config.js`.
+This page is how you would build it again from nothing — a second project for
+testing, or a rebuild after something goes wrong.
 
 ## Steps
 
-1. **Create a project** at [supabase.com](https://supabase.com) (free tier). Pick any name/region — takes about 2 minutes to provision.
-2. **Run the schema**: open your project's *SQL Editor*, paste the contents of `schema.sql` (in this folder), and run it. This creates all the tables, locks every row to its owner (Row Level Security), and sets up a private storage bucket for diagnosis video clips.
-3. **Turn on email sign-in**: *Authentication → Providers* — email is on by default, so this is just a check. (Magic-link/passwordless is enabled the same way if you'd rather skip passwords entirely.)
-4. **Grab your API keys**: *Project Settings → API* — copy the **Project URL** and the **`anon` public key**. Paste both back to me here.
+1. **Create a project** at [supabase.com](https://supabase.com). Any name and
+   region; it takes a couple of minutes to provision.
+2. **Run the schema**: *SQL Editor → New query*, paste `schema.sql` from this
+   folder, run it. That creates every table, locks each row to its owner with
+   Row Level Security, and creates the private `diagnosis-videos` bucket.
+3. **Turn on the sign-in methods**: *Authentication → Providers*.
+   - **Email** is on by default. Magic links are the same provider.
+   - **Google** needs a client ID and secret from
+     [Google Cloud](https://console.cloud.google.com/auth/clients), with
+     Supabase's callback URL added as an authorised redirect URI. Set the
+     consent screen's **App name** while you are there, or the sign-in prompt
+     names the raw `*.supabase.co` host instead of Sprintr.
+4. **Deploy the functions**: `analyze-form` and `delete-account`, both under
+   `functions/`. Both set `verify_jwt: false` and check the caller's token
+   themselves — the platform's own check rejects the CORS preflight, which
+   presents as the browser reporting a network failure with nothing in the
+   function logs. They still refuse anonymous callers.
+   `AI_SETUP.md` covers the API key and quota that `analyze-form` needs.
+5. **Point the app at it**: copy the **Project URL** and **anon public key**
+   from *Project Settings → API* into `config.js`.
 
-That's it on your end — the anon key is meant to be used from client-side code (that's what the Row Level Security policies in `schema.sql` are for), so it's safe to share.
+The anon key belongs in client-side code and is committed on purpose. Row
+Level Security is what protects the data; the key only decides which project
+you are talking to.
 
-## What happens once I have the keys
+## Retention
 
-I'll wire the app to Supabase: a sign-in screen (email/password or magic link), and swap every `localStorage`/`IndexedDB` call for a Supabase read/write — same UI, same features, just synced. Existing local data won't auto-migrate; once you're signed in you'd re-enter anything you want to keep (or say the word and I'll add a one-time "import my local data" button instead).
+Nothing here expires clips on its own — `VIDEO_RETENTION_DAYS` in `app.js`
+drives the purge, and the app runs it every time the Form Analysis tab
+renders. If that number changes, the
+privacy policy and terms have to change with it; `tests/legal_test.js` fails
+until they do.

@@ -25,13 +25,6 @@ to ~150 KB (tap-to-play previews + memoized signed URLs) and stored video from
 310 MB to 120 MB, so the ongoing burn is fixed — this is about the overage
 already run up. Either pay the $25 or get the overage waived by support.
 
-## The README describes an app that no longer exists
-
-`README.md` still calls the app "Sprint Lab" and says there is no account and
-no server, and that everything lives in localStorage. All three are now false:
-there are Supabase accounts, an edge function, and hosted clips. Rewrite it
-before anyone outside reads it.
-
 ## Deferred on purpose
 
 - **Add to Home Screen (PWA)** — asked for it to wait.
