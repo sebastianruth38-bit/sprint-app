@@ -1,15 +1,15 @@
-// The warm-up is built from the athlete's own scores, which means it is only
-// as good as its links to the rest of the app. Three of those links are
-// invisible when they break:
+// The warm-up is a complete four-phase warm-up whatever the scores say, with
+// the athlete's weak points starred inside it.
 //
-//   - a drill keyed to a measure name the grader never emits can never be
-//     shown, and nothing errors -- the athlete just never gets that drill;
-//   - a session type the workout planner offers but the primer table does not
-//     know silently loses its finish;
-//   - the threshold and the ordering decide what the athlete actually spends
-//     ten minutes doing.
+// The rule that matters most here is a negative one: it must never come back
+// empty. An earlier version built the whole tab out of weak points and showed
+// almost nothing to the athlete who had none -- the one furthest along got the
+// least. So "every phase is populated" and "something is always flagged once
+// anything has been measured" are both checked directly.
 //
-// So all three are checked against the source they have to agree with.
+// The rest are the joins that fail silently: a measure name on an item that
+// the grader never emits is a star that can never light, and a session type
+// the planner offers but phase IV does not know loses its whole fourth phase.
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -17,22 +17,17 @@ const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 const index = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
-// The warm-up engine is pure -- no DOM, no network -- so it runs as-is.
 const from = src.indexOf('// WARM-UP');
-const to = src.indexOf('// Today\'s session decides the primer');
+const to = src.indexOf('function todaysDayName');
 const ctx = { console, Math, JSON, Object, Array, Number };
 vm.createContext(ctx);
 vm.runInContext(
-  'function ytSearch(q){return "https://example.test/?q=" + encodeURIComponent(q);}\n'
-  + 'function encodeURIComponent(s){return String(s).replace(/ /g,"%20");}\n'
+  'function encodeURIComponent(s){return String(s).replace(/ /g,"%20");}\n'
+  + 'function ytSearch(q){return "https://example.test/?q=" + encodeURIComponent(q);}\n'
   + src.slice(from, to)
-  + '\nglobalThis.WARMUP_DRILLS=WARMUP_DRILLS;'
-  + 'globalThis.WARMUP_PRIMER=WARMUP_PRIMER;'
-  + 'globalThis.SESSION_TO_CLIP=SESSION_TO_CLIP;'
-  + 'globalThis.WARMUP_WEAK_MAX=WARMUP_WEAK_MAX;'
-  + 'globalThis.WARMUP_MAX_TARGETS=WARMUP_MAX_TARGETS;'
-  + 'globalThis.warmupTargets=warmupTargets;'
-  + 'globalThis.buildWarmup=buildWarmup;', ctx);
+  + '\n' + ['WARMUP_PHASES', 'WARMUP_SPECIFIC', 'SESSION_TO_CLIP', 'WARMUP_WEAK_MAX',
+            'measureScores', 'warmupFlags', 'buildWarmup']
+      .map((n) => `globalThis.${n}=${n};`).join(''), ctx);
 
 let pass = 0;
 const fails = [];
@@ -40,116 +35,143 @@ const check = (name, cond, extra) => {
   if (cond) pass++; else fails.push(name + (extra ? ' — ' + extra : ''));
 };
 
-// ---------- every drill is reachable ----------
-// The grader's measure names are the only keys that can ever be looked up.
-const emitted = new Set([...src.matchAll(/name: '([A-Z][^']*)'/g)].map((m) => m[1]));
-const orphans = Object.keys(ctx.WARMUP_DRILLS).filter((k) => !emitted.has(k));
-check('every drill is keyed to a measure the grader emits', orphans.length === 0,
-  orphans.join(', '));
+const MAXV = 'Max Velocity (flys/build-ups)';
+const scores = (obj) => ({ 'Max Velocity': obj });
+const flaggedItems = (plan) =>
+  plan.phases.flatMap((p) => p.items.filter((i) => i.flag).map((i) => i.name));
+const allItems = (plan) => plan.phases.flatMap((p) => p.items);
 
-// The reverse is not required -- some measures have no useful drill -- but the
-// ones an athlete is most likely to score badly on should be covered.
-['Foot Strike vs Hips', 'Heel Recovery (knee fold)', 'Thigh Separation (scissor)',
- 'Hip Height', 'Support Stiffness', 'Drive Position'].forEach((m) => {
-  check(`"${m}" has drills`, !!ctx.WARMUP_DRILLS[m]);
-});
+// ---------- the four phases ----------
+check('there are three fixed phases before the session-specific one',
+  ctx.WARMUP_PHASES.length === 3, String(ctx.WARMUP_PHASES.length));
+check('numbered I, II, III',
+  ctx.WARMUP_PHASES.map((p) => p.numeral).join(',') === 'I,II,III');
+check('named for what they are',
+  ctx.WARMUP_PHASES.map((p) => p.name).join(', ') === 'Mobility, Movement, Activation',
+  ctx.WARMUP_PHASES.map((p) => p.name).join(', '));
+
+const plan = ctx.buildWarmup(scores({ 'Heel Recovery (knee fold)': 2 }), MAXV);
+check('and a fourth for the session', plan.phases.length === 4
+  && plan.phases[3].numeral === 'IV' && /Workout Specific/.test(plan.phases[3].name));
+check('every phase says what it is for', plan.phases.every((p) => p.why && p.why.length > 20));
+// The complaint that started this rewrite: a warm-up that is mostly empty.
+check('every phase actually has work in it', plan.phases.every((p) => p.items.length > 0),
+  JSON.stringify(plan.phases.map((p) => `${p.numeral}:${p.items.length}`)));
+check('and the whole thing is a real warm-up, not a handful of drills',
+  allItems(plan).length >= 18, String(allItems(plan).length));
 
 // A drill with no prescription is a word on a screen.
-const badDrills = [];
-Object.entries(ctx.WARMUP_DRILLS).forEach(([measure, entry]) => {
-  if (!entry.why || entry.why.length < 20) badDrills.push(measure + ' (no why)');
-  (entry.drills || []).forEach((d) => {
-    if (!d.name || !d.detail) badDrills.push(measure + '/' + (d.name || '?'));
-    // Reps or distance -- something countable. "Do some skips" is not a warm-up.
-    if (d.detail && !/\d/.test(d.detail)) badDrills.push(measure + '/' + d.name + ' (no numbers)');
+const vague = [];
+[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_SPECIFIC)].forEach((group) => {
+  (group.items || []).forEach((d) => {
+    if (!d.name || !d.detail) vague.push(d.name || '?');
+    // A drill needs a countable amount -- "do some skips" is not a
+    // prescription. Items explicitly marked as cues are exempt: some
+    // instructions ("keep moving until you are called") have no rep count and
+    // inventing one would be worse than saying it plainly.
+    else if (!d.cue && !/\d/.test(d.detail)) vague.push(d.name + ' (no reps or distance)');
   });
-  if (!entry.drills || !entry.drills.length) badDrills.push(measure + ' (no drills)');
 });
-check('every drill says what it is for and how much of it to do',
-  badDrills.length === 0, badDrills.join(', '));
+check('every item says how much of it to do', vague.length === 0, vague.join(', '));
+check('and every item is linked to something to watch',
+  allItems(plan).every((i) => /^https?:\/\//.test(i.url || '')));
 
-// ---------- every session the planner offers gets a finish ----------
+// ---------- the stars can actually light ----------
+const emitted = new Set([...src.matchAll(/name: '([A-Z][^']*)'/g)].map((m) => m[1]));
+const tagged = new Set();
+[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_SPECIFIC)].forEach((group) => {
+  (group.items || []).forEach((d) => (d.measures || []).forEach((m) => tagged.add(m)));
+});
+const unknown = [...tagged].filter((m) => !emitted.has(m));
+check('every measure tagged on an item is one the grader emits',
+  unknown.length === 0, unknown.join(', '));
+// The reverse matters too: a measure nothing is tagged with can be scored 1/5
+// and never star anything, so the athlete is told to fix it and shown nowhere.
+const scoreable = ['Foot Strike vs Hips', 'Ankle at Touchdown', 'Support Stiffness',
+  'Hip Height', 'Torso-to-Thigh at Peak Lift', 'Thigh Separation (scissor)',
+  'Heel Recovery (knee fold)', 'Passing Position', 'Drive Position',
+  'Acceleration Posture', 'Upright Posture', 'Front/Back Swing Balance'];
+const unreachable = scoreable.filter((m) => !tagged.has(m));
+check('and every measure an athlete can be weak at stars something',
+  unreachable.length === 0, unreachable.join(', '));
+
+// ---------- every session the planner offers gets a phase IV ----------
 const offered = [...(index.match(/<select id="workoutType">([\s\S]*?)<\/select>/) || ['', ''])[1]
   .matchAll(/<option>([^<]+)<\/option>/g)].map((m) => m[1]);
 check('the workout planner offers session types', offered.length > 5, String(offered.length));
-const unknown = offered.filter((t) => !(t in ctx.WARMUP_PRIMER));
-check('every session type the planner offers has a primer decided for it',
-  unknown.length === 0, unknown.join(', '));
-// Rest Day is deliberately null; everything else should say something.
-const silent = offered.filter((t) => t in ctx.WARMUP_PRIMER && !ctx.WARMUP_PRIMER[t] && t !== 'Rest Day');
-check('and only a rest day finishes with nothing', silent.length === 0, silent.join(', '));
-const mappedSessions = Object.keys(ctx.SESSION_TO_CLIP).filter((t) => !offered.includes(t));
+const missing = offered.filter((t) => !(t in ctx.WARMUP_SPECIFIC));
+check('every session type the planner offers has a phase IV decided for it',
+  missing.length === 0, missing.join(', '));
+// Rest Day and Recovery are deliberately empty; everything else has work.
+const empty = offered.filter((t) => ctx.WARMUP_SPECIFIC[t]
+  && !ctx.WARMUP_SPECIFIC[t].items.length
+  && !['Rest Day', 'Recovery / Mobility'].includes(t));
+check('and only rest and recovery days have nothing session-specific',
+  empty.length === 0, empty.join(', '));
+const ghosts = Object.keys(ctx.SESSION_TO_CLIP).filter((t) => !offered.includes(t));
 check('no clip-type mapping points at a session that does not exist',
-  mappedSessions.length === 0, mappedSessions.join(', '));
+  ghosts.length === 0, ghosts.join(', '));
 
-// ---------- what actually gets drilled ----------
-const scores = (obj) => ({ 'Max Velocity': obj });
-const names = (t) => t.map((x) => x.measure);
+// ---------- what gets starred ----------
+const weak = ctx.buildWarmup(scores({
+  'Heel Recovery (knee fold)': 2, 'Foot Strike vs Hips': 3,
+  'Thigh Separation (scissor)': 4, 'Upright Posture': 5,
+}), MAXV);
+check('a weak measure stars the items that address it', flaggedItems(weak).length > 0,
+  JSON.stringify(flaggedItems(weak)));
+check('B-skips are starred for a weak heel recovery',
+  flaggedItems(weak).includes('B-skips'), JSON.stringify(flaggedItems(weak)));
+check('and the flag names the measure and carries a fix to watch',
+  allItems(weak).filter((i) => i.flag).every((i) =>
+    i.flag.measure && /^https?:\/\//.test(i.flag.fixUrl || '')));
+const strongOnes = allItems(weak).filter((i) => i.flag && i.flag.score > ctx.WARMUP_WEAK_MAX);
+check('nothing scoring above the threshold is starred as a fault',
+  strongOnes.length === 0, JSON.stringify(strongOnes.map((i) => i.name)));
+check('an item covering two faults is starred for the worse one',
+  (allItems(weak).find((i) => i.name === 'Ankling') || {}).flag.measure === 'Foot Strike vs Hips');
 
-const weakest = ctx.warmupTargets(scores({
-  'Heel Recovery (knee fold)': 2,
-  'Foot Strike vs Hips': 3,
-  'Thigh Separation (scissor)': 1,
-  'Upright Posture': 5,
-}), 'Max Velocity (flys/build-ups)');
-check('the worst score is drilled first',
-  names(weakest)[0] === 'Thigh Separation (scissor)', JSON.stringify(names(weakest)));
-check('and only the worst few, so the warm-up stays a warm-up',
-  weakest.length === ctx.WARMUP_MAX_TARGETS, String(weakest.length));
+// THE point of this rewrite: strong scores must not mean an empty page.
+const strong = ctx.buildWarmup(scores({
+  'Heel Recovery (knee fold)': 4, 'Foot Strike vs Hips': 5, 'Upright Posture': 4,
+}), MAXV);
+check('an athlete with no faults still gets the whole warm-up',
+  allItems(strong).length === allItems(weak).length);
+check('and is still told what to sharpen, rather than nothing',
+  Object.keys(strong.flags).length > 0 && flaggedItems(strong).length > 0,
+  JSON.stringify(Object.keys(strong.flags)));
+check('flagged as sharpening, not as a fault', strong.flagKind === 'sharpen', strong.flagKind);
+check('and it is the lowest score that gets sharpened',
+  Object.values(strong.flags).every((f) => f.score === 4),
+  JSON.stringify(Object.entries(strong.flags).map(([m, f]) => `${m}:${f.score}`)));
+check('a real fault is flagged as a fault, not as sharpening', weak.flagKind === 'focus');
 
-const strong = ctx.warmupTargets(scores({
-  'Foot Strike vs Hips': 4, 'Upright Posture': 5, 'Hip Height': 4,
-}), 'Max Velocity (flys/build-ups)');
-check('a score above the threshold is not a weakness and is left alone',
-  strong.length === 0, JSON.stringify(names(strong)));
-
-const borderline = ctx.warmupTargets(scores({ 'Hip Height': ctx.WARMUP_WEAK_MAX }),
-  'Max Velocity (flys/build-ups)');
-check('a score exactly at the threshold still counts', borderline.length === 1);
-
-// A measure with no drills must not occupy one of the two slots.
-const undrillable = ctx.warmupTargets(scores({
-  'Some Measure With No Drills': 1, 'Hip Height': 3,
-}), 'Max Velocity (flys/build-ups)');
-check('a weak measure with no drill does not use up a slot',
-  names(undrillable).length === 1 && names(undrillable)[0] === 'Hip Height',
-  JSON.stringify(names(undrillable)));
+const nothing = ctx.buildWarmup({}, MAXV);
+check('an athlete who has filmed nothing still gets the whole warm-up',
+  allItems(nothing).length === allItems(weak).length);
+check('with nothing starred, because nothing is known',
+  Object.keys(nothing.flags).length === 0 && flaggedItems(nothing).length === 0);
 
 // ---------- which clips are believed ----------
-const mixed = ctx.warmupTargets({
+const mixed = ctx.warmupFlags({
   'Acceleration': { 'Drive Position': 1 },
-  'Max Velocity': { 'Hip Height': 2 },
-}, 'Max Velocity (flys/build-ups)');
-check('the session\'s own clip type is preferred over a worse score elsewhere',
-  names(mixed)[0] === 'Hip Height', JSON.stringify(names(mixed)));
-check('but the other clip type still contributes rather than being thrown away',
-  names(mixed).includes('Drive Position'), JSON.stringify(names(mixed)));
+  'Max Velocity': { 'Drive Position': 4, 'Hip Height': 2 },
+}, MAXV);
+check("the session's own clip type is believed over another's for the same measure",
+  !mixed['Drive Position'], JSON.stringify(Object.keys(mixed)));
+check('but a fault only the other clip type saw is still raised',
+  !!ctx.warmupFlags({ 'Acceleration': { 'Drive Position': 2 } }, MAXV)['Drive Position']);
 
-const onlyOther = ctx.warmupTargets({ 'Acceleration': { 'Drive Position': 2 } },
-  'Max Velocity (flys/build-ups)');
-check('an athlete with only the wrong kind of clip still gets their drill',
-  names(onlyOther).length === 1, JSON.stringify(names(onlyOther)));
-
-// ---------- the whole plan ----------
-const plan = ctx.buildWarmup(scores({ 'Heel Recovery (knee fold)': 2 }),
-  'Max Velocity (flys/build-ups)');
-check('the general work is always there', plan.raise.length > 0 && plan.mobilise.length > 0);
-check('the finish matches the session', /build-up/i.test(plan.primer || ''), plan.primer);
-check('and the drills are linked to something to watch',
-  plan.targets[0].drills.every((d) => /^https?:\/\//.test(d.url || '')));
-
-const rest = ctx.buildWarmup(scores({ 'Heel Recovery (knee fold)': 2 }), 'Rest Day');
+// ---------- days ----------
+const rest = ctx.buildWarmup(scores({ 'Hip Height': 2 }), 'Rest Day');
 check('a rest day prescribes nothing at all',
-  rest.resting && !rest.raise.length && !rest.targets.length && !rest.primer);
-
+  rest.resting && rest.phases.length === 0 && Object.keys(rest.flags).length === 0);
 const noSession = ctx.buildWarmup(scores({ 'Hip Height': 2 }), null);
-check('no session set still gives the general work and the drills',
-  noSession.raise.length > 0 && noSession.targets.length === 1);
-check('but no finish is invented for a session nobody chose', noSession.primer === null);
-
-const nothing = ctx.buildWarmup({}, 'Max Velocity (flys/build-ups)');
-check('an athlete with no clips gets a warm-up anyway',
-  nothing.raise.length > 0 && nothing.targets.length === 0 && !!nothing.primer);
+check('a day with no session still gets phases I-III',
+  noSession.phases.length === 4 && noSession.phases.slice(0, 3).every((p) => p.items.length));
+check('and phase IV says how to fill it in rather than sitting empty and unexplained',
+  /Workouts/.test(noSession.phases[3].why), noSession.phases[3].why);
+check('the day picker offers every day', /id="warmupDayPick"/.test(src)
+  && /DAYS\.map/.test(src.slice(from)));
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) { fails.forEach((f) => console.log('  FAIL: ' + f)); process.exit(1); }

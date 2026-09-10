@@ -823,39 +823,71 @@ blockquote {
 }
 
 /* ---------- Warm-up ---------- */
-.warmup-heading { margin: 1.4rem 0 0.6rem; }
+.warmup-day { margin-bottom: 1rem; }
+.warmup-day select { width: 100%; }
+.warmup-day .hint { margin-top: 0.45rem; }
 
-.warmup-list {
-  list-style: none;
-  margin: 0.5rem 0 0;
-  padding: 0;
+/* The summary of what to nail. Coloured by which kind of flag it is: a real
+   fault is worth stopping at, a "lowest of a good set" is not. */
+.warmup-summary { border-left: 3px solid var(--border-strong); }
+.warmup-summary.is-focus { border-left-color: #f5a623; }
+.warmup-summary.is-sharpen { border-left-color: #8bc34a; }
+
+.warmup-flags { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.warmup-flags li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0;
 }
-.warmup-list li {
-  padding: 0.55rem 0;
-  border-top: 1px solid var(--border);
+.warmup-flags li a { color: var(--text); font-weight: 600; font-size: 0.92rem; }
+
+.warmup-phase h3 { display: flex; align-items: baseline; gap: 0.55rem; }
+/* The numeral is the thing you scan for when you are half way through a
+   warm-up and looking for your place. */
+.warmup-numeral {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  padding: 0.1rem 0.4rem;
+  letter-spacing: 0.04em;
 }
+
+.warmup-list { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.warmup-list li { padding: 0.55rem 0; border-top: 1px solid var(--border); }
 .warmup-list li:first-child { border-top: 0; }
-/* The drill name is the line you scan for; the prescription sits under it so
-   a list of six reads as six things and not as a paragraph. */
-.warmup-list li > a,
-.warmup-list li > b {
+.warmup-list li > a {
   display: block;
   font-weight: 600;
   font-size: 0.92rem;
   color: var(--text);
+  text-decoration: none;
 }
-.warmup-list li > a { color: var(--accent); text-decoration: none; }
 .warmup-list li > a:hover { text-decoration: underline; }
-.warmup-list li span {
+.warmup-list li > span {
   display: block;
   margin-top: 0.15rem;
   font-size: 0.8rem;
   color: var(--muted);
 }
 
-/* A weak point earns a coloured edge, the same colour the score has
-   everywhere else in the app, so the worst one is findable at a glance. */
-.warmup-target { border-left: 3px solid var(--border-strong); }
+/* A flagged item is the same drill everyone does, marked. Deliberately not a
+   different drill: the warm-up does not change because of a score. */
+.warmup-list li.is-flagged {
+  border-left: 2px solid #f5a623;
+  padding-left: 0.6rem;
+  margin-left: -0.6rem;
+}
+.warmup-list li .warmup-flag {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.76rem;
+  color: #f5a623;
+}
+.warmup-list li .warmup-flag a { color: inherit; }
 
 .warmup-caveat { margin-top: 1.5rem; opacity: 0.75; }
 

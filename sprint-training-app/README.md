@@ -93,20 +93,32 @@ removes everything via the `delete-account` function.
 reads the constants out of `app.js` to check they still agree — a policy that
 misdescribes the app is worse than no policy.
 
-### The warm-up is built from the scores
+### The warm-up is four phases, with your weak points starred
 
-The app knows an athlete's latest score for every measure, which is exactly
-what a targeted warm-up needs. `buildWarmup()` takes the two weakest measures
-scoring 3/5 or below and prescribes the standard drills for each, then finishes
-with whatever suits today's session — accelerations before a block day,
-build-ups before a fly day, nothing at all on a rest day.
+Every session gets the same warm-up: **I Mobility, II Movement, III
+Activation, IV Workout Specific**. Phases I–III never change. Phase IV is
+keyed to the session set for that day in Workouts — accelerations and wall
+drives before a block day, wickets and build-ups before a fly day, nothing at
+all on a rest day. A day picker moves between the seven days, so tomorrow's
+warm-up can be read the night before.
+
+The scores do not change the warm-up. Every item is tagged with the measures
+it addresses, and the ones addressing a measure the athlete scored 3/5 or
+below are starred, with a link to something explaining how to fix it.
+
+The first version of this built the whole tab out of weak points and showed
+almost nothing to an athlete who had none — the one furthest along got the
+least. So when nothing is scoring badly it stars the lowest score instead and
+calls it sharpening rather than a fault, and `warmup_test.js` asserts directly
+that it never comes back empty.
 
 Rule-based on purpose. The drills for a weak heel recovery are the same drills
 every time, so asking a model would spend the athlete's daily quota to
-re-derive a constant and give a different answer on Tuesday than on Monday.
-This runs offline, costs nothing, and `tests/warmup_test.js` can check it —
-including that every drill is keyed to a measure the grader actually emits,
-since a mistyped key is a drill that silently can never appear.
+re-derive a constant and answer differently on Tuesday than on Monday. This
+runs offline and can be tested — including that every measure tagged on an
+item is one the grader emits (a star that can never light), and that every
+measure an athlete can be weak at stars something (a fault with nowhere to fix
+it).
 
 ## The rest of the app
 
@@ -114,7 +126,7 @@ since a mistyped key is a drill that silently can never appear.
 - **Workouts** — a session type per day of the week, with the lifts that go with it, and somewhere to log what you actually ran and lifted.
 - **Reference** — sprint-complementary lifts and plyos with how-to videos.
 - **Times** — times per distance with a trend, a goal broken into small goals, and a board of the marks you're chasing.
-- **Warm-up** — the general work, then drills aimed at whatever your clips scored worst, then a finish matched to today's session.
+- **Warm-up** — four phases for any day of the week, with the parts that fix your weak points starred.
 
 ## Running it locally
 
