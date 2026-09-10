@@ -10,7 +10,7 @@
        copy, which is the one thing that has to disappear when you read it.
        JetBrains Mono for anything that is a measurement. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=0b61372" />
+  <link rel="stylesheet" href="styles.css?v=365a528" />
 </head>
 <body>
   <!-- AUTH GATE -->
@@ -169,6 +169,86 @@
           <input type="checkbox" id="aiAssist" />
           <span>Also get AI coach notes <span class="hint">— uses your daily quota</span></span>
         </label>
+
+        <details class="filming-guide">
+          <summary>How to film it</summary>
+          <div class="guide-body">
+
+            <div class="guide-item">
+              <svg viewBox="0 0 120 70" class="guide-svg" aria-hidden="true">
+                <defs>
+                  <marker id="gArrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                    <path d="M0,0 L5,2.5 L0,5 Z" class="g-run-head" />
+                  </marker>
+                </defs>
+                <!-- Left: square to the lane. Right: down the lane from the end. -->
+                <rect x="6" y="10" width="50" height="50" rx="4" class="g-frame ok" />
+                <line x1="11" y1="21" x2="51" y2="21" class="g-lane" />
+                <line x1="11" y1="35" x2="51" y2="35" class="g-lane" />
+                <path d="M17,28 L44,28" class="g-run" marker-end="url(#gArrow)" />
+                <circle cx="31" cy="53" r="4" class="g-cam ok" />
+                <path d="M31,49 L31,38" class="g-sight ok" />
+
+                <rect x="64" y="10" width="50" height="50" rx="4" class="g-frame bad" />
+                <line x1="69" y1="21" x2="109" y2="21" class="g-lane" />
+                <line x1="69" y1="35" x2="109" y2="35" class="g-lane" />
+                <path d="M75,28 L102,28" class="g-run" marker-end="url(#gArrow)" />
+                <circle cx="70" cy="53" r="4" class="g-cam bad" />
+                <path d="M73.5,51 L104,38" class="g-sight bad" />
+              </svg>
+              <div>
+                <b>Stand square to the lane</b>
+                <span>Side-on, level with where you'll be running. Angled from the end and the joint angles read wrong.</span>
+              </div>
+            </div>
+
+            <div class="guide-item">
+              <svg viewBox="0 0 120 70" class="guide-svg" aria-hidden="true">
+                <rect x="6" y="6" width="50" height="58" rx="4" class="g-frame ok" />
+                <g class="g-figure ok" transform="translate(31,20) scale(1.55)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+                <rect x="64" y="6" width="50" height="58" rx="4" class="g-frame bad" />
+                <g class="g-figure bad" transform="translate(89,32) scale(0.55)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+              </svg>
+              <div>
+                <b>Fill the frame with the athlete</b>
+                <span>Closer is better. Too far and there are not enough pixels of you to measure a joint.</span>
+              </div>
+            </div>
+
+            <div class="guide-item">
+              <svg viewBox="0 0 120 70" class="guide-svg" aria-hidden="true">
+                <rect x="6" y="10" width="50" height="50" rx="4" class="g-frame ok" />
+                <g class="g-figure ok" transform="translate(31,20) scale(1.2)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+                <rect x="64" y="10" width="50" height="50" rx="4" class="g-frame bad" />
+                <g class="g-figure bad" transform="translate(78,20) scale(1.2)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+                <g class="g-figure bad" transform="translate(97,22) scale(1.1)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+              </svg>
+              <div>
+                <b>One runner in shot</b>
+                <span>With two people overlapping, the tracking hops between them and the scores are a blend of both.</span>
+              </div>
+            </div>
+
+            <ul class="guide-list">
+              <li class="yes">Pan to keep yourself in frame — <b>three seconds of running</b> beats a long clip you cross in one.</li>
+              <li class="yes">Keep your feet in the picture. Cut off at the bottom edge and touchdown cannot be found.</li>
+              <li class="yes">Film at <b>1080p, not 4K</b>. Fewer pixels means more frames a second, and frames are what get measured.</li>
+              <li class="no">Don't film into the sun or across deep shade — a silhouette has no joints.</li>
+              <li class="no">Don't include the blocks-set and the run in one long clip if you only care about one of them.</li>
+              <li class="no">Don't hand the phone to someone who'll zoom mid-run. Zoom changes your size and splits the tracking.</li>
+            </ul>
+          </div>
+        </details>
 
         <button id="saveDiagnosis" class="btn primary">Analyze</button>
         <div class="analysis-live">
@@ -338,7 +418,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=0b61372"></script>
-  <script src="app.js?v=0b61372"></script>
+  <script src="config.js?v=365a528"></script>
+  <script src="app.js?v=365a528"></script>
 </body>
 </html>
