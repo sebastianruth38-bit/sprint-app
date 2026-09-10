@@ -297,6 +297,28 @@ function scoreColor(score) {
   return { 1: '#e5484d', 2: '#f5a623', 3: '#f5d90a', 4: '#8bc34a', 5: '#2e7d32' }[score] || '#666';
 }
 
+// The athlete's current standing, as { clipType: { measure: score } }.
+//
+// Most recent score wins per (clip type, measure) -- entries arrive
+// newest-first, so the first hit for a key is the latest one. Shared by the
+// profile and the warm-up rather than written twice: the warm-up drills
+// whatever this says is weakest, and two copies of the rule would eventually
+// disagree about what the athlete's weakness even is.
+function latestScores(entries) {
+  const byType = {};
+  (entries || []).forEach((entry) => {
+    if (!entry.clip_type || !entry.analysis) return;
+    (entry.analysis.pinpoints || []).forEach((p) => {
+      if (typeof p.score !== 'number') return;
+      byType[entry.clip_type] = byType[entry.clip_type] || {};
+      if (!(p.name in byType[entry.clip_type])) {
+        byType[entry.clip_type][p.name] = p.score;
+      }
+    });
+  });
+  return byType;
+}
+
 async function renderProfile() {
   const content = document.getElementById('profileContent');
   content.innerHTML = '<p class="hint">Loading…</p>';
@@ -313,19 +335,7 @@ async function renderProfile() {
     return;
   }
 
-  // Most recent score wins per (clip type, pinpoint name) -- data is
-  // already newest-first, so the first hit for a key is the latest one.
-  const byType = {};
-  data.forEach((entry) => {
-    if (!entry.clip_type || !entry.analysis) return;
-    (entry.analysis.pinpoints || []).forEach((p) => {
-      if (typeof p.score !== 'number') return;
-      byType[entry.clip_type] = byType[entry.clip_type] || {};
-      if (!(p.name in byType[entry.clip_type])) {
-        byType[entry.clip_type][p.name] = p.score;
-      }
-    });
-  });
+  const byType = latestScores(data);
 
   const types = Object.keys(byType);
   if (!types.length) {
@@ -413,10 +423,8 @@ async function refreshAllData() {
   renderTimes();
   renderBigGoals();
   renderDiagnosis();
-  renderFavorites();
-  renderMotivationLinks();
   renderChasing();
-  document.getElementById('newQuote').click();
+  renderWarmup();
 }
 
 // =====================================================
@@ -4497,39 +4505,6 @@ async function renderBigGoals() {
   });
 }
 
-// =====================================================
-// MOTIVATION
-// =====================================================
-const QUOTES = [
-  '"I don\'t think limits." — Usain Bolt',
-  '"I hated every minute of training, but I said, don\'t quit. Suffer now and live the rest of your life as a champion." — Muhammad Ali',
-  '"Run when you can, walk if you have to, crawl if you must; just never give up." — Dean Karnazes',
-  '"Speed is a gift, but explosive power is built in the weight room and paid for in practice."',
-  '"The man who says it cannot be done should not interrupt the man doing it." — Chinese Proverb',
-  '"You have to be able to accept failure to get better." — LeBron James',
-  '"Champions keep playing until they get it right." — Billie Jean King',
-  '"It\'s not whether you get knocked down, it\'s whether you get up." — Vince Lombardi',
-  '"The only way to prove that you\'re a good sport is to lose." — Ernie Banks',
-  '"Discipline is doing what needs to be done, even if you don\'t want to do it."',
-  '"Every rep in the weight room is a deposit into your top-end speed."',
-  '"Fast is not born. Fast is built, one session at a time."',
-  '"Your only limit is the one you set in your own mind."',
-];
-
-document.getElementById('newQuote').addEventListener('click', () => {
-  const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
-  document.getElementById('quoteBox').textContent = q;
-});
-
-const MOTIVATION_LINKS = [
-  { title: 'Usain Bolt 100m World Record Race', url: ytSearch('Usain Bolt 100m world record 9.58') },
-  { title: 'Usain Bolt Slow Motion Sprint Mechanics', url: ytSearch('Usain Bolt slow motion sprint mechanics') },
-  { title: "Florence Griffith-Joyner (Flo-Jo) 100m WR", url: ytSearch('Flo Jo 100m world record 10.49') },
-  { title: 'Noah Lyles 200m Races', url: ytSearch('Noah Lyles 200m race highlights') },
-  { title: "Sha'Carri Richardson Highlights", url: ytSearch("Sha'Carri Richardson 100m highlights") },
-  { title: 'Sprint Technique Breakdown (Elite Athletes)', url: ytSearch('elite sprint technique breakdown slow motion') },
-];
-
 // What the athlete is chasing, against what he has actually run.
 //
 // Deliberately NOT a built-in table of world rankings. There is no free,
@@ -4626,53 +4601,317 @@ document.getElementById('addBenchmark').addEventListener('click', async () => {
   renderChasing();
 });
 
-function renderMotivationLinks() {
-  const grid = document.getElementById('motivationLinks');
-  grid.innerHTML = '';
-  MOTIVATION_LINKS.forEach((link) => {
-    const a = document.createElement('a');
-    a.className = 'link-card';
-    a.href = link.url;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.textContent = '▶ ' + link.title;
-    grid.appendChild(a);
+// =====================================================
+// WARM-UP
+// =====================================================
+// A warm-up built from what the app measured, rather than a generic list.
+//
+// Deliberately rule-based, not AI. The drills that address a weak heel
+// recovery are the same drills every time, so asking a model to re-derive
+// them would spend the athlete's daily quota to get a constant back, and give
+// a different answer on Tuesday than it gave on Monday. This runs offline,
+// costs nothing, and can be tested.
+//
+// Nothing here is a diagnosis or a training plan -- the same limits stated in
+// the terms apply. It is the standard drill for the thing the camera saw.
+
+// Everything the warm-up can prescribe, keyed by the measure it addresses.
+// The keys are the pinpoint names buildLocalAnalysis emits, exactly; a key
+// that does not match one is a drill that can never be shown, so warmup_test
+// checks them against the grader.
+const WARMUP_DRILLS = {
+  'Foot Strike vs Hips': {
+    why: 'The foot is landing in front of the hips, so the first thing it does is brake.',
+    drills: [
+      { name: 'Wall drill, single exchange', detail: '3 x 5 each leg. Hands on the wall, body in one line, one leg exchange at a time.' },
+      { name: 'Ankling', detail: '2 x 20m. Tiny steps, foot cycling down and back underneath you.' },
+      { name: 'Dribble series, low to mid', detail: '2 x 20m each height. High turnover, foot striking beneath the hip.' },
+    ],
+  },
+  'Ankle at Touchdown': {
+    why: 'The foot is landing toes-down, so there is no stiff platform to push from.',
+    drills: [
+      { name: 'Pogo hops', detail: '3 x 10 on the spot. Toes pulled up, bounce off the front of the foot.' },
+      { name: 'Ankling', detail: '2 x 20m, toes held up the whole way.' },
+      { name: 'Tibialis raises', detail: '2 x 15. Heels on the ground, pull the toes up. Wakes up what holds the foot cocked.' },
+    ],
+  },
+  'Support Stiffness': {
+    why: 'The leg is giving way under load instead of holding its shape.',
+    drills: [
+      { name: 'Pogo hops', detail: '3 x 10, then 2 x 15m travelling. Ground contact as short as you can make it.' },
+      { name: 'Single-leg hops', detail: '3 x 5 each leg, in place. Minimal ground time, no collapse at the knee.' },
+      { name: 'Stiff-leg bounds', detail: '2 x 20m. Legs long, bouncing off the ground rather than sinking into it.' },
+    ],
+  },
+  'Hip Height': {
+    why: 'The hips are riding lower on some steps than others.',
+    drills: [
+      { name: 'Tall A-march', detail: '2 x 20m. Stand as tall as you can and do not sink through the standing leg.' },
+      { name: 'Mini-hurdle walkovers', detail: '3 x 6 hurdles. Hips stay level as each leg comes over.' },
+      { name: 'Straight-leg bounds', detail: '2 x 20m. Tall, long, no settling between steps.' },
+    ],
+  },
+  'Torso-to-Thigh at Peak Lift': {
+    why: 'The thigh is not coming through far enough at top speed.',
+    drills: [
+      { name: 'A-skips', detail: '3 x 20m. Thigh to parallel, posture tall.' },
+      { name: 'High-knee march', detail: '2 x 20m. Slow and exact — this is a position drill, not a speed one.' },
+      { name: 'Switch drill', detail: '3 x 6 each side. From a split, switch the legs as fast as you can.' },
+    ],
+  },
+  'Thigh Separation (scissor)': {
+    why: 'The legs are not splitting far enough apart at the peak of the stride.',
+    drills: [
+      { name: 'Switch drill', detail: '3 x 6 each side. From a split stance, snap the legs past each other.' },
+      { name: 'A-skips', detail: '3 x 20m, exaggerating the gap between the thighs.' },
+      { name: 'Straight-leg scissors', detail: '2 x 20m. Legs long, scissoring under the hips.' },
+    ],
+  },
+  'Heel Recovery (knee fold)': {
+    why: 'The heel is not folding up under the hip, so the leg swings through long and slow.',
+    drills: [
+      { name: 'B-skips', detail: '3 x 20m. Knee up, heel tight to the backside, then reach and paw.' },
+      { name: 'Heel-to-butt', detail: '2 x 20m. Heel to the glute, not the hamstring.' },
+      { name: 'Single-leg cycling', detail: '2 x 8 each leg. One leg cycles, the other stays quiet.' },
+    ],
+  },
+  'Passing Position': {
+    why: 'The leg is still long as it swings through — it gathers after the moment it would have helped.',
+    drills: [
+      { name: 'Cycle-through drill', detail: '2 x 8 each leg. Knee up first, let the lower leg unfold late.' },
+      { name: 'B-skips', detail: '3 x 20m, thinking about the fold before the reach.' },
+      { name: 'Dribble into acceleration', detail: '3 x 30m. Dribble 10m, then run out of it keeping the same fold.' },
+    ],
+  },
+  'Drive Position': {
+    why: 'The angle out of the start is not doing what it should.',
+    drills: [
+      { name: 'Wall drives', detail: '3 x 5 each leg. Hold the lean, drive one knee, keep the line from ankle to head.' },
+      { name: 'Falling starts', detail: '4 x 15m. Lean until you have to run.' },
+      { name: 'Prone starts', detail: '3 x 20m. Flat on the ground, up and go — forces you to build the angle.' },
+    ],
+  },
+  'Acceleration Posture': {
+    why: 'You are coming upright too early, or staying down too long.',
+    drills: [
+      { name: 'Wall drives', detail: '3 x 5 each leg, holding the lean.' },
+      { name: 'Falling starts', detail: '4 x 15m, letting the body rise on its own rather than standing up.' },
+      { name: 'Resisted marches', detail: '3 x 20m with a sled or a partner, if you have one.' },
+    ],
+  },
+  'Upright Posture': {
+    why: 'The torso is off vertical at top speed, where it should be tall.',
+    drills: [
+      { name: 'Tall marches', detail: '2 x 20m. Head, hips and ankle stacked.' },
+      { name: 'A-skips, posture focus', detail: '3 x 20m. Tall and tight — nothing leaning, nothing collapsing.' },
+      { name: 'Wicket runs', detail: '3 x 6 wickets, if you have hurdles. They force the posture for you.' },
+    ],
+  },
+  'Front/Back Swing Balance': {
+    why: 'The thigh is travelling further behind you than in front — effort going backwards.',
+    drills: [
+      { name: 'Front-side A-drills', detail: '3 x 20m. Punch the knee up; do not push the foot back.' },
+      { name: 'Dribble series', detail: '2 x 20m. Everything happens under and in front of the hip.' },
+      { name: 'Wall drill, single exchange', detail: '3 x 5 each leg. The wall makes backside recovery impossible.' },
+    ],
+  },
+  'Smoothness / Consistency': {
+    why: 'The form held early and came apart late.',
+    drills: [
+      { name: 'Relaxed build-ups', detail: '3 x 60m rising to 90%. Jaw loose, hands loose, shoulders down.' },
+      { name: 'Float-sprint-float', detail: '3 x 60m: 20m build, 20m hard, 20m float without slowing.' },
+    ],
+  },
+};
+
+// The general work that happens whatever the camera saw.
+const WARMUP_RAISE = [
+  { name: 'Easy jog', detail: '5 minutes, conversational.' },
+  { name: 'Side shuffles and carioca', detail: '2 x 20m each.' },
+];
+const WARMUP_MOBILISE = [
+  { name: 'Leg swings', detail: '10 each way, each leg — front to back, then side to side.' },
+  { name: 'Walking lunge with a twist', detail: '10 each leg.' },
+  { name: 'Ankle rocks', detail: '10 each leg. Knee over the toe, heel down.' },
+];
+
+// What the warm-up finishes with, which depends on what the session is.
+// Keyed by the session types the workout planner offers.
+const WARMUP_PRIMER = {
+  'Acceleration (0-30m)': '4 accelerations over 20-30m, building to full by the last one.',
+  'Blocks / Starts': '4 starts, 20m, full effort on the last two.',
+  'Hill Sprints': '3 accelerations on the flat, 20m, before the first hill.',
+  'Max Velocity (flys/build-ups)': '3 build-ups over 50-60m, rising to 95%. Walk back between.',
+  'Speed Endurance (60-150m)': '2 build-ups over 60m, then one 60m at race rhythm.',
+  'Special Endurance (150-300m)': '2 build-ups over 60m, then one 80m at goal pace.',
+  'Race Modeling': 'Full drill series, then 2 starts and one 60m at race rhythm.',
+  'Pre-Meet': 'Full drill series, 2 accelerations, then stop. Leave it in the tank.',
+  'Meet Day': 'Full drill series, 3 accelerations, then keep moving until you are called.',
+  'Tempo (extensive/aerobic)': '2 easy strides over 60m. Nothing near maximum.',
+  'Lift Only': '2 easy strides over 40m — enough to be warm for the bar.',
+  'Recovery / Mobility': 'No primer. Keep everything easy.',
+  'Rest Day': null,
+  // Whatever the athlete wrote in, this cannot know. A general build-up is
+  // right for nearly any sprint session and wrong for none of them.
+  'Custom': '3 build-ups over 60m, rising to 90%.',
+};
+
+// Which clip type's scores speak to which session. A max-velocity warm-up
+// should be built from what the max-velocity clips showed, not from a block
+// start filmed in March.
+const SESSION_TO_CLIP = {
+  'Acceleration (0-30m)': 'Acceleration',
+  'Blocks / Starts': 'Acceleration',
+  'Hill Sprints': 'Acceleration',
+  'Max Velocity (flys/build-ups)': 'Max Velocity',
+  'Speed Endurance (60-150m)': 'Speed Endurance',
+  'Special Endurance (150-300m)': 'Speed Endurance',
+  'Race Modeling': 'Max Velocity',
+  'Pre-Meet': 'Max Velocity',
+  'Meet Day': 'Max Velocity',
+};
+
+// A score at or below this is worth spending warm-up time on. A 4 is fine and
+// a 5 is a strength: drilling those instead is how a warm-up ends up twenty
+// minutes long and aimed at nothing.
+const WARMUP_WEAK_MAX = 3;
+// Two weaknesses, three drills each, is already ten minutes of drilling on top
+// of the general work. More than that and it stops being a warm-up.
+const WARMUP_MAX_TARGETS = 2;
+
+// Picks the weaknesses worth drilling, worst first.
+//
+// `scores` is { clipType: { measureName: score } } -- exactly the shape
+// renderProfile already builds from the saved analyses.
+function warmupTargets(scores, sessionType) {
+  const preferred = SESSION_TO_CLIP[sessionType];
+  // The session's own clip type first. Falling back to every clip is
+  // deliberate: a new athlete has one clip of one kind, and giving them
+  // nothing because it was not the right kind would be worse than giving them
+  // the drill for the fault they actually have.
+  // Rank 0 is the session's own clip type, rank 1 everything else.
+  const pools = [];
+  if (preferred && scores[preferred]) pools.push([scores[preferred], 0]);
+  Object.keys(scores || {}).forEach((k) => { if (k !== preferred) pools.push([scores[k], 1]); });
+
+  const seen = new Map();
+  pools.forEach(([pool, rank]) => {
+    Object.entries(pool || {}).forEach(([measure, score]) => {
+      if (typeof score !== 'number' || score > WARMUP_WEAK_MAX) return;
+      // A measure nothing can be prescribed for must not take a slot from one
+      // that has drills -- the athlete would get a heading and no work.
+      if (!WARMUP_DRILLS[measure]) return;
+      if (!seen.has(measure)) seen.set(measure, { score, rank });
+    });
   });
+
+  // Rank before score, deliberately. A 1/5 Drive Position off a block start
+  // filmed in March is a worse fault than a 2/5 Hip Height, but it is not the
+  // fault to spend a max-velocity warm-up on, and the whole point of reading
+  // the session type is to say so. Score decides within a rank.
+  return [...seen.entries()]
+    .sort((a, b) => (a[1].rank - b[1].rank) || (a[1].score - b[1].score))
+    .slice(0, WARMUP_MAX_TARGETS)
+    .map(([measure, { score }]) => ({
+      measure,
+      score,
+      why: WARMUP_DRILLS[measure].why,
+      drills: WARMUP_DRILLS[measure].drills.map((d) => ({ ...d, url: ytSearch(d.name + ' sprint drill') })),
+    }));
 }
 
-document.getElementById('addFav').addEventListener('click', async () => {
-  const title = document.getElementById('favTitle').value.trim();
-  const url = document.getElementById('favUrl').value.trim();
-  if (!title || !url) return;
-  await supabaseClient.from('favorites').insert({ user_id: currentUser.id, title, url });
-  document.getElementById('favTitle').value = '';
-  document.getElementById('favUrl').value = '';
-  renderFavorites();
-});
+// The whole warm-up for a session.
+function buildWarmup(scores, sessionType) {
+  const resting = sessionType === 'Rest Day';
+  const targets = resting ? [] : warmupTargets(scores || {}, sessionType);
+  return {
+    sessionType: sessionType || null,
+    resting,
+    raise: resting ? [] : WARMUP_RAISE,
+    mobilise: resting ? [] : WARMUP_MOBILISE,
+    targets,
+    // Undefined for a session type with no entry, which is different from a
+    // Rest Day's explicit null; both end up with no primer shown.
+    primer: resting ? null : (WARMUP_PRIMER[sessionType] || null),
+  };
+}
 
-async function renderFavorites() {
-  const { data, error } = await supabaseClient
-    .from('favorites')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('created_at', { ascending: false });
-  if (error) { console.error(error); return; }
+// Today's session decides the primer and which clips' scores to read.
+function todaysDayName() {
+  return DAYS[(new Date().getDay() + 6) % 7];
+}
 
-  const list = document.getElementById('favList');
-  list.innerHTML = '';
-  data.forEach((f) => {
-    const div = document.createElement('div');
-    div.className = 'entry';
-    div.innerHTML = `
-      <div class="entry-top">
-        <a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">▶ ${escapeHtml(f.title)}</a>
-        <button class="delete-btn">Delete</button>
-      </div>
-    `;
-    div.querySelector('.delete-btn').addEventListener('click', async () => {
-      await supabaseClient.from('favorites').delete().eq('id', f.id);
-      renderFavorites();
-    });
-    list.appendChild(div);
-  });
+async function renderWarmup() {
+  const host = document.getElementById('warmupContent');
+  if (!host || !currentUser) return;
+  host.innerHTML = '<p class="hint">Loading…</p>';
+
+  const day = todaysDayName();
+  const [{ data: workouts }, { data: entries }] = await Promise.all([
+    supabaseClient.from('workouts').select('day, type').eq('user_id', currentUser.id).eq('day', day),
+    supabaseClient.from('diagnosis_entries').select('clip_type, analysis, created_at')
+      .eq('user_id', currentUser.id).not('analysis', 'is', null)
+      .order('created_at', { ascending: false }),
+  ]);
+
+  const sessionType = (workouts && workouts[0] && workouts[0].type) || null;
+  const scores = latestScores(entries);
+  const graded = Object.keys(scores).length > 0;
+  const plan = buildWarmup(scores, sessionType);
+  const item = (d) => `
+    <li>
+      ${d.url ? `<a href="${escapeHtml(d.url)}" target="_blank" rel="noopener">${escapeHtml(d.name)}</a>`
+              : `<b>${escapeHtml(d.name)}</b>`}
+      <span>${escapeHtml(d.detail)}</span>
+    </li>`;
+
+  if (plan.resting) {
+    host.innerHTML = `<div class="card"><h3>${escapeHtml(day)} is a rest day</h3>
+      <p class="hint">Nothing to warm up for. Come back tomorrow.</p></div>`;
+    return;
+  }
+
+  const header = sessionType
+    ? `<p class="hint">Built for <b>${escapeHtml(day)}</b> — ${escapeHtml(sessionType)}.</p>`
+    : `<p class="hint">No session set for ${escapeHtml(day)}, so this is the general version.
+       Set one in Workouts and the finish gets tuned to it.</p>`;
+
+  const targeted = plan.targets.length
+    ? plan.targets.map((t) => `
+        <div class="card warmup-target" style="border-left-color:${scoreColor(t.score)}">
+          <div class="entry-top">
+            <h3 style="margin:0">${escapeHtml(t.measure)}</h3>
+            <span class="score-pill" style="border-color:${scoreColor(t.score)}">${t.score}/5</span>
+          </div>
+          <p class="hint">${escapeHtml(t.why)}</p>
+          <ul class="warmup-list">${t.drills.map(item).join('')}</ul>
+        </div>`).join('')
+    // Two different situations that would otherwise get the same sentence:
+    // an athlete with nothing filmed has not been told anything about their
+    // form, and telling them nothing scored badly is nonsense.
+    : graded
+      ? `<div class="card"><h3>Nothing flagged</h3>
+         <p class="hint">Nothing you have filmed scored ${WARMUP_WEAK_MAX}/5 or below, so there is
+         no weak point worth spending the warm-up on. Do the general work and go and train.</p></div>`
+      : `<div class="card"><h3>Nothing measured yet</h3>
+         <p class="hint">Film a sprint on the Form Analysis tab and the middle of this warm-up
+         becomes the drills for whatever it finds. Until then the general work above is the
+         whole warm-up.</p></div>`;
+
+  host.innerHTML = `
+    ${header}
+    <div class="card">
+      <h3>Raise</h3>
+      <ul class="warmup-list">${plan.raise.map(item).join('')}</ul>
+      <h3 style="margin-top:1rem">Mobilise</h3>
+      <ul class="warmup-list">${plan.mobilise.map(item).join('')}</ul>
+    </div>
+    <h3 class="warmup-heading">For your weak points</h3>
+    ${targeted}
+    ${plan.primer ? `<div class="card">
+      <h3>Finish with</h3>
+      <p>${escapeHtml(plan.primer)}</p>
+    </div>` : ''}
+  `;
 }

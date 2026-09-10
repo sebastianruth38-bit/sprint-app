@@ -10,7 +10,7 @@
        copy, which is the one thing that has to disappear when you read it.
        JetBrains Mono for anything that is a measurement. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=81f29ee" />
+  <link rel="stylesheet" href="styles.css?v=69043d8" />
 </head>
 <body>
   <!-- AUTH GATE -->
@@ -355,27 +355,6 @@
       </div>
       <div id="timesList" class="entry-list"></div>
 
-      <h3>Goals</h3>
-      <div class="card">
-        <h3>Big Goal (the mountain)</h3>
-        <div class="form-grid">
-          <input type="text" id="bigGoalText" placeholder="e.g. Run 100m in 10.9" />
-        </div>
-        <button id="addBigGoal" class="btn primary">Add Big Goal</button>
-      </div>
-      <div id="bigGoalsList" class="entry-list"></div>
-    </section>
-
-    <!-- MOTIVATION -->
-    <section class="tab-panel" id="panel-motivation">
-      <h2>Motivation</h2>
-
-      <div class="card">
-        <h3>Quote of the moment</h3>
-        <blockquote id="quoteBox">Click for a quote.</blockquote>
-        <button id="newQuote" class="btn">New Quote</button>
-      </div>
-
       <div class="card">
         <h3>What you're chasing</h3>
         <p class="hint">Your best against the marks that matter to you. Add a record, a qualifying standard, or the person you're trying to beat.</p>
@@ -388,20 +367,27 @@
         <button id="addBenchmark" class="btn primary">Add a mark</button>
       </div>
 
+      <h3>Goals</h3>
       <div class="card">
-        <h3>Watch fast people run</h3>
-        <div id="motivationLinks" class="link-grid"></div>
-      </div>
-
-      <div class="card">
-        <h3>Save your own favorite</h3>
+        <h3>Big Goal (the mountain)</h3>
         <div class="form-grid">
-          <input type="text" id="favTitle" placeholder="Title" />
-          <input type="text" id="favUrl" placeholder="YouTube/video link" />
+          <input type="text" id="bigGoalText" placeholder="e.g. Run 100m in 10.9" />
         </div>
-        <button id="addFav" class="btn primary">Save</button>
-        <div id="favList" class="entry-list"></div>
+        <button id="addBigGoal" class="btn primary">Add Big Goal</button>
       </div>
+      <div id="bigGoalsList" class="entry-list"></div>
+    </section>
+
+    <!-- MOTIVATION -->
+    <!-- WARM-UP -->
+    <section class="tab-panel" id="panel-warmup">
+      <h2>Warm-up</h2>
+      <p class="hint">Built from what your clips actually showed. The general work never
+      changes; the drills in the middle are aimed at whatever scored worst.</p>
+      <div id="warmupContent"></div>
+      <p class="hint warmup-caveat">These are the standard drills for what the camera saw —
+      not a coaching plan, and not medical advice. If something hurts, stop and talk to
+      someone in person.</p>
     </section>
   </main>
 
@@ -413,12 +399,12 @@
       <span class="tab-label">Form Analysis</span>
     </button>
     <button class="tab-btn" data-tab="times"><span class="tab-icon">⏱️</span><span class="tab-label">Times</span></button>
-    <button class="tab-btn" data-tab="motivation"><span class="tab-icon">🔥</span><span class="tab-label">Hype</span></button>
+    <button class="tab-btn" data-tab="warmup"><span class="tab-icon">🔥</span><span class="tab-label">Warm-up</span></button>
   </nav>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=81f29ee"></script>
-  <script src="app.js?v=81f29ee"></script>
+  <script src="config.js?v=69043d8"></script>
+  <script src="app.js?v=69043d8"></script>
 </body>
 </html>

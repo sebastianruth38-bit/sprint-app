@@ -822,25 +822,42 @@ blockquote {
   padding: 0.25rem 0 0.25rem 1rem;
 }
 
-.link-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.6rem;
+/* ---------- Warm-up ---------- */
+.warmup-heading { margin: 1.4rem 0 0.6rem; }
+
+.warmup-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+.warmup-list li {
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border);
+}
+.warmup-list li:first-child { border-top: 0; }
+/* The drill name is the line you scan for; the prescription sits under it so
+   a list of six reads as six things and not as a paragraph. */
+.warmup-list li > a,
+.warmup-list li > b {
+  display: block;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.warmup-list li > a { color: var(--accent); text-decoration: none; }
+.warmup-list li > a:hover { text-decoration: underline; }
+.warmup-list li span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
-.link-card {
-  display: block;
-  background: var(--surface-2);
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  padding: 0.85rem 1rem;
-  text-decoration: none;
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
-}
-.link-card:hover { background: var(--surface-3); border-color: var(--border-strong); }
+/* A weak point earns a coloured edge, the same colour the score has
+   everywhere else in the app, so the worst one is findable at a glance. */
+.warmup-target { border-left: 3px solid var(--border-strong); }
+
+.warmup-caveat { margin-top: 1.5rem; opacity: 0.75; }
 
 /* ---------- Mobile: bigger targets, no auto-zoom ---------- */
 @media (max-width: 640px) {
@@ -854,8 +871,7 @@ blockquote {
   h2 { font-size: 1.45rem; }
 
   .form-grid,
-  .week-board,
-  .link-grid {
+  .week-board {
     grid-template-columns: 1fr;
   }
 
