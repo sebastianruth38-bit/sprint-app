@@ -126,6 +126,12 @@
         <label class="hint season-label">Events you normally compete in</label>
         <input type="text" id="primaryEvents" placeholder="e.g. 100m, 200m" />
 
+        <p class="avail-label">🏋️ Weight room</p>
+        <div class="gym-toggle">
+          <button type="button" id="hasGymBtn" class="day-chip" aria-pressed="true">I have a gym</button>
+          <p class="hint" id="hasGymNote"></p>
+        </div>
+
         <p class="avail-label">🎒 Equipment available</p>
         <div class="day-picker" id="equipmentPicker" style="grid-template-columns:repeat(3,1fr)"></div>
 

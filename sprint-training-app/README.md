@@ -126,6 +126,23 @@ item is one the grader emits (a star that can never light), and that every
 measure an athlete can be weak at stars something (a fault with nowhere to fix
 it).
 
+### No gym, no problem
+
+Settings → Training Setup has a **weight room** toggle. Turn it off and the
+week's lifts are written as bodyweight work instead of barbell work — jumps in
+place of cleans, push-ups and rows off a bar or table in place of benching,
+single-leg squats in place of loaded ones.
+
+The substitutions keep the quality each day existed for rather than just
+removing the load: the acceleration day is about producing force fast, so
+cleans become jumps rather than becoming squats for reps, and `gym_test.js`
+asserts that a bodyweight accel day still contains jumping.
+
+It is its own column defaulting to `true`, not an entry in the `equipment`
+set, because in that set absent means "does not have it" — a Gym chip would
+have moved every existing athlete to bodyweight the moment it shipped without
+anyone touching a setting.
+
 ## The rest of the app
 
 - **Form Analysis** — upload, grade, and a history of past clips with score trends.
@@ -155,7 +172,7 @@ is public by design; Row Level Security is what protects the data, not the key.
 ./tests/run.sh --clips   # also the ones that need tests/clips/
 ```
 
-27 suites. The pure-logic ones run the grader's maths against recorded pose
+28 suites. The pure-logic ones run the grader's maths against recorded pose
 data; the rest drive the real page in headless Chromium with the network
 stubbed. `tests/setup.sh` builds the fixture copy of the app — **it runs
 automatically from `run.sh`, but if you test by hand after editing `app.js`,

@@ -87,6 +87,7 @@ create table if not exists public.diagnosis_entries (
 );
 alter table public.diagnosis_entries add column if not exists thumb text;
 alter table public.diagnosis_entries add column if not exists key_frames jsonb;
+alter table public.athlete_settings add column if not exists has_gym boolean not null default true;
 
 -- ---------- Form analysis criteria (per-athlete custom good/bad cues) ----------
 create table if not exists public.form_criteria (
@@ -184,6 +185,11 @@ create table if not exists public.athlete_settings (
   user_id uuid not null references auth.users(id) on delete cascade unique,
   primary_events jsonb not null default '[]'::jsonb,
   equipment jsonb not null default '[]'::jsonb,
+  -- Whether there is a weight room. Defaults true, and is its own column
+  -- rather than an entry in `equipment` above: in that array absent means
+  -- "does not have it", so a "Gym" chip would have flipped every existing
+  -- athlete to bodyweight the moment it shipped.
+  has_gym boolean not null default true,
   next_meet_date date,
   next_meet_events jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
