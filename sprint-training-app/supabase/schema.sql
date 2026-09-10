@@ -145,6 +145,10 @@ revoke all on function public.consume_analysis_quota(uuid, int) from public, ano
 grant execute on function public.consume_analysis_quota(uuid, int) to service_role;
 
 -- ---------- Motivation favorites ----------
+-- Saved video links from the old Hype tab, which the warm-up replaced on
+-- 10 September 2026. Nothing reads or writes this any more; it is left in
+-- place rather than dropped because a drop is irreversible and an empty table
+-- costs nothing. Remove it if the warm-up sticks.
 create table if not exists public.favorites (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

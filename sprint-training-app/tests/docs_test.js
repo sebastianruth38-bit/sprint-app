@@ -74,14 +74,37 @@ check('the README knows every clip type the app offers', clipTypes.length > 0
 const tabs = [...index.matchAll(/<span class="tab-label">([^<]+)<\/span>/g)].map((m) => m[1]);
 check('the README lists the tabs the app actually has',
   tabs.length > 0 && tabs.every((t) => readme.includes(t)), tabs.join(', '));
-// The chasing board sits in Hype, not Times -- the mistake made once already.
-const hypeStart = index.indexOf('id="panel-motivation"');
-const boardAt = index.indexOf('id="chasingBoard"');
-if (boardAt !== -1) {
-  const inHype = boardAt > hypeStart;
-  const sect = (readme.match(/- \*\*Hype\*\*[^\n]*/) || [''])[0];
-  check('the chasing board is documented under the tab it lives in',
-    inHype === /chasing/i.test(sect), inHype ? 'it is in Hype' : 'it moved out of Hype');
+// Which tab a feature is documented under, derived rather than hard-coded.
+// The first version of this named the panel it expected; when that panel was
+// renamed the lookup returned -1, the comparison stayed true, and the check
+// passed while asserting nothing. So: find the panel the markup actually puts
+// it in, turn that into the tab's own label, and read the README bullet for
+// that label.
+const tabLabel = (panelId) => {
+  const slug = panelId.replace(/^panel-/, '');
+  const btn = index.match(new RegExp(`data-tab="${slug}"[^>]*>([\\s\\S]*?)</button>`));
+  return btn ? (btn[1].match(/class="tab-label">([^<]+)</) || [])[1] : null;
+};
+const panelHolding = (needle) => {
+  const at = index.indexOf(needle);
+  if (at === -1) return null;
+  const before = index.slice(0, at);
+  const ids = [...before.matchAll(/<section class="tab-panel[^"]*" id="([^"]+)"/g)];
+  return ids.length ? ids[ids.length - 1][1] : null;
+};
+const boardPanel = panelHolding('id="chasingBoard"');
+check('the chasing board is in some panel', !!boardPanel, String(boardPanel));
+const boardTab = boardPanel && tabLabel(boardPanel);
+check('and that panel has a tab', !!boardTab, `${boardPanel} -> ${boardTab}`);
+if (boardTab) {
+  const bullet = (readme.match(new RegExp(`- \\*\\*${boardTab}\\*\\*[^\\n]*`)) || [''])[0];
+  check('and the README documents the board under that tab',
+    /chasing/i.test(bullet), `${boardTab}: ${bullet || '(no bullet)'}`);
+  // The reverse: no other tab's bullet may claim it.
+  const wrong = [...readme.matchAll(/- \*\*([^*]+)\*\*([^\n]*)/g)]
+    .filter(([, name, rest]) => name !== boardTab && /chasing/i.test(rest))
+    .map(([, name]) => name);
+  check('and no other tab claims it', wrong.length === 0, wrong.join(', '));
 }
 
 // ---------- every number ----------

@@ -93,13 +93,28 @@ removes everything via the `delete-account` function.
 reads the constants out of `app.js` to check they still agree — a policy that
 misdescribes the app is worse than no policy.
 
+### The warm-up is built from the scores
+
+The app knows an athlete's latest score for every measure, which is exactly
+what a targeted warm-up needs. `buildWarmup()` takes the two weakest measures
+scoring 3/5 or below and prescribes the standard drills for each, then finishes
+with whatever suits today's session — accelerations before a block day,
+build-ups before a fly day, nothing at all on a rest day.
+
+Rule-based on purpose. The drills for a weak heel recovery are the same drills
+every time, so asking a model would spend the athlete's daily quota to
+re-derive a constant and give a different answer on Tuesday than on Monday.
+This runs offline, costs nothing, and `tests/warmup_test.js` can check it —
+including that every drill is keyed to a measure the grader actually emits,
+since a mistyped key is a drill that silently can never appear.
+
 ## The rest of the app
 
 - **Form Analysis** — upload, grade, and a history of past clips with score trends.
 - **Workouts** — a session type per day of the week, with the lifts that go with it, and somewhere to log what you actually ran and lifted.
 - **Reference** — sprint-complementary lifts and plyos with how-to videos.
-- **Times** — times per distance, with a trend, and a goal broken into small goals.
-- **Hype** — quotes, elite race footage, and a board of the marks you're chasing.
+- **Times** — times per distance with a trend, a goal broken into small goals, and a board of the marks you're chasing.
+- **Warm-up** — the general work, then drills aimed at whatever your clips scored worst, then a finish matched to today's session.
 
 ## Running it locally
 
@@ -122,7 +137,7 @@ is public by design; Row Level Security is what protects the data, not the key.
 ./tests/run.sh --clips   # also the ones that need tests/clips/
 ```
 
-26 suites. The pure-logic ones run the grader's maths against recorded pose
+27 suites. The pure-logic ones run the grader's maths against recorded pose
 data; the rest drive the real page in headless Chromium with the network
 stubbed. `tests/setup.sh` builds the fixture copy of the app — **it runs
 automatically from `run.sh`, but if you test by hand after editing `app.js`,
