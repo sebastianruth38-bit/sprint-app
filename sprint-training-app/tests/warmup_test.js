@@ -25,7 +25,7 @@ vm.runInContext(
   'function encodeURIComponent(s){return String(s).replace(/ /g,"%20");}\n'
   + 'function ytSearch(q){return "https://example.test/?q=" + encodeURIComponent(q);}\n'
   + src.slice(from, to)
-  + '\n' + ['WARMUP_PHASES', 'WARMUP_SPECIFIC', 'SESSION_TO_CLIP', 'WARMUP_WEAK_MAX',
+  + '\n' + ['WARMUP_PHASES', 'WARMUP_PLANS', 'SESSION_WARMUP', 'SESSION_TO_CLIP', 'WARMUP_WEAK_MAX',
             'measureScores', 'warmupFlags', 'buildWarmup', 'WARMUP_SESSIONS']
       .map((n) => `globalThis.${n}=${n};`).join(''), ctx);
 
@@ -55,14 +55,14 @@ check('and a fourth for the session', plan.phases.length === 4
   && plan.phases[3].numeral === 'IV' && /Workout Specific/.test(plan.phases[3].name));
 check('every phase says what it is for', plan.phases.every((p) => p.why && p.why.length > 20));
 // The complaint that started this rewrite: a warm-up that is mostly empty.
-check('every phase actually has work in it', plan.phases.every((p) => p.items.length > 0),
+check('every phase of a track session actually has work in it', plan.phases.every((p) => p.items.length > 0),
   JSON.stringify(plan.phases.map((p) => `${p.numeral}:${p.items.length}`)));
 check('and the whole thing is a real warm-up, not a handful of drills',
   allItems(plan).length >= 18, String(allItems(plan).length));
 
 // A drill with no prescription is a word on a screen.
 const vague = [];
-[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_SPECIFIC)].forEach((group) => {
+[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_PLANS)].forEach((group) => {
   (group.items || []).forEach((d) => {
     if (!d.name || !d.detail) vague.push(d.name || '?');
     // A drill needs a countable amount -- "do some skips" is not a
@@ -79,7 +79,7 @@ check('and every item is linked to something to watch',
 // ---------- the stars can actually light ----------
 const emitted = new Set([...src.matchAll(/name: '([A-Z][^']*)'/g)].map((m) => m[1]));
 const tagged = new Set();
-[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_SPECIFIC)].forEach((group) => {
+[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_PLANS)].forEach((group) => {
   (group.items || []).forEach((d) => (d.measures || []).forEach((m) => tagged.add(m)));
 });
 const unknown = [...tagged].filter((m) => !emitted.has(m));
@@ -99,15 +99,57 @@ check('and every measure an athlete can be weak at stars something',
 const offered = [...(index.match(/<select id="workoutType">([\s\S]*?)<\/select>/) || ['', ''])[1]
   .matchAll(/<option>([^<]+)<\/option>/g)].map((m) => m[1]);
 check('the workout planner offers session types', offered.length > 5, String(offered.length));
-const missing = offered.filter((t) => !(t in ctx.WARMUP_SPECIFIC));
-check('every session type the planner offers has a phase IV decided for it',
+const missing = offered.filter((t) => !(t in ctx.SESSION_WARMUP));
+check('every session type the planner offers has a warm-up decided for it',
   missing.length === 0, missing.join(', '));
-// Rest Day and Recovery are deliberately empty; everything else has work.
-const empty = offered.filter((t) => ctx.WARMUP_SPECIFIC[t]
-  && !ctx.WARMUP_SPECIFIC[t].items.length
-  && !['Rest Day', 'Recovery / Mobility'].includes(t));
+check('and every one of those points at a plan that exists',
+  Object.values(ctx.SESSION_WARMUP).every((k) => k in ctx.WARMUP_PLANS),
+  Object.values(ctx.SESSION_WARMUP).filter((k) => !(k in ctx.WARMUP_PLANS)).join(', '));
+// Sessions wanting the same preparation share one plan rather than each
+// carrying a near-copy that drifts out of step with the others.
+check('there are far fewer warm-ups than sessions',
+  Object.keys(ctx.WARMUP_PLANS).length < offered.length,
+  `${Object.keys(ctx.WARMUP_PLANS).length} plans for ${offered.length} sessions`);
+check('special endurance warms up exactly like speed endurance',
+  ctx.SESSION_WARMUP['Special Endurance (150-300m)'] === ctx.SESSION_WARMUP['Speed Endurance (60-150m)']);
+check('blocks and hills warm up like an acceleration day',
+  ctx.SESSION_WARMUP['Blocks / Starts'] === 'accel' && ctx.SESSION_WARMUP['Hill Sprints'] === 'accel');
+check('a meet day warms up like a pre-meet',
+  ctx.SESSION_WARMUP['Meet Day'] === ctx.SESSION_WARMUP['Pre-Meet']);
+// Rest and recovery are deliberately empty; everything else has work.
+const empty = offered.filter((t) => {
+  const plan = ctx.WARMUP_PLANS[ctx.SESSION_WARMUP[t]];
+  return plan && !plan.items.length && !['Rest Day', 'Recovery / Mobility'].includes(t);
+});
 check('and only rest and recovery days have nothing session-specific',
   empty.length === 0, empty.join(', '));
+
+// ---------- a lift day ----------
+// No room to run, so the sprint drills in II and III are not on offer. What
+// replaces them is the part of a lifting session people skip.
+const gym = ctx.buildWarmup({}, 'Lift Only');
+check('a lift day gets mobility and nothing else general',
+  gym.phases.map((p) => p.numeral).join(',') === 'I,IV',
+  gym.phases.map((p) => p.numeral).join(','));
+// Phase IV is the last phase, whichever index that lands on -- a lift day
+// skips II and III, so it is not index 3 there.
+const lastPhase = (pl) => pl.phases[pl.phases.length - 1];
+const gymIV = lastPhase(gym);
+check('phase IV is still the last phase on a lift day', gymIV.numeral === 'IV', gymIV.numeral);
+const ramp = gymIV.items.map((i) => i.name).join(' | ');
+check('and works up to the weight rather than starting at it',
+  /25%/.test(ramp) && /50%/.test(ramp) && /75%/.test(ramp) && /90%/.test(ramp), ramp);
+check('starting from the movement itself',
+  /empty|base/i.test(gymIV.items[0].name), gymIV.items[0].name);
+check('and ending at the working sets',
+  /working sets/i.test(gymIV.items[gymIV.items.length - 1].name));
+const recovery = ctx.buildWarmup({}, 'Recovery / Mobility');
+check('a recovery day is mobility and stops there',
+  recovery.phases.map((p) => p.numeral).join(',') === 'I,IV'
+  && lastPhase(recovery).items.length === 0);
+// A running session must not lose its running drills to the mobility-only path.
+check('a track session still gets all four phases',
+  ctx.buildWarmup({}, MAXV).phases.map((p) => p.numeral).join(',') === 'I,II,III,IV');
 const ghosts = Object.keys(ctx.SESSION_TO_CLIP).filter((t) => !offered.includes(t));
 check('no clip-type mapping points at a session that does not exist',
   ghosts.length === 0, ghosts.join(', '));
@@ -174,10 +216,8 @@ check('and phase IV says how to fill it in rather than sitting empty and unexpla
 // Chosen by workout, not by day: the athlete knows what session they are about
 // to do, and making them find the day it falls on adds a step and nothing else.
 check('the picker chooses a workout', /id="warmupSessionPick"/.test(src));
-check('and offers every session phase IV knows',
-  /const WARMUP_SESSIONS = Object\.keys\(WARMUP_SPECIFIC\)/.test(src));
-check('so nothing can be offered without work behind it',
-  ctx.WARMUP_SESSIONS.every((t) => t in ctx.WARMUP_SPECIFIC));
+check('and offers every session the warm-up table knows',
+  /const WARMUP_SESSIONS = Object\.keys\(SESSION_WARMUP\)/.test(src));
 
 // ---------- nothing needs equipment ----------
 // The athlete warms up on a track with nothing but their own kit bag. A drill
@@ -185,7 +225,7 @@ check('so nothing can be offered without work behind it',
 // with holes in it is worse than a shorter one that is whole.
 const KIT = /\b(bands?|hurdles?|wickets?|sleds?|barbells?|dumbbells?|kettlebells?|blocks|plyo box|medicine ball|bar only)\b/i;
 const needsKit = [];
-[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_SPECIFIC)].forEach((group) => {
+[...ctx.WARMUP_PHASES, ...Object.values(ctx.WARMUP_PLANS)].forEach((group) => {
   (group.items || []).forEach((d) => {
     const text = `${d.name} ${d.detail}`;
     // "no blocks needed" names the kit only to say it is not wanted.
