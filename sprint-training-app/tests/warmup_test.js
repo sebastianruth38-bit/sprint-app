@@ -145,7 +145,12 @@ ctx.WARMUP_PHASES.forEach((p) => (p.items || []).forEach((d) => {
   }
 }));
 check('nothing in the general warm-up is a static hold', held.length === 0, held.join(', '));
-check('phase I says why it is done moving', /static/i.test(ctx.WARMUP_PHASES[0].why));
+// Matched on the claim, not on one word: the copy was tightened and the
+// word "static" went with it while the meaning stayed.
+check('phase I tells the athlete the mobility is done moving',
+  /on the move|moving/i.test(ctx.WARMUP_PHASES[0].why)
+  && /held still|static|nothing held/i.test(ctx.WARMUP_PHASES[0].why),
+  ctx.WARMUP_PHASES[0].why);
 
 // Every warm-up ends with something faster than the drills that preceded it.
 Object.entries(ctx.WARMUP_PLANS).forEach(([key, p]) => {

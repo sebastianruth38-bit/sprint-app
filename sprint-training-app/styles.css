@@ -830,28 +830,42 @@ blockquote {
 .gym-toggle .hint { margin: 0.45rem 0 0; }
 
 /* ---------- Warm-up ---------- */
+/* Violet, taken from the ambient purple already in the background wash. The
+   marking used to be an amber flag with the measure and score written out
+   against every drill that touched it -- three lines of the same sentence in
+   a warning colour, on a screen the athlete reads between reps. */
+:root { --star: #a78bfa; }
+
 .warmup-day { margin-bottom: 1rem; }
 .warmup-day select { width: 100%; }
-.warmup-day .hint { margin-top: 0.45rem; }
 
-/* The summary of what to nail. Coloured by which kind of flag it is: a real
-   fault is worth stopping at, a "lowest of a good set" is not. */
-.warmup-summary { border-left: 3px solid var(--border-strong); }
-.warmup-summary.is-focus { border-left-color: #f5a623; }
-.warmup-summary.is-sharpen { border-left-color: #8bc34a; }
+.warmup-star {
+  color: var(--star);
+  letter-spacing: 0.08em;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
 
-.warmup-flags { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.warmup-summary { border-left: 3px solid var(--star); }
+.warmup-flags { list-style: none; margin: 0.55rem 0 0.7rem; padding: 0; }
 .warmup-flags li {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.4rem 0;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
 }
-.warmup-flags li a { color: var(--text); font-weight: 600; font-size: 0.92rem; }
+.warmup-flags li a {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex: 1;
+  text-decoration: none;
+}
+.warmup-flags li a:hover { text-decoration: underline; }
 
 .warmup-phase h3 { display: flex; align-items: baseline; gap: 0.55rem; }
-/* The numeral is the thing you scan for when you are half way through a
-   warm-up and looking for your place. */
+/* The numeral is what you scan for when you are half way through and looking
+   for your place. */
 .warmup-numeral {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.78rem;
@@ -864,37 +878,25 @@ blockquote {
 }
 
 .warmup-list { list-style: none; margin: 0.75rem 0 0; padding: 0; }
-.warmup-list li { padding: 0.55rem 0; border-top: 1px solid var(--border); }
+.warmup-list li { padding: 0.5rem 0; border-top: 1px solid var(--border); }
 .warmup-list li:first-child { border-top: 0; }
 .warmup-list li > a {
-  display: block;
   font-weight: 600;
   font-size: 0.92rem;
   color: var(--text);
   text-decoration: none;
 }
 .warmup-list li > a:hover { text-decoration: underline; }
-.warmup-list li > span {
+.warmup-list li > a + .warmup-star { margin-left: 0.4rem; }
+/* Targeted by class, not by element. As `li > span` this rule also matched
+   the star sitting next to the drill name and repainted it muted grey --
+   `.warmup-star` is one class and loses to two classes plus an element. */
+.warmup-detail {
   display: block;
-  margin-top: 0.15rem;
-  font-size: 0.8rem;
+  margin-top: 0.1rem;
+  font-size: 0.79rem;
   color: var(--muted);
 }
-
-/* A flagged item is the same drill everyone does, marked. Deliberately not a
-   different drill: the warm-up does not change because of a score. */
-.warmup-list li.is-flagged {
-  border-left: 2px solid #f5a623;
-  padding-left: 0.6rem;
-  margin-left: -0.6rem;
-}
-.warmup-list li .warmup-flag {
-  display: block;
-  margin-top: 0.35rem;
-  font-size: 0.76rem;
-  color: #f5a623;
-}
-.warmup-list li .warmup-flag a { color: inherit; }
 
 .warmup-caveat { margin-top: 1.5rem; opacity: 0.75; }
 

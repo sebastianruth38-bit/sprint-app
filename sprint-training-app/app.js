@@ -4714,7 +4714,7 @@ const WARMUP_PHASES = [
   {
     numeral: 'I',
     name: 'Mobility',
-    why: 'Range on the move, down the track. Nothing held still — a sprint session is not the place for static stretching.',
+    why: 'Range on the move. Nothing held still before a sprint session.',
     items: [
       { name: 'Walking knee hug', detail: '10 each leg. Hug the knee, rise onto the toe of the standing foot.',
         measures: ['Torso-to-Thigh at Peak Lift'] },
@@ -4733,7 +4733,7 @@ const WARMUP_PHASES = [
   {
     numeral: 'II',
     name: 'Movement',
-    why: 'Get warm and move in every plane before anything is fast. Skipping rather than jogging — a jog rehearses the opposite mechanics to the ones the session wants.',
+    why: 'Warm and moving in every plane. Skipping, not jogging — a jog rehearses the wrong mechanics.',
     items: [
       { name: 'Skips', detail: '2 x 50m. Big and relaxed, arms driving.',
         measures: ['Torso-to-Thigh at Peak Lift'] },
@@ -4748,7 +4748,7 @@ const WARMUP_PHASES = [
   {
     numeral: 'III',
     name: 'Activation',
-    why: 'The drill series, in the order the drills build on each other: march, then skip, then run. Walk back between each.',
+    why: 'The drill series, in the order it builds: march, skip, run. Walk back between each.',
     items: [
       { name: 'Glute bridges', detail: '2 x 12. Squeeze at the top, ribs down.',
         measures: ['Hip Height', 'Drive Position'] },
@@ -4774,7 +4774,7 @@ const WARMUP_PHASES = [
 
 const WARMUP_PLANS = {
   accel: {
-    note: 'Build the angle before you need it, then work up to full speed over short pieces.',
+    note: 'Build the angle, then work up to full speed over short pieces.',
     items: [
       { name: 'Wall drives, single exchange', detail: '3 x 5 each leg. Body in one line, hold the lean.',
         measures: ['Drive Position', 'Acceleration Posture'] },
@@ -4786,7 +4786,7 @@ const WARMUP_PLANS = {
     ],
   },
   maxv: {
-    note: 'Everything here is about reaching top speed tall and relaxed, off a rolling start.',
+    note: 'Reach top speed tall and relaxed, off a rolling start.',
     items: [
       { name: 'Tall high-knee run into a stride', detail: '2 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
         measures: ['Upright Posture', 'Hip Height', 'Torso-to-Thigh at Peak Lift'] },
@@ -4797,7 +4797,7 @@ const WARMUP_PLANS = {
     ],
   },
   speedEnd: {
-    note: 'Rhythm rather than raw speed. The reps are long enough that a bad one costs the session.',
+    note: 'Rhythm, not raw speed. The reps are long enough that a bad one costs the session.',
     items: [
       { name: 'Rolling build-ups', detail: '3 x 60m, rising to 90%. Walk back between.',
         measures: ['Smoothness / Consistency'] },
@@ -4806,13 +4806,13 @@ const WARMUP_PLANS = {
     ],
   },
   tempo: {
-    note: 'Nothing here goes near maximum. Warm, loose, and off you go.',
+    note: 'Nothing near maximum. Warm, loose, go.',
     items: [
       { name: 'Easy strides', detail: '3 x 60m at 70%, walking back.', measures: [] },
     ],
   },
   preMeet: {
-    note: 'Sharpen, do not train. Time it so the last start is about five minutes before you are called.',
+    note: 'Sharpen, do not train. Last start about five minutes before you are called.',
     items: [
       { name: 'Change into spikes', cue: true,
         detail: 'Do the strides and the starts in what you are racing in, not in trainers.', measures: [] },
@@ -4825,7 +4825,7 @@ const WARMUP_PLANS = {
     ],
   },
   gym: {
-    note: 'No room to run, so phase I is the movement prep. Then work up to the weight rather than starting at it.',
+    note: 'No room to run, so phase I is the prep. Then work up to the weight.',
     mobilityOnly: true,
     items: [
       { name: 'Base exercise, empty', detail: '1 x 5. The bar or the movement itself, no load.', measures: [] },
@@ -4915,6 +4915,11 @@ function warmupFlags(scores, sessionType) {
     out[measure] = {
       score,
       kind,
+      // One star to three, worst first. A 1/5 is the thing to fix today; a
+      // 3/5 is worth a thought. The count is the whole message -- it saves
+      // repeating the measure and the score against every drill that touches
+      // it, which is what made the old marking noisy.
+      stars: kind === 'sharpen' ? 1 : Math.max(1, WARMUP_WEAK_MAX + 1 - score),
       fixUrl: ytSearch('how to fix ' + measure + ' sprint technique'),
     };
   });
@@ -5017,31 +5022,34 @@ async function renderWarmup() {
       </select>
     </div>`;
 
-  const flagged = Object.entries(plan.flags);
+  const flagged = Object.entries(plan.flags).sort((a, b) => a[1].score - b[1].score);
+  const stars = (n) => '★'.repeat(n);
+  // The detail lives here, once, instead of against every drill that happens
+  // to address the same measure. Below, a drill just carries the stars.
   const summary = flagged.length
-    ? `<div class="card warmup-summary ${plan.flagKind === 'focus' ? 'is-focus' : 'is-sharpen'}">
-        <h3>${plan.flagKind === 'focus' ? 'Nail these today' : 'Sharpen these today'}</h3>
-        <p class="hint">${plan.flagKind === 'focus'
-          ? 'Scored ' + WARMUP_WEAK_MAX + '/5 or below on your clips. Anything below marked ★ is where you fix them.'
-          : 'Nothing is scoring badly, so these are just your lowest. Marked ★ below.'}</p>
+    ? `<div class="card warmup-summary">
+        <h3>${plan.flagKind === 'focus' ? 'Focus today' : 'Sharpen today'}</h3>
         <ul class="warmup-flags">
-          ${flagged.sort((a, b) => a[1].score - b[1].score).map(([measure, f]) => `
+          ${flagged.map(([measure, f]) => `
             <li>
-              <span class="score-pill" style="border-color:${scoreColor(f.score)}">${f.score}/5</span>
+              <span class="warmup-star">${stars(f.stars)}</span>
               <a href="${escapeHtml(f.fixUrl)}" target="_blank" rel="noopener">${escapeHtml(measure)}</a>
+              <span class="score-pill" style="border-color:${scoreColor(f.score)}">${f.score}/5</span>
             </li>`).join('')}
         </ul>
+        <p class="hint">Starred drills below fix these — more stars, more it matters.</p>
       </div>`
-    : `<div class="card"><h3>Nothing measured yet</h3>
-        <p class="hint">Film a sprint on the Form Analysis tab and the drills that fix
-        whatever it finds get starred in here.</p></div>`;
+    : `<div class="card">
+        <h3>Nothing measured yet</h3>
+        <p class="hint">Film a sprint on Form Analysis and the drills that fix what it
+        finds get starred here.</p></div>`;
 
   const item = (d) => `
-    <li class="${d.flag ? 'is-flagged' : ''}">
-      <a href="${escapeHtml(d.url)}" target="_blank" rel="noopener">${escapeHtml(d.name)}</a>
-      <span>${escapeHtml(d.detail)}</span>
-      ${d.flag ? `<span class="warmup-flag">★ ${escapeHtml(d.flag.measure)} — ${d.flag.score}/5.
-        <a href="${escapeHtml(d.flag.fixUrl)}" target="_blank" rel="noopener">How to fix it</a></span>` : ''}
+    <li>
+      <a href="${escapeHtml(d.url)}" target="_blank" rel="noopener">${escapeHtml(d.name)}</a>${
+        d.flag ? `<span class="warmup-star" title="${escapeHtml(d.flag.measure)} — ${d.flag.score}/5">${
+          stars(d.flag.stars)}</span>` : ''}
+      <span class="warmup-detail">${escapeHtml(d.detail)}</span>
     </li>`;
 
   host.innerHTML = picker + summary + plan.phases.map((p) => `
