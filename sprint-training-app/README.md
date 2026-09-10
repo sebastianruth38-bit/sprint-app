@@ -97,11 +97,20 @@ misdescribes the app is worse than no policy.
 
 Every session gets the same warm-up: **I Mobility, II Movement, III
 Activation, IV Workout Specific**. Phases I–III never change. Phase IV is
-the session the athlete picks. There are six of them rather than one per
-session type, because sessions wanting the same preparation share one instead
-of each carrying a near-copy that drifts: special endurance warms up exactly
-like speed endurance, blocks and hills like an acceleration day, a meet day
-like a pre-meet.
+the session the athlete picks. There are six, one per session actually on the
+schedule — acceleration, max velocity, speed endurance (which special
+endurance shares), tempo, pre-meet and a lift day. A warm-up written for a
+session nobody runs is one nobody notices going stale, so there are none.
+
+Phases I–III follow how sprint programmes actually run a warm-up rather than a
+general fitness template, which cost two things in the first version. There
+are no static holds — pre-session mobility is done walking down the track,
+because the point is range under control, not range at rest. And the drill
+series runs **march → skip → run**: the A-march sets the position, the A-skip
+adds rhythm and arms, the A-run puts it at speed. Having A-skips with no
+A-march in front of them skipped the step that makes the skip mean anything.
+`warmup_test.js` asserts both — the order, and that nothing in the general
+warm-up is a timed static hold.
 
 A lift day is the exception to the four phases. There is no room to run
 indoors, so it takes phase I and skips the running drills in II and III;

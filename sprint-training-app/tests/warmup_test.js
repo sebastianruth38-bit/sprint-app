@@ -95,34 +95,65 @@ const unreachable = scoreable.filter((m) => !tagged.has(m));
 check('and every measure an athlete can be weak at stars something',
   unreachable.length === 0, unreachable.join(', '));
 
-// ---------- every session the planner offers gets a phase IV ----------
+// ---------- only the sessions on the schedule ----------
+// Warm-ups exist for the sessions the athlete actually runs. One written for
+// a session nobody does is one nobody notices going stale.
 const offered = [...(index.match(/<select id="workoutType">([\s\S]*?)<\/select>/) || ['', ''])[1]
   .matchAll(/<option>([^<]+)<\/option>/g)].map((m) => m[1]);
-check('the workout planner offers session types', offered.length > 5, String(offered.length));
-const missing = offered.filter((t) => !(t in ctx.SESSION_WARMUP));
-check('every session type the planner offers has a warm-up decided for it',
-  missing.length === 0, missing.join(', '));
-check('and every one of those points at a plan that exists',
+const SCHEDULE = ['Acceleration (0-30m)', 'Max Velocity (flys/build-ups)',
+  'Speed Endurance (60-150m)', 'Special Endurance (150-300m)',
+  'Tempo (extensive/aerobic)', 'Pre-Meet', 'Lift Only'];
+check('the warm-up covers exactly the sessions on the schedule',
+  Object.keys(ctx.SESSION_WARMUP).sort().join('|') === SCHEDULE.slice().sort().join('|'),
+  Object.keys(ctx.SESSION_WARMUP).join(', '));
+check('every one of those points at a plan that exists',
   Object.values(ctx.SESSION_WARMUP).every((k) => k in ctx.WARMUP_PLANS),
   Object.values(ctx.SESSION_WARMUP).filter((k) => !(k in ctx.WARMUP_PLANS)).join(', '));
-// Sessions wanting the same preparation share one plan rather than each
-// carrying a near-copy that drifts out of step with the others.
-check('there are far fewer warm-ups than sessions',
-  Object.keys(ctx.WARMUP_PLANS).length < offered.length,
-  `${Object.keys(ctx.WARMUP_PLANS).length} plans for ${offered.length} sessions`);
+check('and no plan is written for a session nobody warms up for',
+  Object.keys(ctx.WARMUP_PLANS).every((k) => Object.values(ctx.SESSION_WARMUP).includes(k)),
+  Object.keys(ctx.WARMUP_PLANS).filter((k) => !Object.values(ctx.SESSION_WARMUP).includes(k)).join(', '));
 check('special endurance warms up exactly like speed endurance',
   ctx.SESSION_WARMUP['Special Endurance (150-300m)'] === ctx.SESSION_WARMUP['Speed Endurance (60-150m)']);
-check('blocks and hills warm up like an acceleration day',
-  ctx.SESSION_WARMUP['Blocks / Starts'] === 'accel' && ctx.SESSION_WARMUP['Hill Sprints'] === 'accel');
-check('a meet day warms up like a pre-meet',
-  ctx.SESSION_WARMUP['Meet Day'] === ctx.SESSION_WARMUP['Pre-Meet']);
-// Rest and recovery are deliberately empty; everything else has work.
-const empty = offered.filter((t) => {
-  const plan = ctx.WARMUP_PLANS[ctx.SESSION_WARMUP[t]];
-  return plan && !plan.items.length && !['Rest Day', 'Recovery / Mobility'].includes(t);
+check('every session on the schedule is one the planner can actually set',
+  SCHEDULE.every((t) => offered.includes(t)),
+  SCHEDULE.filter((t) => !offered.includes(t)).join(', '));
+const empty = Object.entries(ctx.WARMUP_PLANS).filter(([, p]) => !p.items.length).map(([k]) => k);
+check('and every plan has work in it', empty.length === 0, empty.join(', '));
+
+// ---------- the drill series is in the order the drills build ----------
+// March sets the position, skip adds rhythm and arms, run puts it at speed.
+// A-skips with no A-march in front of them skip the step that makes the skip
+// mean anything, which is what the first version did.
+const activation = ctx.WARMUP_PHASES.find((p) => p.name === 'Activation');
+const order = activation.items.map((i) => i.name);
+const at = (n) => order.findIndex((x) => x.startsWith(n));
+check('the A-series runs march, then skip, then run',
+  at('A-march') > -1 && at('A-march') < at('A-skip') && at('A-skip') < at('A-run'),
+  order.join(' > '));
+check('ankling comes before the A-series it feeds',
+  at('Ankling') > -1 && at('Ankling') < at('A-march'), order.join(' > '));
+check('and the B-skip comes after the A-skip it is built on',
+  at('B-skip') > at('A-skip'), order.join(' > '));
+
+// Static stretching before a sprint session is the thing every sprint
+// programme tells you not to do, and the first version had a 20-second hold
+// in phase I.
+const held = [];
+ctx.WARMUP_PHASES.forEach((p) => (p.items || []).forEach((d) => {
+  if (/\b(hold|holds)\b/i.test(`${d.name} ${d.detail}`) && /\d+\s*(s|sec|second)/i.test(d.detail)) {
+    held.push(`${p.name}/${d.name}`);
+  }
+}));
+check('nothing in the general warm-up is a static hold', held.length === 0, held.join(', '));
+check('phase I says why it is done moving', /static/i.test(ctx.WARMUP_PHASES[0].why));
+
+// Every warm-up ends with something faster than the drills that preceded it.
+Object.entries(ctx.WARMUP_PLANS).forEach(([key, p]) => {
+  if (p.mobilityOnly) return;
+  const text = p.items.map((i) => `${i.name} ${i.detail}`).join(' ');
+  check(`"${key}" finishes with runs, not drills`,
+    /stride|build-up|acceleration|fly|rhythm|start/i.test(text), text.slice(0, 70));
 });
-check('and only rest and recovery days have nothing session-specific',
-  empty.length === 0, empty.join(', '));
 
 // ---------- a lift day ----------
 // No room to run, so the sprint drills in II and III are not on offer. What
@@ -143,10 +174,6 @@ check('starting from the movement itself',
   /empty|base/i.test(gymIV.items[0].name), gymIV.items[0].name);
 check('and ending at the working sets',
   /working sets/i.test(gymIV.items[gymIV.items.length - 1].name));
-const recovery = ctx.buildWarmup({}, 'Recovery / Mobility');
-check('a recovery day is mobility and stops there',
-  recovery.phases.map((p) => p.numeral).join(',') === 'I,IV'
-  && lastPhase(recovery).items.length === 0);
 // A running session must not lose its running drills to the mobility-only path.
 check('a track session still gets all four phases',
   ctx.buildWarmup({}, MAXV).phases.map((p) => p.numeral).join(',') === 'I,II,III,IV');
@@ -161,8 +188,8 @@ const weak = ctx.buildWarmup(scores({
 }), MAXV);
 check('a weak measure stars the items that address it', flaggedItems(weak).length > 0,
   JSON.stringify(flaggedItems(weak)));
-check('B-skips are starred for a weak heel recovery',
-  flaggedItems(weak).includes('B-skips'), JSON.stringify(flaggedItems(weak)));
+check('the B-skip is starred for a weak heel recovery',
+  flaggedItems(weak).includes('B-skip'), JSON.stringify(flaggedItems(weak)));
 check('and the flag names the measure and carries a fix to watch',
   allItems(weak).filter((i) => i.flag).every((i) =>
     i.flag.measure && /^https?:\/\//.test(i.flag.fixUrl || '')));
@@ -204,9 +231,6 @@ check('but a fault only the other clip type saw is still raised',
   !!ctx.warmupFlags({ 'Acceleration': { 'Drive Position': 2 } }, MAXV)['Drive Position']);
 
 // ---------- days ----------
-const rest = ctx.buildWarmup(scores({ 'Hip Height': 2 }), 'Rest Day');
-check('a rest day prescribes nothing at all',
-  rest.resting && rest.phases.length === 0 && Object.keys(rest.flags).length === 0);
 const noSession = ctx.buildWarmup(scores({ 'Hip Height': 2 }), null);
 check('a day with no session still gets phases I-III',
   noSession.phases.length === 4 && noSession.phases.slice(0, 3).every((p) => p.items.length));

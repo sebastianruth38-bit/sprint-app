@@ -4714,117 +4714,115 @@ const WARMUP_PHASES = [
   {
     numeral: 'I',
     name: 'Mobility',
-    why: 'Open the joints the stride needs before asking them to move fast.',
+    why: 'Range on the move, down the track. Nothing held still — a sprint session is not the place for static stretching.',
     items: [
+      { name: 'Walking knee hug', detail: '10 each leg. Hug the knee, rise onto the toe of the standing foot.',
+        measures: ['Torso-to-Thigh at Peak Lift'] },
+      { name: 'Walking quad pull into a reach', detail: '10 each leg. Heel to backside, then reach tall on the other side.',
+        measures: ['Heel Recovery (knee fold)', 'Upright Posture'] },
+      { name: 'Walking lunge with a rotation', detail: '8 each leg. Turn the chest over the front knee.',
+        measures: ['Drive Position', 'Upright Posture'] },
+      { name: 'Toy soldiers', detail: '10 each leg. Straight leg up to the opposite hand, walking forward.',
+        measures: ['Thigh Separation (scissor)', 'Front/Back Swing Balance'] },
+      { name: 'Walking hamstring scoops', detail: '8 each leg. Step onto the heel, scoop the hands under and up.',
+        measures: ['Foot Strike vs Hips'] },
       { name: 'Ankle rocks', detail: '10 each leg. Knee drives over the toe, heel stays down.',
         measures: ['Ankle at Touchdown', 'Support Stiffness'] },
-      { name: 'Leg swings, front to back', detail: '12 each leg. Tall, relaxed, letting the range open.',
-        measures: ['Thigh Separation (scissor)', 'Front/Back Swing Balance'] },
-      { name: 'Leg swings, side to side', detail: '12 each leg.', measures: [] },
-      { name: "World's greatest stretch", detail: '5 each side. Lunge, elbow to instep, rotate and reach.',
-        measures: ['Drive Position', 'Upright Posture'] },
-      { name: 'Hip flexor stretch, active', detail: '20 seconds each side, squeezing the glute of the back leg.',
-        measures: ['Hip Height', 'Upright Posture', 'Front/Back Swing Balance'] },
-      { name: 'Walking knee hug into a lunge', detail: '8 each leg.', measures: ['Torso-to-Thigh at Peak Lift'] },
     ],
   },
   {
     numeral: 'II',
     name: 'Movement',
-    why: 'Get warm and moving in every direction before anything is fast.',
+    why: 'Get warm and move in every plane before anything is fast.',
     items: [
-      { name: 'Easy jog', detail: '5 minutes, conversational. Two laps is plenty.', measures: [] },
-      { name: 'Backward jog', detail: '2 x 30m.', measures: [] },
+      { name: 'Easy jog', detail: '800m, conversational. Two laps.', measures: [] },
+      { name: 'Backward run', detail: '2 x 30m.', measures: [] },
       { name: 'Side shuffle', detail: '2 x 20m each way, staying low.', measures: [] },
       { name: 'Carioca', detail: '2 x 20m each way.', measures: ['Front/Back Swing Balance'] },
-      { name: 'High-knee walk', detail: '2 x 20m. Slow and tall — a position drill, not a speed one.',
-        measures: ['Torso-to-Thigh at Peak Lift', 'Hip Height'] },
-      { name: 'Butt-kick walk', detail: '2 x 20m. Heel to the glute, knee pointing down.',
-        measures: ['Heel Recovery (knee fold)'] },
+      { name: 'Leg swings, front to back', detail: '12 each leg, holding something for balance.',
+        measures: ['Thigh Separation (scissor)', 'Front/Back Swing Balance'] },
+      { name: 'Leg swings, side to side', detail: '12 each leg.', measures: [] },
     ],
   },
   {
     numeral: 'III',
     name: 'Activation',
-    why: 'Wake up what has to fire, then run the drills that build the positions.',
+    why: 'The drill series, in the order the drills build on each other: march, then skip, then run. Walk back between each.',
     items: [
       { name: 'Glute bridges', detail: '2 x 12. Squeeze at the top, ribs down.',
         measures: ['Hip Height', 'Drive Position'] },
-      { name: 'Single-leg glute bridges', detail: '2 x 8 each leg. Hips level the whole way — do not let one side drop.',
-        measures: ['Hip Height', 'Support Stiffness'] },
       { name: 'Pogo hops', detail: '3 x 10. Toes up, bounce off the front of the foot, short contacts.',
         measures: ['Support Stiffness', 'Ankle at Touchdown'] },
-      { name: 'Ankling', detail: '2 x 20m. Tiny steps, foot cycling down underneath you.',
+      { name: 'Ankling', detail: '2 x 20m. Tiny steps, feet picked straight up under you, toes held up.',
         measures: ['Foot Strike vs Hips', 'Ankle at Touchdown'] },
-      { name: 'A-skips', detail: '3 x 20m. Thigh to parallel, posture tall.',
+      { name: 'A-march', detail: '2 x 20m. Slow and exact. This sets the position everything after it repeats.',
+        measures: ['Torso-to-Thigh at Peak Lift', 'Hip Height'] },
+      { name: 'A-skip', detail: '2 x 20m. The march with rhythm and arms — thigh to parallel, tall.',
         measures: ['Torso-to-Thigh at Peak Lift', 'Thigh Separation (scissor)', 'Upright Posture'] },
-      { name: 'B-skips', detail: '3 x 20m. Knee up, heel tight, then reach and paw back.',
+      { name: 'A-run', detail: '2 x 20m. The same position at speed. This is the one that transfers.',
+        measures: ['Foot Strike vs Hips', 'Upright Posture'] },
+      { name: 'B-skip', detail: '2 x 20m. Knee up, then unfold and paw the ground back underneath you.',
         measures: ['Heel Recovery (knee fold)', 'Passing Position'] },
-      { name: 'Dribble series, low to mid', detail: '2 x 20m each height. High turnover, foot landing under the hip.',
+      { name: 'Straight-leg bounds', detail: '2 x 20m. Legs long, striking down and back.',
+        measures: ['Front/Back Swing Balance', 'Support Stiffness'] },
+      { name: 'Dribbles, low to high', detail: '2 x 15m at each height. Turnover, foot landing under the hip.',
         measures: ['Foot Strike vs Hips', 'Front/Back Swing Balance'] },
-      { name: 'Wall drill, single exchange', detail: '3 x 5 each leg. Body in one line, one exchange at a time.',
-        measures: ['Drive Position', 'Acceleration Posture', 'Front/Back Swing Balance'] },
     ],
   },
 ];
 
-// Phase IV. Everything above is the same on any day; this is the part that
-// knows what the session is.
-// Phase IV. Six warm-ups, not fourteen -- sessions that want the same
-// preparation share one rather than each carrying a near-copy that drifts.
-// Speed endurance and special endurance are the same warm-up by the athlete's
-// own call; blocks and hills are acceleration days; a meet day warms up the
-// way a pre-meet does.
 const WARMUP_PLANS = {
   accel: {
-    note: 'Short and sharp. The whole point is the angle out of the first few steps.',
+    note: 'Build the angle before you need it, then work up to full speed over short pieces.',
     items: [
-      { name: 'Wall drives', detail: '3 x 5 each leg, holding the lean.',
+      { name: 'Wall drives, single exchange', detail: '3 x 5 each leg. Body in one line, hold the lean.',
         measures: ['Drive Position', 'Acceleration Posture'] },
-      { name: 'Falling starts', detail: '4 x 15m. Lean until you have to run.',
+      { name: 'Falling starts', detail: '3 x 15m. Lean until you have to run.',
         measures: ['Drive Position', 'Acceleration Posture'] },
-      { name: 'Three-point starts', detail: '3 x 20m, full effort on the last one. One hand down, no blocks needed.',
+      { name: 'Three-point starts', detail: '3 x 20m, building to full. One hand down, no blocks needed.',
         measures: ['Acceleration Posture'] },
-      { name: 'Accelerations', detail: '3 x 20-30m, building to full by the last one.', measures: [] },
+      { name: 'Accelerations', detail: '2 x 30m at the effort the session starts at.', measures: [] },
     ],
   },
   maxv: {
-    note: 'Everything here is about being tall and relaxed at the top end.',
+    note: 'Everything here is about reaching top speed tall and relaxed, off a rolling start.',
     items: [
-      { name: 'Tall high-knee run into a stride', detail: '3 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
+      { name: 'Tall high-knee run into a stride', detail: '2 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
         measures: ['Upright Posture', 'Hip Height', 'Torso-to-Thigh at Peak Lift'] },
-      { name: 'Build-ups', detail: '3 x 50-60m, rising to 95%. Walk back between.',
+      { name: 'Rolling build-ups', detail: '4 x 60m. Jog 10m then build. Each faster than the last, the final at 95%.',
         measures: ['Smoothness / Consistency'] },
-      { name: 'One fly at pace', detail: '1 x 20m fly off a 20m run-in, to feel the top end before the session.',
+      { name: 'One fly', detail: '1 x 20m fly off a 20m run-in, to feel the top end before the session.',
         measures: [] },
     ],
   },
   speedEnd: {
-    note: 'Rhythm rather than raw speed. The reps are long enough to punish a bad one.',
+    note: 'Rhythm rather than raw speed. The reps are long enough that a bad one costs the session.',
     items: [
-      { name: 'Build-ups', detail: '2 x 60m, rising to 90%.', measures: ['Smoothness / Consistency'] },
-      { name: 'One at race rhythm', detail: '1 x 60m at the pace the session is meant to hold.',
+      { name: 'Rolling build-ups', detail: '3 x 60m, rising to 90%. Walk back between.',
+        measures: ['Smoothness / Consistency'] },
+      { name: 'One at race rhythm', detail: '1 x 80m at the pace the session is meant to hold.',
         measures: ['Smoothness / Consistency'] },
     ],
   },
   tempo: {
-    note: 'Nothing here goes near maximum.',
+    note: 'Nothing here goes near maximum. Warm, loose, and off you go.',
     items: [
-      { name: 'Easy strides', detail: '2 x 60m at 70%.', measures: [] },
+      { name: 'Easy strides', detail: '3 x 60m at 70%, walking back.', measures: [] },
     ],
   },
   preMeet: {
-    note: 'Sharpen, do not train. Finish close to your call-up and keep moving after.',
+    note: 'Sharpen, do not train. Time it so the last start is about five minutes before you are called.',
     items: [
-      { name: 'Accelerations', detail: '3 x 20-30m, last one at race effort.', measures: [] },
+      { name: 'Change into spikes', cue: true,
+        detail: 'Do the strides and the starts in what you are racing in, not in trainers.', measures: [] },
+      { name: 'Stride-throughs', detail: '4 x 50m off a rolling start, each faster than the last, the final at 95%.',
+        measures: ['Smoothness / Consistency'] },
+      { name: 'Practice starts', detail: '2 to 3 over 20m at race effort, finishing about 5 minutes before your race.',
+        measures: ['Drive Position', 'Acceleration Posture'] },
       { name: 'Stay warm', cue: true,
-        detail: 'Keep moving until you are called. Do not sit down in spikes.', measures: [] },
+        detail: 'Walk and jog easily until you are called. Do not sit down in spikes.', measures: [] },
     ],
   },
-  // A lift day happens indoors with no room to run, so the sprint drills in
-  // phases II and III are not on offer -- mobility is. What replaces them is
-  // the part of a lifting session people skip: working up to the weight
-  // instead of starting at it.
   gym: {
     note: 'No room to run, so phase I is the movement prep. Then work up to the weight rather than starting at it.',
     mobilityOnly: true,
@@ -4834,42 +4832,22 @@ const WARMUP_PLANS = {
       { name: '50% of working weight', detail: '1 x 3.', measures: [] },
       { name: '75% of working weight', detail: '1 x 2.', measures: [] },
       { name: '90% of working weight', detail: '1 x 1.', measures: [] },
-      // A cue, not a drill: the count lives in the day's lift prescription
-      // on the Workouts tab, and repeating it here is how the two drift apart.
       { name: 'Working sets', cue: true,
         detail: 'As prescribed for the day. Repeat the ramp for each main lift.', measures: [] },
     ],
   },
-  // A recovery day is the mobility work and nothing after it. It shares the
-  // gym day's "no running drills" shape and none of its loading.
-  recovery: {
-    note: 'Phase I is the session. Keep everything easy and stop there.',
-    mobilityOnly: true,
-    items: [],
-  },
-  rest: { note: null, items: [] },
 };
 
-// Which warm-up each session gets. Every session the planner offers has to
-// appear here or it loses its fourth phase, which warmup_test checks.
 const SESSION_WARMUP = {
   'Acceleration (0-30m)': 'accel',
-  'Blocks / Starts': 'accel',
-  'Hill Sprints': 'accel',
   'Max Velocity (flys/build-ups)': 'maxv',
   'Speed Endurance (60-150m)': 'speedEnd',
   'Special Endurance (150-300m)': 'speedEnd',
-  'Race Modeling': 'speedEnd',
-  'Pre-Meet': 'preMeet',
-  'Meet Day': 'preMeet',
   'Tempo (extensive/aerobic)': 'tempo',
-  'Custom': 'tempo',
+  'Pre-Meet': 'preMeet',
   'Lift Only': 'gym',
-  'Recovery / Mobility': 'recovery',
-  'Rest Day': 'rest',
 };
 
-// The picker offers the sessions, in the planner's own order.
 const WARMUP_SESSIONS = Object.keys(SESSION_WARMUP);
 
 function warmupPlanFor(sessionType) {
@@ -4945,8 +4923,7 @@ function warmupFlags(scores, sessionType) {
 // The whole warm-up for a session, with the flags already attached to the
 // items they belong to.
 function buildWarmup(scores, sessionType) {
-  const resting = sessionType === 'Rest Day';
-  const flags = resting ? {} : warmupFlags(scores, sessionType);
+  const flags = warmupFlags(scores, sessionType);
   const decorate = (item) => {
     // An item can address more than one measure; the worst flagged one wins,
     // so the athlete is pointed at the biggest problem that drill solves.
@@ -4966,10 +4943,10 @@ function buildWarmup(scores, sessionType) {
   const general = specific && specific.mobilityOnly
     ? WARMUP_PHASES.filter((p) => p.numeral === 'I')
     : WARMUP_PHASES;
-  const phases = resting ? [] : general.map((p) => ({
+  const phases = general.map((p) => ({
     numeral: p.numeral, name: p.name, why: p.why, items: p.items.map(decorate),
   }));
-  if (!resting) {
+  {
     phases.push({
       numeral: 'IV',
       name: 'Workout Specific',
@@ -4982,7 +4959,6 @@ function buildWarmup(scores, sessionType) {
 
   return {
     sessionType: sessionType || null,
-    resting,
     phases,
     // Every flag raised, whether or not a drill happened to carry it -- the
     // summary at the top has to be able to say so.
@@ -5066,13 +5042,6 @@ async function renderWarmup() {
       ${d.flag ? `<span class="warmup-flag">★ ${escapeHtml(d.flag.measure)} — ${d.flag.score}/5.
         <a href="${escapeHtml(d.flag.fixUrl)}" target="_blank" rel="noopener">How to fix it</a></span>` : ''}
     </li>`;
-
-  if (plan.resting) {
-    host.innerHTML = picker + `<div class="card"><h3>Rest day</h3>
-      <p class="hint">Nothing to warm up for. Pick a session above if you are training after all.</p></div>`;
-    wireWarmupPicker();
-    return;
-  }
 
   host.innerHTML = picker + summary + plan.phases.map((p) => `
     <div class="card warmup-phase">
