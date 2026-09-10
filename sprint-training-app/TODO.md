@@ -17,14 +17,6 @@ The Google sign-in screen currently reads *"Choose an account to continue to
 Nothing in this repo changes — it is entirely a Google Cloud console setting,
 and it takes effect on the next sign-in.
 
-## Decide on Supabase Pro before 11 Sep
-
-The free plan's cached-egress allowance is spent and the project gets paused
-on the 11th otherwise. Egress per history open is already down from ~310 MB
-to ~150 KB (tap-to-play previews + memoized signed URLs) and stored video from
-310 MB to 120 MB, so the ongoing burn is fixed — this is about the overage
-already run up. Either pay the $25 or get the overage waived by support.
-
 ## Deferred on purpose
 
 - **Add to Home Screen (PWA)** — asked for it to wait.
