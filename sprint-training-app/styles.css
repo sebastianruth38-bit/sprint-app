@@ -1650,3 +1650,81 @@ body::before {
   flex: 0 0 auto;
 }
 .chase-del { flex: 0 0 auto; padding: 0 0.2rem; }
+
+/* ---- How to film it ----
+   Collapsed by default: the athlete who built this does not need it, and the
+   team-mate opening the app for the first time does. Every point comes from a
+   clip this app actually refused, not from general advice. */
+.filming-guide {
+  margin: 0.9rem 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: rgba(124, 139, 255, 0.04);
+  padding: 0.7rem 0.85rem;
+}
+.filming-guide summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--glow);
+}
+.filming-guide summary::-webkit-details-marker { display: none; }
+.filming-guide summary::after { content: ' +'; opacity: 0.7; }
+.filming-guide[open] summary::after { content: ' −'; }
+.guide-body { margin-top: 0.9rem; }
+
+.guide-item {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin-bottom: 0.9rem;
+}
+.guide-svg { width: 104px; flex: 0 0 104px; height: auto; }
+.guide-item b { display: block; font-size: 0.85rem; margin-bottom: 0.15rem; }
+.guide-item span { font-size: 0.76rem; line-height: 1.45; color: var(--muted); }
+
+/* Diagram parts. Green reads as the way to do it, red as the way not to --
+   the same language the score bars already use. */
+.g-lane { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; stroke-dasharray: 3 3; }
+.g-run { stroke: var(--glow); stroke-width: 1.6; fill: none; }
+.g-run-head { fill: var(--glow); }
+.g-cam { fill: none; stroke-width: 1.6; }
+.g-sight { stroke-width: 1.4; stroke-dasharray: 2 2; }
+.g-cam.ok, .g-sight.ok { stroke: #4ade80; }
+.g-cam.bad, .g-sight.bad { stroke: #f87171; }
+.g-frame { fill: none; stroke-width: 1.4; }
+.g-frame.ok { stroke: #4ade80; }
+.g-frame.bad { stroke: #f87171; }
+.g-figure { fill: none; stroke-width: 1.5; stroke-linecap: round; }
+.g-figure.ok { stroke: #4ade80; }
+.g-figure.ok circle { fill: #4ade80; stroke: none; }
+.g-figure.bad { stroke: #f87171; }
+.g-figure.bad circle { fill: #f87171; stroke: none; }
+
+.guide-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+}
+.guide-list li {
+  position: relative;
+  padding-left: 1.4rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.guide-list li b { color: var(--text); font-weight: 600; }
+.guide-list li::before {
+  position: absolute;
+  left: 0;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.guide-list li.yes::before { content: '✓'; color: #4ade80; }
+.guide-list li.no::before { content: '✕'; color: #f87171; }
