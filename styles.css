@@ -822,6 +822,13 @@ blockquote {
   padding: 0.25rem 0 0.25rem 1rem;
 }
 
+/* ---------- Gym toggle ---------- */
+/* A single chip rather than a pair of radio buttons: there are two states and
+   the label says which one you are in, so a second control would only add a
+   way to be in neither. */
+.gym-toggle #hasGymBtn { width: 100%; padding: 0.7rem 1rem; font-size: 0.85rem; }
+.gym-toggle .hint { margin: 0.45rem 0 0; }
+
 /* ---------- Warm-up ---------- */
 .warmup-day { margin-bottom: 1rem; }
 .warmup-day select { width: 100%; }

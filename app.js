@@ -3632,7 +3632,21 @@ function withLoggedValues(planText, log, expandFn) {
 }
 
 // Lifts that don't take an external load -- no weight box is offered for these.
-const BODYWEIGHT_LIFT_KEYWORDS = ['core', 'broad jump', 'hurdle hop', 'pull-up', 'pull up'];
+// Movements with no external load, so the log asks how it went rather than
+// what was on the bar. Every movement the bodyweight plan can prescribe has to
+// be in here or the athlete is asked what weight they used for a push-up --
+// warmup-adjacent nonsense that gym_test checks against buildLiftDetails
+// rather than trusting this list to be kept in step by hand.
+const BODYWEIGHT_LIFT_KEYWORDS = [
+  'core', 'broad jump', 'hurdle hop', 'pull-up', 'pull up',
+  'squat jump', 'tuck jump', 'split squat jump', 'line hop',
+  'push-up', 'push up', 'inverted row', 'tricep dip', 'dips',
+  'prone y-t-w', 'superman', 'glute bridge', 'single-leg squat',
+  // A split squat is loaded in the gym plan and unloaded in the bodyweight
+  // one, and the name alone cannot say which. The bodyweight plan spells it
+  // out, so this matches the spelling rather than the movement.
+  'bodyweight',
+];
 function isBodyweightExercise(item) {
   const name = item.toLowerCase();
   return BODYWEIGHT_LIFT_KEYWORDS.some((kw) => name.includes(kw));
@@ -3895,6 +3909,15 @@ async function getEquipment() {
   return new Set((data && data.equipment) || []);
 }
 
+// Missing row, or a row from before the column existed, means yes -- the
+// same default the column carries, so an athlete who has never opened
+// Training Setup keeps the plan they already had.
+async function getHasGym() {
+  if (!currentUser) return true;
+  const { data } = await supabaseClient.from('athlete_settings').select('has_gym').eq('user_id', currentUser.id).maybeSingle();
+  return !data || data.has_gym !== false;
+}
+
 async function getPrimaryEvents() {
   if (!currentUser) return [];
   const { data } = await supabaseClient.from('athlete_settings').select('primary_events').eq('user_id', currentUser.id).maybeSingle();
@@ -3908,8 +3931,46 @@ async function getPrimaryEvents() {
 // Off/pre-season: 3x per exercise. In-season: 2-3x, lower-fatigue variants
 // (quarter squats instead of full squats, hang power clean instead of hang
 // snatch), plus med ball throws added on the two high-CNS speed days.
-function buildLiftDetails(role, phase) {
+// What to lift on a given day.
+//
+// `hasGym` is a real input rather than an assumption. Without a weight room
+// the barbell plan is not a plan, it is a list of things the athlete cannot
+// do -- and an athlete training out of a park is exactly the one who needs
+// the week written for them.
+//
+// The bodyweight versions are not the barbell ones with the weight removed.
+// Each keeps the QUALITY the day was there for: the accel day stays about
+// producing force fast, so cleans become jumps rather than becoming squats
+// for reps; the tempo days stay about general strength, so the pressing and
+// pulling stay in even though pulling is the awkward one without a bar.
+function buildLiftDetails(role, phase, hasGym = true) {
   const inSeason = phase.seasonPhase === 'in';
+
+  if (!hasGym) {
+    // Rows and dips need something to hang off or push from -- a low bar, a
+    // sturdy table, a bench, a step. Every one of those is findable; a
+    // barbell is not, which is the distinction being drawn here.
+    if (role === 'accel') {
+      return inSeason
+        ? 'Squat Jumps 3x5, Broad Jumps 3x3, Bodyweight Bulgarian Split Squats 2x8, Single-Leg Glute Bridges 2x10, Core 2x'
+        : 'Squat Jumps 4x5, Broad Jumps 3x3, Bodyweight Bulgarian Split Squats 3x8-10, Single-Leg Glute Bridges 3x12, Core 3x';
+    }
+    if (role === 'maxv') {
+      return inSeason
+        ? 'Tuck Jumps 2x5, Line Hops 2x10 each way, Single-Leg Squats 2x6, Split Squat Jumps 2x4, Core 2x'
+        : 'Tuck Jumps 3x5, Line Hops 3x10 each way, Single-Leg Squats 3x6-8, Split Squat Jumps 3x5, Core 3x';
+    }
+    if (role === 'tempo1') {
+      return 'Push-Ups 3x12-15, Inverted Rows 3x8-10, Pike Push-Ups 3x8, Prone Y-T-W 3x10, Core 3x';
+    }
+    if (role === 'tempo2') {
+      return 'Decline Push-Ups 3x10, Inverted Rows 3x8, Tricep Dips 3x10, Superman Holds 3x20s, Core 3x';
+    }
+    if (role === 'competitionLight') {
+      return 'Core 2x, Squat Jumps 2x3, Split Squat Jumps 2x3 — crisp and nowhere near failure';
+    }
+    return null;
+  }
 
   if (role === 'accel') {
     return inSeason
@@ -3935,7 +3996,7 @@ function buildLiftDetails(role, phase) {
   return null;
 }
 
-function buildWeekPlan(phase, equipment, primaryEvents) {
+function buildWeekPlan(phase, equipment, primaryEvents, hasGym = true) {
   const accel = () => pickTemplateText('Acceleration (0-30m)', equipment, phase) || '';
   const maxV = () => pickTemplateText('Max Velocity (flys/build-ups)', equipment, phase) || '';
   const tempo = () => pickTemplateText('Tempo (extensive/aerobic)', equipment, phase) || '';
@@ -3947,7 +4008,7 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
     // end of the week", so Monday gets one light lift; every other day
     // stays lift-free.
     return [
-      { day: 'Monday', type: 'Max Velocity (flys/build-ups)', details: maxV(), liftDetails: buildLiftDetails('competitionLight', phase) },
+      { day: 'Monday', type: 'Max Velocity (flys/build-ups)', details: maxV(), liftDetails: buildLiftDetails('competitionLight', phase, hasGym) },
       { day: 'Tuesday', type: 'Recovery / Mobility', details: 'Rest + light mobility' },
       { day: 'Wednesday', type: 'Race Modeling', details: pickRaceModelingText(primaryEvents), timed: 'Timed' },
       { day: 'Thursday', type: 'Recovery / Mobility', details: 'Rest + light mobility' },
@@ -3959,11 +4020,11 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
 
   if (phase.seasonPhase === 'in') {
     return [
-      { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase) },
+      { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase, hasGym) },
       { day: 'Tuesday', type: 'Speed Endurance (60-150m)', details: speedEnd(), timed: 'Timed' },
       { day: 'Wednesday', type: 'Recovery / Mobility', details: 'Mobility + foam roll' },
-      { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase) },
-      { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: buildLiftDetails('tempo2', phase) },
+      { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase, hasGym) },
+      { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: buildLiftDetails('tempo2', phase, hasGym) },
       { day: 'Saturday', type: 'Rest Day', details: '' },
       { day: 'Sunday', type: 'Rest Day', details: '' },
     ];
@@ -3973,11 +4034,11 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
   // pre-season (within ~2 months of competition) drops the Friday lift
   // so the athlete isn't loading heavy this close to the season starting.
   return [
-    { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase) },
-    { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo(), liftDetails: buildLiftDetails('tempo1', phase) },
+    { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase, hasGym) },
+    { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo(), liftDetails: buildLiftDetails('tempo1', phase, hasGym) },
     { day: 'Wednesday', type: 'Rest Day', details: '' },
-    { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase) },
-    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: phase.seasonPhase === 'pre' ? null : buildLiftDetails('tempo2', phase) },
+    { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase, hasGym) },
+    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: phase.seasonPhase === 'pre' ? null : buildLiftDetails('tempo2', phase, hasGym) },
     { day: 'Saturday', type: 'Rest Day', details: '' },
     { day: 'Sunday', type: 'Rest Day', details: '' },
   ];
@@ -3985,8 +4046,9 @@ function buildWeekPlan(phase, equipment, primaryEvents) {
 
 document.getElementById('generateWeekPlan').addEventListener('click', async () => {
   if (!currentUser) return;
-  const [equipment, primaryEvents, seasonAndMeet, { data: existing }, { data: avail }] = await Promise.all([
+  const [equipment, hasGym, primaryEvents, seasonAndMeet, { data: existing }, { data: avail }] = await Promise.all([
     getEquipment(),
+    getHasGym(),
     getPrimaryEvents(),
     getSeasonAndMeet(),
     supabaseClient.from('workouts').select('day').eq('user_id', currentUser.id),
@@ -3998,7 +4060,7 @@ document.getElementById('generateWeekPlan').addEventListener('click', async () =
   }
 
   const phase = computeTrainingPhase(seasonAndMeet.season, seasonAndMeet.nextMeetDate);
-  const ideal = buildWeekPlan(phase, equipment, primaryEvents);
+  const ideal = buildWeekPlan(phase, equipment, primaryEvents, hasGym);
   const { plan, dropped } = reschedulePlan(
     ideal,
     new Set((avail && avail.sprint_days) || []),
@@ -4123,6 +4185,28 @@ async function renderWeekBoard() {
 // ---------- Training Setup (events, equipment, next meet) ----------
 const EQUIPMENT_OPTIONS = ['Sleds', 'Hills', 'Blocks'];
 let equipmentSelected = new Set();
+// True until the athlete says otherwise, matching the column default. Kept
+// out of the equipment chips above on purpose: in that set, absent means "does
+// not have it", so a Gym chip would have moved everyone to bodyweight the
+// moment it shipped without anyone touching a setting.
+let hasGymSelected = true;
+
+function renderGymToggle() {
+  const btn = document.getElementById('hasGymBtn');
+  const note = document.getElementById('hasGymNote');
+  if (!btn) return;
+  btn.classList.toggle('selected', hasGymSelected);
+  btn.setAttribute('aria-pressed', String(hasGymSelected));
+  btn.textContent = hasGymSelected ? 'I have a gym' : 'No gym';
+  note.textContent = hasGymSelected
+    ? 'Lifts are written as barbell work.'
+    : "Lifts are written as bodyweight work — jumps, push-ups, rows off a bar or table. Takes effect next time you build a week.";
+}
+
+document.getElementById('hasGymBtn').addEventListener('click', () => {
+  hasGymSelected = !hasGymSelected;
+  renderGymToggle();
+});
 const trainingSetupModal = document.getElementById('trainingSetupModal');
 
 function renderEquipmentPicker() {
@@ -4144,6 +4228,7 @@ function renderEquipmentPicker() {
 document.getElementById('trainingSetupBtn').addEventListener('click', async () => {
   settingsMenu.hidden = true;
   renderEquipmentPicker();
+  renderGymToggle();
   trainingSetupModal.hidden = false;
   if (!currentUser) return;
   try {
@@ -4157,6 +4242,8 @@ document.getElementById('trainingSetupBtn').addEventListener('click', async () =
       document.getElementById('primaryEvents').value = (data.primary_events || []).join(', ');
       equipmentSelected = new Set(data.equipment || []);
       renderEquipmentPicker();
+      hasGymSelected = data.has_gym !== false;
+      renderGymToggle();
       document.getElementById('nextMeetDate').value = data.next_meet_date || '';
       document.getElementById('nextMeetEvents').value = (data.next_meet_events || []).join(', ');
     }
@@ -4181,6 +4268,7 @@ document.getElementById('saveTrainingSetup').addEventListener('click', async () 
       user_id: currentUser.id,
       primary_events: splitCsv(document.getElementById('primaryEvents').value),
       equipment: Array.from(equipmentSelected),
+      has_gym: hasGymSelected,
       next_meet_date: document.getElementById('nextMeetDate').value || null,
       next_meet_events: splitCsv(document.getElementById('nextMeetEvents').value),
     },
