@@ -4733,10 +4733,11 @@ const WARMUP_PHASES = [
   {
     numeral: 'II',
     name: 'Movement',
-    why: 'Get warm and move in every plane before anything is fast.',
+    why: 'Get warm and move in every plane before anything is fast. Skipping rather than jogging — a jog rehearses the opposite mechanics to the ones the session wants.',
     items: [
-      { name: 'Easy jog', detail: '800m, conversational. Two laps.', measures: [] },
-      { name: 'Backward run', detail: '2 x 30m.', measures: [] },
+      { name: 'Skips', detail: '2 x 50m. Big and relaxed, arms driving.',
+        measures: ['Torso-to-Thigh at Peak Lift'] },
+      { name: 'Backward skips', detail: '2 x 50m.', measures: ['Front/Back Swing Balance'] },
       { name: 'Side shuffle', detail: '2 x 20m each way, staying low.', measures: [] },
       { name: 'Carioca', detail: '2 x 20m each way.', measures: ['Front/Back Swing Balance'] },
       { name: 'Leg swings, front to back', detail: '12 each leg, holding something for balance.',
