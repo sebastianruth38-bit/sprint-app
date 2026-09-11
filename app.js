@@ -1326,8 +1326,25 @@ function scoreGroundContact(metrics) {
   }
   // Only when the touchdowns agree. A spread wider than the bands themselves
   // means the toe landmark was wandering, not the ankle.
-  if (dorsi.length >= MIN_CONTACTS &&
-      Math.max(...dorsi) - Math.min(...dorsi) <= ANKLE_AGREEMENT_MAX) {
+  // Say so when it cannot be read, rather than leaving a gap.
+  //
+  // This measure comes off the toe, and it declines to report more often than
+  // it reports. A row that silently disappears looks like the app forgot;
+  // "Not measurable" with the reason tells the athlete there is nothing wrong
+  // with their ankle and what would make it readable next time. It carries no
+  // score, so it is skipped by the average and gets no bar.
+  const ankleSpread = dorsi.length ? Math.max(...dorsi) - Math.min(...dorsi) : null;
+  if (dorsi.length < MIN_CONTACTS) {
+    out.push({ name: 'Ankle at Touchdown', score: null, value: null,
+      note: 'Not measurable. The toe was not trackable on enough touchdowns. '
+          + 'Better light, or filming closer, is what makes it readable.' });
+  } else if (ankleSpread > ANKLE_AGREEMENT_MAX) {
+    out.push({ name: 'Ankle at Touchdown', score: null, value: null,
+      note: `Not measurable. The touchdowns disagreed by ${ankleSpread.toFixed(0)} degrees, `
+          + 'which means the toe was jumping around rather than that your ankle was. '
+          + 'Filming closer and side-on steadies it.' });
+  }
+  if (dorsi.length >= MIN_CONTACTS && ankleSpread <= ANKLE_AGREEMENT_MAX) {
     const d = median(dorsi);
     const band = bandFor(d, DORSI_BANDS);
     out.push({ name: 'Ankle at Touchdown', score: band.score, note: `${band.note} (${d.toFixed(0)}°)`, value: d });
@@ -2018,7 +2035,7 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
         ? 'Overstriding out of the start, reaching instead of pushing the ground back'
         : 'Overstriding, the foot is landing well in front of the hips');
     }
-    if (p.name === 'Ankle at Touchdown' && p.value > 120) {
+    if (p.name === 'Ankle at Touchdown' && p.value != null && p.value > 120) {
       flags.push('Landing with the toes down, the foot has no stiff platform to push from');
     }
   });
