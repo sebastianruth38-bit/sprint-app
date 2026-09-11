@@ -217,9 +217,13 @@ function shallowFrames() {
   }
   return out;
 }
-check('a foot that never reaches the ground is not treated as a touchdown',
-  ctx.scoreGroundContact(shallowFrames()).length === 0,
-  JSON.stringify(ctx.scoreGroundContact(shallowFrames()).map((p) => p.name)));
+// Nothing here is SCORED. Ankle at Touchdown now appears with a null score
+// and a reason rather than vanishing, so the check is that no number came out
+// of it, not that the row is missing -- a silently absent row was the thing
+// that looked like the app forgetting.
+check('a foot that never reaches the ground produces no score',
+  ctx.scoreGroundContact(shallowFrames()).every((p) => p.score == null),
+  JSON.stringify(ctx.scoreGroundContact(shallowFrames()).map((p) => `${p.name}:${p.score}`)));
 // The athlete reported a stiff ankle and was told it was collapsing. The
 // toe is the least stable landmark the model tracks, and on his clip it read
 // 107, 145 and 137 at three touchdowns -- a 38 degree spread against bands
@@ -237,9 +241,13 @@ const wobble = (angles) => {
   return out;
 };
 const noisy = ctx.scoreGroundContact(wobble([107, 145, 137, 99, 149]));
+const noisyAnkle = noisy.find((p) => p.name === 'Ankle at Touchdown');
 check('an ankle whose touchdowns disagree wildly is not scored',
-  !noisy.find((p) => p.name === 'Ankle at Touchdown'),
-  JSON.stringify(noisy.map((p) => p.name)));
+  noisyAnkle && noisyAnkle.score == null,
+  JSON.stringify(noisy.map((p) => `${p.name}:${p.score}`)));
+check('and says so rather than leaving a gap',
+  noisyAnkle && /not measurable/i.test(noisyAnkle.note || ''),
+  (noisyAnkle && noisyAnkle.note || '').slice(0, 70));
 const steady = ctx.scoreGroundContact(wobble([112, 118, 115]));
 check('an ankle that reads consistently still is',
   !!steady.find((p) => p.name === 'Ankle at Touchdown'));
