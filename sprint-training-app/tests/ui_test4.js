@@ -63,6 +63,9 @@ function assert(cond, msg) {
   await page.click('[data-tab="workouts"]');
   await page.waitForSelector('.day-card');
   await page.locator('.day-card', { hasText: 'Monday' }).click();
+  // The session editor is folded by default now; the test drives it directly
+  // rather than through a day tap, so it opens it the same way a tap does.
+  await page.evaluate(() => { const d = document.querySelector('.session-editor'); if (d) d.open = true; });
   await page.waitForSelector('#exerciseLog .ex-row');
 
   // Bodyweight exercises (Broad Jumps, Core) should have NO weight input at all.

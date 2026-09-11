@@ -38,7 +38,7 @@ document.getElementById('authGoogle').addEventListener('click', async () => {
     btn.disabled = false;
     setAuthMessage(
       /provider is not enabled/i.test(error.message)
-        ? 'Google sign-in is not switched on for this app yet — use email below for now.'
+        ? 'Google sign-in is not switched on for this app yet. Use email below for now.'
         : error.message,
       true
     );
@@ -62,7 +62,7 @@ document.getElementById('authSignUp').addEventListener('click', async () => {
   setAuthMessage('Creating account...');
   const { error } = await supabaseClient.auth.signUp({ email, password });
   if (error) return setAuthMessage(error.message, true);
-  setAuthMessage("Account created — you're signed in, or check your email if confirmation is required.");
+  setAuthMessage("Account created. You're signed in, or check your email if confirmation is required.");
 });
 
 document.getElementById('authMagicLink').addEventListener('click', async () => {
@@ -94,7 +94,7 @@ document.getElementById('deleteAccountBtn').addEventListener('click', async () =
   const typed = prompt('This is permanent. Type DELETE to confirm.');
   if (typed === null) return;
   if (typed.trim().toUpperCase() !== 'DELETE') {
-    alert('Not deleted — the confirmation did not match.');
+    alert('Not deleted. The confirmation did not match.');
     return;
   }
 
@@ -1077,7 +1077,7 @@ function selectSubject(framePoses, secondsPerFrame) {
     return { metrics: [], rejection: 'No athlete detected in this clip.' };
   }
   if (median(counts) > MAX_PEOPLE_IN_FRAME) {
-    return { metrics: [], rejection: 'Too many people in frame to tell who to grade — film the athlete on their own.' };
+    return { metrics: [], rejection: 'Too many people in frame to tell who to grade. Film the athlete on their own.' };
   }
 
   const tracks = buildTracks(framePoses, secondsPerFrame)
@@ -1099,7 +1099,7 @@ function selectSubject(framePoses, secondsPerFrame) {
       (t) => t !== longest && t.metrics.length >= longest.metrics.length * SECOND_ATHLETE_SHARE
     );
     if (rivals.length) {
-      return { metrics: [], rejection: 'More than one athlete is running here — grade one at a time.' };
+      return { metrics: [], rejection: 'More than one athlete is running here. Grade one at a time.' };
     }
   }
   if (!running.length) {
@@ -1107,7 +1107,7 @@ function selectSubject(framePoses, secondsPerFrame) {
     return {
       metrics: [],
       rejection: scrambled
-        ? 'Tracking jumped between overlapping people — film one athlete alone, side-on.'
+        ? 'Tracking jumped between overlapping people. Film one athlete alone, side-on.'
         : 'Nobody in this clip is moving like a sprinter.',
     };
   }
@@ -1129,19 +1129,19 @@ function selectSubject(framePoses, secondsPerFrame) {
   if (px != null && px < SUBJECT_PX_MIN) {
     return {
       metrics: [],
-      rejection: 'The athlete is too far away to measure — there isn\'t enough of him in the picture. Film closer.',
+      rejection: 'The athlete is too far away to measure. There isn\'t enough of him in the picture. Film closer.',
     };
   }
   if (frac != null && frac < SUBJECT_FRAC_MIN) {
     return {
       metrics: [],
-      rejection: 'The athlete is too small in the frame to measure — film closer, or crop the clip to him before uploading.',
+      rejection: 'The athlete is too small in the frame to measure. Film closer, or crop the clip to him before uploading.',
     };
   }
   if (edgeFraction > MAX_EDGE_FRACTION) {
     return {
       metrics: [],
-      rejection: 'His feet leave the picture for much of this clip — ground contact can\'t be read. Keep the whole body in frame.',
+      rejection: 'His feet leave the picture for much of this clip. Ground contact can\'t be read. Keep the whole body in frame.',
     };
   }
 
@@ -1522,7 +1522,7 @@ function scoreMaxVelocity(metrics, surface) {
 
   const hipBand = bandFor(hip, HIP_BANDS);
   const scissorBand = bandFor(scissor + ease, SCISSOR_BANDS);
-  const suffix = surface === 'Grass' ? ' (grass — eased)' : '';
+  const suffix = surface === 'Grass' ? ' (grass, eased)' : '';
 
   return {
     hip: { name: 'Torso-to-Thigh at Peak Lift', score: hipBand.score,
@@ -1982,7 +1982,7 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
   // should be able to tell the difference at a glance.
   const basis = strides >= 1
     ? `Measured over ${strides < 2 ? 'about 1' : Math.round(strides)} stride${strides < 2 ? '' : 's'}.`
-    : 'Measured over less than a full stride — treat this as a snapshot.';
+    : 'Measured over less than a full stride. Treat this as a snapshot.';
   return {
     summary,
     pinpoints,
@@ -2136,7 +2136,7 @@ function refusalReason(rejection, capture) {
     : null;
   if (perSecond != null && perSecond < MEASURABLE_FPS_MIN) {
     const inShot = capture.withPose / perSecond;
-    return `This phone only managed ${perSecond.toFixed(0)} frames a second — too few to measure a `
+    return `This phone only managed ${perSecond.toFixed(0)} frames a second. Too few to measure a `
       + `stride, so this is about the device rather than your running. A shorter clip, or one `
       + `recorded at a lower resolution, gives it a chance. `
       + `(you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s; `
@@ -2892,7 +2892,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         ? {
             summary: 'This clip could not be read on this device.',
             pinpoints: [], flags: [],
-            filming_note: `${Math.round(duplicateShare * 100)}% of the frames came back identical — this device could not decode the clip quickly enough. A shorter clip, or one recorded at a lower resolution, should work.`,
+            filming_note: `${Math.round(duplicateShare * 100)}% of the frames came back identical. This device could not decode the clip quickly enough. A shorter clip, or one recorded at a lower resolution, should work.`,
           }
         : rejection
           ? {
@@ -2910,7 +2910,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
       if (shotTrimmed && !rejection) {
         analysis.flags = [
           ...(analysis.flags || []),
-          'This clip contained more than one shot — only the longest continuous run was graded.',
+          'This clip contained more than one shot. Only the longest continuous run was graded.',
         ];
       }
 
@@ -3364,7 +3364,7 @@ function renderScoreTrend(entries) {
     const when = new Date(e.created_at);
     return {
       t: when, v: mean,
-      label: `${mean.toFixed(1)}/5 — ${when.toLocaleDateString()}`,
+      label: `${mean.toFixed(1)}/5 · ${when.toLocaleDateString()}`,
       axis: when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
     };
   }).filter(Boolean);
@@ -3967,7 +3967,7 @@ function buildLiftDetails(role, phase, hasGym = true) {
       return 'Decline Push-Ups 3x10, Inverted Rows 3x8, Tricep Dips 3x10, Superman Holds 3x20s, Core 3x';
     }
     if (role === 'competitionLight') {
-      return 'Core 2x, Squat Jumps 2x3, Split Squat Jumps 2x3 — crisp and nowhere near failure';
+      return 'Core 2x, Squat Jumps 2x3, Split Squat Jumps 2x3. Keep it crisp and nowhere near failure';
     }
     return null;
   }
@@ -4136,7 +4136,7 @@ async function renderWeekBoard() {
       body = '<div class="details">No session set</div>';
     } else if (sprintBlocked) {
       body = `<div class="type blocked">Can't sprint this day</div>
-        <div class="details">${escapeHtml(w.type)} skipped — you marked yourself unavailable.</div>`;
+        <div class="details">${escapeHtml(w.type)} skipped. You marked yourself unavailable.</div>`;
     } else {
       body = `<div class="type">${escapeHtml(w.type)}${w.timed ? ` <span class="score-pill">${escapeHtml(w.timed)}</span>` : ''}</div>
         <div class="details">${escapeHtml(w.details || '')}</div>`;
@@ -4145,12 +4145,17 @@ async function renderWeekBoard() {
     let liftLine = '';
     if (w && w.lift_details) {
       liftLine = liftBlocked
-        ? '<div class="hint blocked">🏋️ Lift skipped — no gym this day.</div>'
+        ? '<div class="hint blocked">🏋️ Lift skipped. No gym this day.</div>'
         : `<div class="hint">🏋️ ${withLoggedValues(w.lift_details, w.lift_log, expandLiftItem)}</div>`;
     }
 
     const card = document.createElement('div');
-    card.className = 'day-card' + (w ? '' : ' empty') + (sprintBlocked || liftBlocked ? ' blocked-day' : '');
+    // Today gets marked. On a seven-card board the day you are actually
+    // looking for is the one thing worth finding without reading.
+    card.className = 'day-card' + (w ? '' : ' empty')
+      + (sprintBlocked || liftBlocked ? ' blocked-day' : '')
+      + (day === todaysDayName() ? ' is-today' : '');
+    card.style.setProperty('--i', String(DAYS.indexOf(day)));
     card.innerHTML = `
       <h4>${day}</h4>
       ${body}
@@ -4169,6 +4174,10 @@ async function renderWeekBoard() {
       document.getElementById('workoutTimed').value = w && w.timed ? w.timed : '';
       document.getElementById('workoutLift').value = w && w.lift_details ? w.lift_details : '';
       renderExerciseLog(w ? w.logged_result : null, w ? w.lift_log : null);
+      // The editor is folded by default, so filling it in without opening it
+      // is a tap that looks like it did nothing.
+      const editor = document.querySelector('.session-editor');
+      if (editor) editor.open = true;
       document.getElementById('workoutDetails').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     if (w) {
@@ -4200,7 +4209,7 @@ function renderGymToggle() {
   btn.textContent = hasGymSelected ? 'I have a gym' : 'No gym';
   note.textContent = hasGymSelected
     ? 'Lifts are written as barbell work.'
-    : "Lifts are written as bodyweight work — jumps, push-ups, rows off a bar or table. Takes effect next time you build a week.";
+    : "Lifts are written as bodyweight work: jumps, push-ups, rows off a bar or table. Takes effect next time you build a week.";
 }
 
 document.getElementById('hasGymBtn').addEventListener('click', () => {
@@ -4424,15 +4433,61 @@ async function renderWeights() {
 // =====================================================
 document.getElementById('timeDate').valueAsDate = new Date();
 
+// A time as an athlete writes it, in seconds. Returns null for anything that
+// is not one, so the caller can say so rather than storing a typo.
+//
+// "1:02.4" matters: a 400m runner types minutes and the old code accepted it
+// as text, which then sorted and charted as nonsense.
+function parseTimeToSeconds(text) {
+  const raw = String(text).trim().replace(',', '.');
+  if (!raw) return null;
+  const parts = raw.split(':');
+  if (parts.length > 2) return null;
+  const nums = parts.map((x) => (/^\d*\.?\d+$/.test(x) ? Number(x) : NaN));
+  if (nums.some((n) => !isFinite(n))) return null;
+  const seconds = parts.length === 2 ? nums[0] * 60 + nums[1] : nums[0];
+  // A sprint is not negative, not zero, and not an hour.
+  return seconds > 0 && seconds < 3600 ? seconds : null;
+}
+
+// Logging a time used to fail in total silence: an empty field returned
+// without a word, a null session threw inside the async handler where nothing
+// catches it, and the insert's error was never read. The athlete pressed the
+// button, the time stayed in the box, and nothing on screen said why. The
+// server logs showed no request at all -- which is the signature of a handler
+// that gave up before the network, and exactly what cannot be diagnosed from
+// the outside. Every branch says something now.
 document.getElementById('saveTime').addEventListener('click', async () => {
+  const btn = document.getElementById('saveTime');
   const distance = document.getElementById('timeDistance').value;
-  const time = document.getElementById('timeValue').value.trim();
-  const date = document.getElementById('timeDate').value;
-  if (!time) return;
-  await supabaseClient
+  const field = document.getElementById('timeValue');
+  const time = field.value.trim();
+  const dateInput = document.getElementById('timeDate');
+
+  if (!currentUser) return alert('You are signed out. Reload the page and sign in again.');
+  if (!time) return alert('Enter a time first, e.g. 11.42');
+  // Accept 11.42, 11,42 and 1:02.3 -- what a stopwatch or a phone shows.
+  const seconds = parseTimeToSeconds(time);
+  if (seconds == null) return alert('That does not look like a time. Try 11.42, or 1:02.4 for longer runs.');
+
+  // A blank date is not a reason to lose the time. It happens when the picker
+  // is cleared, and Postgres rejects an empty string for a date column.
+  const date = dateInput.value || new Date().toISOString().slice(0, 10);
+
+  btn.disabled = true;
+  const wasLabel = btn.textContent;
+  btn.textContent = 'Saving…';
+  const { error } = await supabaseClient
     .from('times')
     .insert({ user_id: currentUser.id, distance, time, logged_date: date });
-  document.getElementById('timeValue').value = '';
+  btn.disabled = false;
+  btn.textContent = wasLabel;
+  if (error) {
+    // The time stays in the box so it is not retyped.
+    alert('Could not save that time: ' + error.message);
+    return;
+  }
+  field.value = '';
   renderTimes();
 });
 
@@ -4461,7 +4516,7 @@ function renderTimeTrend(times) {
     byDistance.get(t.distance).push({
       t: t.logged_date || t.created_at,
       v,
-      label: `${v}s — ${t.logged_date || ''}`,
+      label: `${v}s · ${t.logged_date || ''}`,
       axis: new Date(t.logged_date || t.created_at)
         .toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
     });
@@ -4508,7 +4563,7 @@ async function renderTimes() {
     div.className = 'entry';
     div.innerHTML = `
       <div class="entry-top">
-        <span><strong>${escapeHtml(t.distance)}</strong> — ${escapeHtml(t.time)}s</span>
+        <span><strong>${escapeHtml(t.distance)}</strong> · ${escapeHtml(t.time)}s</span>
         <span class="date">${t.logged_date}</span>
         <button class="delete-btn">Delete</button>
       </div>
@@ -4614,7 +4669,7 @@ async function renderChasing() {
   ]);
 
   if (!marks || !marks.length) {
-    host.innerHTML = `<p class="hint">Nothing yet. Add a mark below — a record, a
+    host.innerHTML = `<p class="hint">Nothing yet. Add a mark below. A record, a
       qualifying time, or whoever you are trying to catch.</p>`;
     return;
   }
@@ -4716,24 +4771,26 @@ const WARMUP_PHASES = [
     name: 'Mobility',
     why: 'Range on the move. Nothing held still before a sprint session.',
     items: [
-      { name: 'Walking knee hug', detail: '10 each leg. Hug the knee, rise onto the toe of the standing foot.',
+      { name: 'High knee walk', detail: '20m. Knee up to hip height, stand tall, do not lean back.',
         measures: ['Torso-to-Thigh at Peak Lift'] },
-      { name: 'Walking quad pull into a reach', detail: '10 each leg. Heel to backside, then reach tall on the other side.',
-        measures: ['Heel Recovery (knee fold)', 'Upright Posture'] },
-      { name: 'Walking lunge with a rotation', detail: '8 each leg. Turn the chest over the front knee.',
+      { name: 'Butt kick walk', detail: '20m. Heel to the backside, knee pointing at the ground.',
+        measures: ['Heel Recovery (knee fold)'] },
+      { name: 'Walking lunge', detail: '10 each leg. Back knee close to the ground, chest up.',
         measures: ['Drive Position', 'Upright Posture'] },
-      { name: 'Toy soldiers', detail: '10 each leg. Straight leg up to the opposite hand, walking forward.',
+      { name: 'Straight leg kicks', detail: '10 each leg. Kick up to the opposite hand, leg straight, walking forward.',
         measures: ['Thigh Separation (scissor)', 'Front/Back Swing Balance'] },
-      { name: 'Walking hamstring scoops', detail: '8 each leg. Step onto the heel, scoop the hands under and up.',
-        measures: ['Foot Strike vs Hips'] },
-      { name: 'Ankle rocks', detail: '10 each leg. Knee drives over the toe, heel stays down.',
+      { name: 'Open the gate', detail: '8 each leg. Knee up, then swing it out to the side and step through.',
+        measures: ['Hip Height'] },
+      { name: 'Close the gate', detail: '8 each leg. Same thing backwards, swinging the knee in.',
+        measures: ['Hip Height'] },
+      { name: 'Ankle rolls', detail: '10 circles each way, each foot.',
         measures: ['Ankle at Touchdown', 'Support Stiffness'] },
     ],
   },
   {
     numeral: 'II',
     name: 'Movement',
-    why: 'Warm and moving in every plane. Skipping, not jogging — a jog rehearses the wrong mechanics.',
+    why: 'Warm and moving in every plane. Skipping, not jogging. A jog rehearses the wrong mechanics.',
     items: [
       { name: 'Skips', detail: '2 x 50m. Big and relaxed, arms driving.',
         measures: ['Torso-to-Thigh at Peak Lift'] },
@@ -4758,7 +4815,7 @@ const WARMUP_PHASES = [
         measures: ['Foot Strike vs Hips', 'Ankle at Touchdown'] },
       { name: 'A-march', detail: '2 x 20m. Slow and exact. This sets the position everything after it repeats.',
         measures: ['Torso-to-Thigh at Peak Lift', 'Hip Height'] },
-      { name: 'A-skip', detail: '2 x 20m. The march with rhythm and arms — thigh to parallel, tall.',
+      { name: 'A-skip', detail: '2 x 20m. The march with rhythm and arms. Thigh to parallel, tall.',
         measures: ['Torso-to-Thigh at Peak Lift', 'Thigh Separation (scissor)', 'Upright Posture'] },
       { name: 'A-run', detail: '2 x 20m. The same position at speed. This is the one that transfers.',
         measures: ['Foot Strike vs Hips', 'Upright Posture'] },
@@ -5018,7 +5075,7 @@ async function renderWarmup() {
       <select id="warmupSessionPick">
         ${WARMUP_SESSIONS.map((t) => `<option value="${escapeHtml(t)}"${
           t === warmupSession ? ' selected' : ''}>${escapeHtml(t)}${
-          t === planned ? " — today's session" : ''}</option>`).join('')}
+          t === planned ? " · today's session" : ''}</option>`).join('')}
       </select>
     </div>`;
 
@@ -5037,23 +5094,24 @@ async function renderWarmup() {
               <span class="score-pill" style="border-color:${scoreColor(f.score)}">${f.score}/5</span>
             </li>`).join('')}
         </ul>
-        <p class="hint">Starred drills below fix these — more stars, more it matters.</p>
+        <p class="hint">Starred drills below fix these. More stars, more it matters.</p>
       </div>`
     : `<div class="card">
         <h3>Nothing measured yet</h3>
         <p class="hint">Film a sprint on Form Analysis and the drills that fix what it
         finds get starred here.</p></div>`;
 
+  let itemIndex = 0;
   const item = (d) => `
-    <li>
+    <li style="--i:${itemIndex++}">
       <a href="${escapeHtml(d.url)}" target="_blank" rel="noopener">${escapeHtml(d.name)}</a>${
-        d.flag ? `<span class="warmup-star" title="${escapeHtml(d.flag.measure)} — ${d.flag.score}/5">${
+        d.flag ? `<span class="warmup-star" title="${escapeHtml(d.flag.measure)} · ${d.flag.score}/5">${
           stars(d.flag.stars)}</span>` : ''}
       <span class="warmup-detail">${escapeHtml(d.detail)}</span>
     </li>`;
 
-  host.innerHTML = picker + summary + plan.phases.map((p) => `
-    <div class="card warmup-phase">
+  host.innerHTML = picker + summary + plan.phases.map((p, i) => `
+    <div class="card warmup-phase" style="--i:${i}">
       <h3><span class="warmup-numeral">${p.numeral}</span> ${escapeHtml(p.name)}</h3>
       <p class="hint">${escapeHtml(p.why)}</p>
       ${p.items.length

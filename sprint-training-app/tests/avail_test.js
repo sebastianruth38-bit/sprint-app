@@ -83,7 +83,7 @@ async function boardFor(page, avail) {
 
   const tue = cards.find(c=>c.day==='Tuesday');
   assert(tue.type.startsWith('Tempo'), 'Tuesday keeps its sprint session (can sprint): ' + tue.type);
-  assert(tue.lift.includes('no gym this day'), 'Tuesday lift hidden with a reason: ' + tue.lift);
+  assert(/no gym this day/i.test(tue.lift), 'Tuesday lift hidden with a reason: ' + tue.lift);
 
   const thu = cards.find(c=>c.day==='Thursday');
   assert(thu.type.startsWith('Max Velocity') && thu.lift.includes('Hang Snatches'), 'Thursday untouched (both available)');
