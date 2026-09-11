@@ -100,6 +100,43 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   assert(new Set(bars.out.map((b) => b.c)).size === 3,
     'and each score band gets its own colour: ' + JSON.stringify(bars.out.map((b) => b.c)));
 
+  // ---------- a measure that cannot be read says so ----------
+  // Ankle at Touchdown comes off the toe and declines to report more often
+  // than it reports. A row that silently vanishes looks like the app forgot;
+  // the athlete needs to know there is nothing wrong with their ankle.
+  const ankle = await page.evaluate(() => {
+    // Contacts whose toe angles disagree wildly: the toe was jumping, not the
+    // ankle. Exactly the case the agreement gate exists to catch.
+    let phase = 0;
+    const m = (footVsShin) => {
+      const ph = phase++ % 6;
+      const down = (d) => ({ ank: [100, d ? 180 : 130], hip: [100, 100], legLen: 80,
+        footVsShin, facing: 1, thighSwing: 20, knee: 50, shinFromVertical: 30 });
+      return { torsoFromVertical: 8, scissor: 110, thighRise: 0.05, hipAngle: 88,
+        leadKnee: 60, kneeFold: 50, midHip: [100, 100],
+        legs: [down(ph === 0 || ph === 1), down(ph === 3 || ph === 4)] };
+    };
+    const spread = [70, 130, 75, 135, 72, 128].map(m);
+    const accel = buildLocalAnalysis(spread, 'Acceleration', 'Track');
+    const maxv = buildLocalAnalysis(spread, 'Max Velocity', 'Track');
+    const find = (r) => (r.pinpoints || []).find((p) => p.name === 'Ankle at Touchdown');
+    return {
+      accelRow: find(accel) || null,
+      maxvRow: find(maxv) || null,
+      accelHtml: renderAnalysisHtml(accel),
+    };
+  });
+  assert(ankle.accelRow, 'an acceleration clip still lists Ankle at Touchdown when it cannot be read');
+  assert(ankle.accelRow && ankle.accelRow.score === null,
+    'with no score, so it is skipped by the average and gets no bar: ' + JSON.stringify(ankle.accelRow && ankle.accelRow.score));
+  assert(ankle.accelRow && /not measurable/i.test(ankle.accelRow.note),
+    'and says it is not measurable: ' + (ankle.accelRow && ankle.accelRow.note || '').slice(0, 60));
+  assert(ankle.accelRow && /toe/i.test(ankle.accelRow.note),
+    'naming the toe, so it does not read as a fault in the athlete: ' + (ankle.accelRow && ankle.accelRow.note || '').slice(0, 90));
+  assert(!ankle.maxvRow, 'max velocity does not list it at all, since it is an acceleration read now');
+  assert(/Ankle at Touchdown/.test(ankle.accelHtml) && /Not measurable/i.test(ankle.accelHtml),
+    'and the row renders through the analysis card');
+
   // Pose model absent (blocked CDN here) must degrade, not crash.
   const degraded = await page.evaluate(async () => {
     try { await getPoseLandmarker(); return 'loaded'; }
