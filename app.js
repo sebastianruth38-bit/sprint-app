@@ -1155,6 +1155,31 @@ function selectSubject(framePoses, secondsPerFrame) {
 // Where the foot lands relative to the hip, as a fraction of leg length.
 // Positive means the foot touches down in front of the hip -- the further
 // in front, the more braking. This is the overstriding measure.
+// Shin lean at touchdown, degrees off vertical, positive when the knee is
+// ahead of the ankle. Acceleration only: driving out of the blocks the shin
+// is angled hard forward, and by top speed it is close to vertical, so the
+// same number means opposite things at the two ends of a run.
+//
+// Anchored to five of this athlete's own clips, medians at touchdown:
+//
+//   block start      33.1   (a real start, the shape the top band describes)
+//   IMG_1246         40.3
+//   am_IMG_3212      41.8
+//   IMG_1247         19.5
+//   IMG_4002         11.9
+//
+// Five clips is a thin sample and the bottom two bands are extrapolated
+// rather than observed -- nothing measured here landed below 11. Treat 1/5
+// and 2/5 as "worth looking at the frame yourself" until more footage says
+// otherwise.
+const SHIN_BANDS = [
+  { min: 30, max: Infinity, score: 5, note: 'Shin driving forward hard at touchdown' },
+  { min: 20, max: 30, score: 4, note: 'Good forward shin angle out of the start' },
+  { min: 12, max: 20, score: 3, note: 'Shin coming upright earlier than it should' },
+  { min: 5, max: 12, score: 2, note: 'Shin nearly vertical on contact, little left to push back against' },
+  { min: -Infinity, max: 5, score: 1, note: 'Foot landing ahead of the knee, braking out of the start' },
+];
+
 const STRIKE_BANDS = [
   { min: -Infinity, max: 0.12, score: 5, note: 'Foot lands under the hips' },
   { min: 0.12, max: 0.22, score: 4, note: 'Foot lands slightly ahead of the hips' },
@@ -1244,6 +1269,31 @@ function limitToStrides(metrics, strides = 3) {
   return metrics.slice(Math.max(0, from - 1), Math.min(metrics.length, to + 2));
 }
 
+// How the shin is angled the moment the foot lands. Acceleration only.
+function scoreShinAngle(metrics) {
+  const facing = median(
+    metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
+  ) || 1;
+  const shins = [];
+  [0, 1].forEach((side) => {
+    footContacts(metrics, side).forEach((c) => {
+      const leg = c.leg;
+      const row = metrics[c.i];
+      if (!row || !row.midHip || leg.shinFromVertical == null) return;
+      // Same gate the strike measure uses: only frames where the foot really
+      // is down, or this reads whichever moment happened to be lowest.
+      const depth = (leg.ank[1] - row.midHip[1]) / (leg.legLen || 1);
+      if (depth < CONTACT_DEPTH_MIN) return;
+      shins.push(leg.shinFromVertical * facing);
+    });
+  });
+  if (shins.length < MIN_CONTACTS) return null;
+  const shin = median(shins);
+  const band = bandFor(shin, SHIN_BANDS);
+  return { name: 'Shin Angle at Touchdown', score: band.score,
+           note: `${band.note} (${shin.toFixed(0)} degrees off vertical)`, value: shin };
+}
+
 function scoreGroundContact(metrics) {
   const facing = median(
     metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
@@ -1270,8 +1320,8 @@ function scoreGroundContact(metrics) {
     const strike = median(strikes);
     if (strike >= STRIKE_PLAUSIBLE_MIN && strike <= STRIKE_PLAUSIBLE_MAX) {
       const band = bandFor(strike, STRIKE_BANDS);
-      out.push({ name: 'Foot Strike vs Hips', score: band.score,
-                 note: `${band.note} (${(strike * 100).toFixed(0)}% of leg length ahead)`, value: strike });
+      out.push({ name: 'Foot Strike vs COM', score: band.score,
+                 note: `${band.note} (${(strike * 100).toFixed(0)}% of a leg length ahead of the hips)`, value: strike });
     }
   }
   // Only when the touchdowns agree. A spread wider than the bands themselves
@@ -1412,6 +1462,18 @@ function legMetrics(pt, conf, midSho, hipI, kneeI, ankI, heelI, toeI) {
     footVsShin: footOk ? angleAt(knee, ank, toe) : null,
     // Which way the athlete faces, from the foot itself.
     facing: footOk ? Math.sign(toe[0] - heel[0]) : 0,
+    // Shin lean at this instant, degrees off vertical, signed by the
+    // direction of travel: POSITIVE means the knee is ahead of the ankle,
+    // which is the shape you want driving out of the blocks. Negative means
+    // the foot is out in front of the knee, which is reaching.
+    //
+    // `facing` is applied by the caller, which is where the direction of
+    // travel is known; this is the raw signed value in image space.
+    shinFromVertical: (() => {
+      const ahead = knee[0] - ank[0];
+      const up = ank[1] - knee[1];
+      return up > 0 ? (Math.atan2(ahead, up) * 180) / Math.PI : null;
+    })(),
     // y grows downward, so knee above hip gives a positive rise. Used only
     // to find which frame is the peak, never scored on its own.
     rise: (hip[1] - knee[1]) / thighLen,
@@ -1815,7 +1877,7 @@ function keyMoments(allMetrics, clipType) {
   };
   const out = [];
 
-  // The deepest touchdown across both feet: the instant Foot Strike vs Hips
+  // The deepest touchdown across both feet: the instant Foot Strike vs COM
   // and Ankle at Touchdown are both read at.
   const contacts = [...footContacts(timed, 0), ...footContacts(timed, 1)]
     .map((c) => timed[c.i])
@@ -1824,7 +1886,7 @@ function keyMoments(allMetrics, clipType) {
     out.push(pick(contacts, (b, a) => (b.legs && a.legs && b.midHip && a.midHip
       ? (Math.max(...b.legs.map((l) => l.ank[1])) - b.midHip[1])
         > (Math.max(...a.legs.map((l) => l.ank[1])) - a.midHip[1])
-      : false), 'Touchdown', 'Foot Strike vs Hips'));
+      : false), 'Touchdown', 'Foot Strike vs COM'));
   }
 
   // Peak thigh carry. Named for what is visible rather than for one score,
@@ -1881,6 +1943,17 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
   const pinpoints = [];
   const flags = [];
 
+  // Five measures per clip type, not nine.
+  //
+  // The old set double-counted: Torso-to-Thigh and Thigh Separation are both
+  // read at peak lift off the same two frames, Passing Position and Heel
+  // Recovery are both the fold, Front/Back Balance moves with Foot Strike,
+  // and Upright Posture tracks Hip Height. An athlete reading nine scores
+  // where four of them restate the other five cannot tell which to work on,
+  // which is the only thing the scores are for.
+  //
+  // What each clip type keeps measures something the others do not.
+
   if (clipType === 'Acceleration') {
     // Only judge the rise when there is enough of the run to see it rise.
     const accel = stridesMeasured(metrics) >= PROGRESSION_MIN_STRIDES
@@ -1888,83 +1961,71 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
       : scoreDrivePosition(metrics);
     if (accel) {
       pinpoints.push({ name: accel.name, score: accel.score, note: accel.note });
-      if (accel.start < 30) flags.push('Already upright at the start -- little drive phase visible');
+      if (accel.start < 30) flags.push('Already upright at the start, little drive phase visible');
+    }
+    const shin = scoreShinAngle(metrics);
+    if (shin) {
+      pinpoints.push({ name: shin.name, score: shin.score, note: shin.note });
+      if (shin.value < 5) flags.push('Foot is landing ahead of the knee out of the start');
     }
   } else {
     const maxv = scoreMaxVelocity(metrics, surface);
     if (maxv) {
-      pinpoints.push(maxv.hip, maxv.scissor);
+      // The scissor only. Torso-to-Thigh is read at the same instant off the
+      // same frames and says the same thing in a second number.
+      pinpoints.push(maxv.scissor);
       if (maxv.hipValue > 118) flags.push('Thigh is not coming through at top speed');
       if (maxv.scissorValue < 85) flags.push('Insufficient thigh separation at top speed');
-      if (maxv.scissorValue > 125) flags.push('Possible over-striding -- reaching in front of the hips');
+      if (maxv.scissorValue > 125) flags.push('Possible over-striding, reaching in front of the hips');
     }
     const fold = scoreKneeFold(metrics);
     if (fold) {
       pinpoints.push({ name: fold.name, score: fold.score, note: fold.note });
       if (fold.tightest > 75) flags.push('Heel is not recovering up under the hip');
     }
-    // Anchored on a top-speed reference, so it is only asked of top-speed
-    // running. During acceleration the leg legitimately stays longer through
-    // the swing and the same numbers would read as a fault.
+    // Passing Position is the same fold measured a moment later, and
+    // Front/Back Swing Balance moves with where the foot lands. Both are
+    // still computed for their flags, which say something the scores do not.
     const passing = scorePassingPosition(metrics);
-    if (passing) {
-      pinpoints.push({ name: passing.name, score: passing.score, note: passing.note });
-      if (passing.value > 115) {
-        flags.push('Leg is still long as it swings through -- it gathers after the moment it helps');
-      }
+    if (passing && passing.value > 115) {
+      flags.push('Leg is still long as it swings through, it gathers after the moment it helps');
     }
     const balance = scoreSwingBalance(metrics);
-    if (balance && balance.score != null) {
-      pinpoints.push({ name: balance.name, score: balance.score, note: balance.note });
-    }
-    if (balance) {
-      // This comparison stands on its own: it needs no band, only the two
-      // numbers, and a thigh travelling further behind than in front is a
-      // fault whatever the right ratio turns out to be.
-      if (balance.back > balance.front * 1.4) {
-        flags.push('Kicking too far back -- backside recovery is longer than the front side');
-      }
+    if (balance && balance.back > balance.front * 1.4) {
+      flags.push('Kicking too far back, backside recovery is longer than the front side');
     }
     if (clipType === 'Speed Endurance') {
+      // The one measure that only makes sense over a long rep, which is the
+      // whole reason the clip type exists.
       const consistency = scoreConsistency(metrics);
       if (consistency) pinpoints.push(consistency);
     }
   }
 
-  // Support stiffness and the ankle angle are two readings of the same
-  // thing -- whether the foot holds its shape under load -- and the hip-based
-  // one is measured from landmarks the model actually tracks well. When it is
-  // available the toe-based angle is not also shown: it disagreed with the
-  // athlete on his own footage, and two numbers for one property, one of them
-  // known to be shaky, is worse than one.
+  // Shared by both: where the foot lands, whether the leg holds its shape
+  // under load, and whether the hips stay up.
   const support = scoreSupportStiffness(metrics);
   if (support) pinpoints.push(support);
   scoreGroundContact(metrics).forEach((p) => {
-    if (support && p.name === 'Ankle at Touchdown') return;
+    // Ankle at Touchdown is an acceleration read now. At top speed it said
+    // the same thing as Support Stiffness off shakier landmarks, and two
+    // numbers for one property, one of them known to be soft, is worse than
+    // one.
+    if (p.name === 'Ankle at Touchdown' && clipType !== 'Acceleration') return;
     pinpoints.push({ name: p.name, score: p.score, note: p.note });
-    if (p.name === 'Foot Strike vs Hips' && p.value > 0.32) {
+    if (p.name === 'Foot Strike vs COM' && p.value > 0.32) {
       flags.push(clipType === 'Acceleration'
-        ? 'Overstriding out of the start -- reaching instead of pushing the ground back'
-        : 'Overstriding -- the foot is landing well in front of the hips');
+        ? 'Overstriding out of the start, reaching instead of pushing the ground back'
+        : 'Overstriding, the foot is landing well in front of the hips');
     }
     if (p.name === 'Ankle at Touchdown' && p.value > 120) {
-      flags.push('Landing with the toes down -- the foot has no stiff platform to push from');
+      flags.push('Landing with the toes down, the foot has no stiff platform to push from');
     }
   });
   const sink = scoreHipSink(metrics);
   if (sink) {
     pinpoints.push({ name: sink.name, score: sink.score, note: sink.note });
     if (sink.value > 0.2) flags.push('Hips sinking through contact');
-  }
-
-  const posture = metrics.map((m) => m.torsoFromVertical).filter((v) => v != null);
-  if (clipType !== 'Acceleration' && posture.length) {
-    const avg = posture.reduce((a, b) => a + b, 0) / posture.length;
-    pinpoints.push({
-      name: 'Upright Posture',
-      score: avg <= 12 ? 5 : avg <= 20 ? 4 : 3,
-      note: `Torso averaged ${avg.toFixed(0)}° from vertical`,
-    });
   }
 
   const best = pinpoints.reduce((a, b) => (b.score > a.score ? b : a), pinpoints[0]);
@@ -4772,13 +4833,13 @@ const WARMUP_PHASES = [
     why: 'Range on the move. Nothing held still before a sprint session.',
     items: [
       { name: 'High knee walk', detail: '20m. Knee up to hip height, stand tall, do not lean back.',
-        measures: ['Torso-to-Thigh at Peak Lift'] },
+        measures: ['Thigh Separation (scissor)'] },
       { name: 'Butt kick walk', detail: '20m. Heel to the backside, knee pointing at the ground.',
         measures: ['Heel Recovery (knee fold)'] },
       { name: 'Walking lunge', detail: '10 each leg. Back knee close to the ground, chest up.',
-        measures: ['Drive Position', 'Upright Posture'] },
+        measures: ['Drive Position', 'Hip Height'] },
       { name: 'Straight leg kicks', detail: '10 each leg. Kick up to the opposite hand, leg straight, walking forward.',
-        measures: ['Thigh Separation (scissor)', 'Front/Back Swing Balance'] },
+        measures: ['Thigh Separation (scissor)', 'Foot Strike vs COM'] },
       { name: 'Open the gate', detail: '8 each leg. Knee up, then swing it out to the side and step through.',
         measures: ['Hip Height'] },
       { name: 'Close the gate', detail: '8 each leg. Same thing backwards, swinging the knee in.',
@@ -4793,12 +4854,12 @@ const WARMUP_PHASES = [
     why: 'Warm and moving in every plane. Skipping, not jogging. A jog rehearses the wrong mechanics.',
     items: [
       { name: 'Skips', detail: '2 x 50m. Big and relaxed, arms driving.',
-        measures: ['Torso-to-Thigh at Peak Lift'] },
-      { name: 'Backward skips', detail: '2 x 50m.', measures: ['Front/Back Swing Balance'] },
+        measures: ['Thigh Separation (scissor)'] },
+      { name: 'Backward skips', detail: '2 x 50m.', measures: ['Foot Strike vs COM'] },
       { name: 'Side shuffle', detail: '2 x 20m each way, staying low.', measures: [] },
-      { name: 'Carioca', detail: '2 x 20m each way.', measures: ['Front/Back Swing Balance'] },
+      { name: 'Carioca', detail: '2 x 20m each way.', measures: ['Foot Strike vs COM'] },
       { name: 'Leg swings, front to back', detail: '12 each leg, holding something for balance.',
-        measures: ['Thigh Separation (scissor)', 'Front/Back Swing Balance'] },
+        measures: ['Thigh Separation (scissor)', 'Foot Strike vs COM'] },
       { name: 'Leg swings, side to side', detail: '12 each leg.', measures: [] },
     ],
   },
@@ -4812,19 +4873,19 @@ const WARMUP_PHASES = [
       { name: 'Pogo hops', detail: '3 x 10. Toes up, bounce off the front of the foot, short contacts.',
         measures: ['Support Stiffness', 'Ankle at Touchdown'] },
       { name: 'Ankling', detail: '2 x 20m. Tiny steps, feet picked straight up under you, toes held up.',
-        measures: ['Foot Strike vs Hips', 'Ankle at Touchdown'] },
+        measures: ['Foot Strike vs COM', 'Ankle at Touchdown', 'Shin Angle at Touchdown'] },
       { name: 'A-march', detail: '2 x 20m. Slow and exact. This sets the position everything after it repeats.',
-        measures: ['Torso-to-Thigh at Peak Lift', 'Hip Height'] },
+        measures: ['Thigh Separation (scissor)', 'Hip Height'] },
       { name: 'A-skip', detail: '2 x 20m. The march with rhythm and arms. Thigh to parallel, tall.',
-        measures: ['Torso-to-Thigh at Peak Lift', 'Thigh Separation (scissor)', 'Upright Posture'] },
+        measures: ['Thigh Separation (scissor)', 'Hip Height'] },
       { name: 'A-run', detail: '2 x 20m. The same position at speed. This is the one that transfers.',
-        measures: ['Foot Strike vs Hips', 'Upright Posture'] },
+        measures: ['Foot Strike vs COM', 'Hip Height'] },
       { name: 'B-skip', detail: '2 x 20m. Knee up, then unfold and paw the ground back underneath you.',
-        measures: ['Heel Recovery (knee fold)', 'Passing Position'] },
+        measures: ['Heel Recovery (knee fold)'] },
       { name: 'Straight-leg bounds', detail: '2 x 20m. Legs long, striking down and back.',
-        measures: ['Front/Back Swing Balance', 'Support Stiffness'] },
+        measures: ['Foot Strike vs COM', 'Support Stiffness'] },
       { name: 'Dribbles, low to high', detail: '2 x 15m at each height. Turnover, foot landing under the hip.',
-        measures: ['Foot Strike vs Hips', 'Front/Back Swing Balance'] },
+        measures: ['Foot Strike vs COM'] },
     ],
   },
 ];
@@ -4834,9 +4895,9 @@ const WARMUP_PLANS = {
     note: 'Build the angle, then work up to full speed over short pieces.',
     items: [
       { name: 'Wall drives, single exchange', detail: '3 x 5 each leg. Body in one line, hold the lean.',
-        measures: ['Drive Position', 'Acceleration Posture'] },
+        measures: ['Drive Position', 'Acceleration Posture', 'Shin Angle at Touchdown'] },
       { name: 'Falling starts', detail: '3 x 15m. Lean until you have to run.',
-        measures: ['Drive Position', 'Acceleration Posture'] },
+        measures: ['Drive Position', 'Shin Angle at Touchdown'] },
       { name: 'Three-point starts', detail: '3 x 20m, building to full. One hand down, no blocks needed.',
         measures: ['Acceleration Posture'] },
       { name: 'Accelerations', detail: '2 x 30m at the effort the session starts at.', measures: [] },
@@ -4846,7 +4907,7 @@ const WARMUP_PLANS = {
     note: 'Reach top speed tall and relaxed, off a rolling start.',
     items: [
       { name: 'Tall high-knee run into a stride', detail: '2 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
-        measures: ['Upright Posture', 'Hip Height', 'Torso-to-Thigh at Peak Lift'] },
+        measures: ['Hip Height', 'Thigh Separation (scissor)'] },
       { name: 'Rolling build-ups', detail: '4 x 60m. Jog 10m then build. Each faster than the last, the final at 95%.',
         measures: ['Smoothness / Consistency'] },
       { name: 'One fly', detail: '1 x 20m fly off a 20m run-in, to feel the top end before the session.',
