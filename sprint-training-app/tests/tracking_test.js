@@ -245,11 +245,11 @@ check('an ankle that reads consistently still is',
   !!steady.find((p) => p.name === 'Ankle at Touchdown'));
 
 const sane = ctx.scoreGroundContact(contactFrames(8));   // 10% of a leg ahead
-const strikeSane = sane.find((p) => p.name === 'Foot Strike vs Hips');
+const strikeSane = sane.find((p) => p.name === 'Foot Strike vs COM');
 check('a plausible foot strike is reported', !!strikeSane, JSON.stringify(sane.map((p) => p.name)));
 
 const mad = ctx.scoreGroundContact(contactFrames(-40));  // half a leg BEHIND
-const strikeMad = mad.find((p) => p.name === 'Foot Strike vs Hips');
+const strikeMad = mad.find((p) => p.name === 'Foot Strike vs COM');
 check('an impossible foot strike is dropped rather than scored well',
   !strikeMad, strikeMad && `${strikeMad.score}/5 ${strikeMad.note}`);
 check('the rest of ground contact still reports', mad.some((p) => p.name === 'Ankle at Touchdown'));

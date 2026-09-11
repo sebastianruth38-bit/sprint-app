@@ -53,7 +53,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
     };
   });
 
-  assert(results.elite.pinpoints[0].score===5,'elite clip values score 5/5 on torso-to-thigh: '+results.elite.pinpoints[0].note);
+  assert(results.elite.pinpoints[0].score===5,'elite clip values score 5/5 on thigh separation: '+results.elite.pinpoints[0].note);
   assert(/Smooth progressive rise/.test(results.accel.pinpoints[0].note),'acceleration scored on the progression: '+results.accel.pinpoints[0].note);
   assert(results.weak.flags.length>0,'weak separation raises a flag: '+JSON.stringify(results.weak.flags));
   assert(results.blind.pinpoints.length===0,'unreadable clip refuses to score rather than guessing');
@@ -64,7 +64,9 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
                         {torsoFromVertical:6,scissor:113,thighRise:0.06,hipAngle:85,leadKnee:88,kneeFold:52},
                         {torsoFromVertical:5,scissor:112,thighRise:0.02,hipAngle:85,leadKnee:87,kneeFold:48}],'Max Velocity','Track')));
   assert(/score-pill/.test(html)&&/\/5/.test(html),'local scores render through the existing analysis card');
-  assert(/Torso-to-Thigh/.test(html),'the torso-to-thigh measurement is shown by name');
+  // Max velocity is scored on the scissor now; Torso-to-Thigh was read at the
+  // same instant off the same frames and said the same thing twice.
+  assert(/Thigh Separation/.test(html),'the thigh separation measurement is shown by name');
 
   // Each score gets the same bar the profile uses, so a colour means the same
   // thing in both places.
@@ -166,7 +168,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   const frames = await page.evaluate(async () => {
     const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
     const real = dataUrlToBlob(jpeg);
-    const moment = { t: 1.5, label: 'Touchdown', measure: 'Foot Strike vs Hips' };
+    const moment = { t: 1.5, label: 'Touchdown', measure: 'Foot Strike vs COM' };
     return {
       realType: real && real.type,
       realSize: real && real.size,

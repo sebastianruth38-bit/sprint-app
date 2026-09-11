@@ -37,7 +37,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
     // old as the expired one, because key frames are kept for good and the
     // retention purge must not touch them however old they get.
     {id:'d3',created_at:old,clip_type:'Max Velocity',
-     key_frames:[{path:'u/d3-k0.jpg',label:'Touchdown',measure:'Foot Strike vs Hips',t:1.8}],
+     key_frames:[{path:'u/d3-k0.jpg',label:'Touchdown',measure:'Foot Strike vs COM',t:1.8}],
      analysis:{summary:'Frames only',pinpoints:[]}},
   ];
 

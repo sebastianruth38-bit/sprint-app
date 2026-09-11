@@ -247,7 +247,7 @@ function scoreGroundContact(metrics) {
   if (strikes.length) {
     const strike = median(strikes);
     const band = bandFor(strike, STRIKE_BANDS);
-    out.push({ name: 'Foot Strike vs Hips', score: band.score,
+    out.push({ name: 'Foot Strike vs COM', score: band.score,
                note: `${band.note} (${(strike * 100).toFixed(0)}% of leg length ahead)`, value: strike });
   }
   if (dorsi.length) {
@@ -558,7 +558,7 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
 
   scoreGroundContact(metrics).forEach((p) => {
     pinpoints.push({ name: p.name, score: p.score, note: p.note });
-    if (p.name === 'Foot Strike vs Hips' && p.value > 0.32) {
+    if (p.name === 'Foot Strike vs COM' && p.value > 0.32) {
       flags.push(clipType === 'Acceleration'
         ? 'Overstriding out of the start -- reaching instead of pushing the ground back'
         : 'Overstriding -- the foot is landing well in front of the hips');
@@ -627,9 +627,9 @@ function cycle(strikeAhead,foot,hipDrop){
 
 // --- Overstriding: the one they said to look for A LOT ---
 let g=scoreGroundContact(cycle(0.05,90,0));
-A(g.find(x=>x.name==='Foot Strike vs Hips').score===5, 'foot landing under the hips scores 5/5: '+g[0].note);
+A(g.find(x=>x.name==='Foot Strike vs COM').score===5, 'foot landing under the hips scores 5/5: '+g[0].note);
 g=scoreGroundContact(cycle(0.40,90,0));
-A(g.find(x=>x.name==='Foot Strike vs Hips').score===2, 'foot landing 40% of a leg ahead is caught: '+g[0].note);
+A(g.find(x=>x.name==='Foot Strike vs COM').score===2, 'foot landing 40% of a leg ahead is caught: '+g[0].note);
 
 // --- Dorsiflexion ---
 g=scoreGroundContact(cycle(0.05,88,0));
@@ -660,7 +660,7 @@ A(limitToStrides(cycle(0.05,90,0)).length>0,'a short clip is not trimmed to noth
 // --- Full analysis includes the new checks ---
 const out=buildLocalAnalysis(cycle(0.40,130,25),'Max Velocity','Track');
 const names=out.pinpoints.map(x=>x.name);
-A(names.includes('Foot Strike vs Hips')&&names.includes('Ankle at Touchdown')&&names.includes('Hip Height'),
+A(names.includes('Foot Strike vs COM')&&names.includes('Ankle at Touchdown')&&names.includes('Hip Height'),
   'analysis reports strike, ankle and hip height: '+names.join(' | '));
 A(out.flags.some(x=>/Overstriding/.test(x)),'overstriding raises a flag: '+JSON.stringify(out.flags));
 A(out.flags.some(x=>/toes down/i.test(x)),'toes-down landing raises a flag');

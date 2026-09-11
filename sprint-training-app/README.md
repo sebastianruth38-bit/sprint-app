@@ -24,18 +24,29 @@ tall you are, so a measurement that depends on either is a measurement that
 cannot be trusted. Motion is measured over a fixed time gap rather than
 per-frame, so a clip captured at 8fps and one at 30fps give the same answer.
 
-Depending on the clip type you get some of:
+Five measures per clip, not nine. The old set double-counted: Torso-to-Thigh
+and Thigh Separation are read at the same instant off the same frames, Passing
+Position and Heel Recovery are both the fold, Front/Back Balance moves with
+Foot Strike, and Upright Posture tracks Hip Height. An athlete reading nine
+scores where four restate the other five cannot tell which to work on, which
+is the only thing the scores are for. Those four are still computed, for the
+flags they raise, and no longer scored.
 
 | Clip type | What it is scored on |
 |---|---|
-| **Every clip** | Foot Strike vs Hips, Hip Height, Support Stiffness — or Ankle at Touchdown, when support cannot be read |
-| **Acceleration** | Drive Position, or Acceleration Posture once there are enough strides to see the rise |
-| **Max Velocity** and **Speed Endurance** | Torso-to-Thigh at Peak Lift, Thigh Separation, Heel Recovery, Passing Position, Front/Back Swing Balance, Upright Posture |
-| **Speed Endurance** | …and Smoothness / Consistency, which is the whole point of the clip type |
+| **Acceleration** | Drive Position (or Acceleration Posture), Shin Angle at Touchdown, Ankle at Touchdown, Foot Strike vs COM, Support Stiffness, Hip Height |
+| **Max Velocity** | Thigh Separation, Heel Recovery, Foot Strike vs COM, Support Stiffness, Hip Height |
+| **Speed Endurance** | the same five, and Smoothness / Consistency, which is the whole point of the clip type |
 
-The top-speed measures are deliberately not asked of an acceleration clip: the
-leg legitimately stays long through the swing out of the blocks, and the same
-numbers that mean a fault at top speed would be read as one there.
+**Foot Strike vs COM** is where the foot lands relative to your centre of
+mass, as a fraction of your own leg length. The mid-hip is the COM proxy a
+single camera can see. Landing under the hips scores 5; nothing rewards
+landing behind them, which elite sprinters do and developing ones should not
+chase.
+
+**Shin Angle at Touchdown** is acceleration only, because the same number
+means opposite things at the two ends of a run: the shin is angled hard
+forward out of the blocks and close to vertical by top speed.
 
 Each is scored 1–5 against bands in `tools/CALIBRATION.md`, every one of which
 came from measuring real footage rather than from a textbook.

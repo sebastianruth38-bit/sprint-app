@@ -46,11 +46,13 @@ check('nor does the backend setup doc use the old name', !/Sprint Lab/.test(setu
 // never see.
 const measures = new Set();
 for (const m of app.matchAll(/name: '([A-Z][^']*)'/g)) measures.add(m[1]);
+// Only the measures that are still SCORED. Torso-to-Thigh, Passing Position,
+// Front/Back Balance and Upright Posture survive as flags rather than scores,
+// so the README no longer lists them as things you are graded on.
 const quoted = [
-  'Foot Strike vs Hips', 'Hip Height', 'Support Stiffness', 'Ankle at Touchdown',
+  'Foot Strike vs COM', 'Hip Height', 'Support Stiffness', 'Ankle at Touchdown',
   'Drive Position', 'Acceleration Posture', 'Thigh Separation', 'Heel Recovery',
-  'Passing Position', 'Front/Back Swing Balance', 'Upright Posture',
-  'Smoothness / Consistency', 'Torso-to-Thigh at Peak Lift',
+  'Shin Angle at Touchdown', 'Smoothness / Consistency',
 ];
 quoted.forEach((q) => {
   const inReadme = readme.includes(q);

@@ -575,3 +575,29 @@ instead of repeating whichever guard happened to trip first.
 
 The second clip from the same session, at 12/s, correctly kept its real
 reason: tracking jumping between overlapping people.
+
+## Shin angle at touchdown (acceleration only)
+
+Degrees off vertical, positive when the knee is ahead of the ankle, signed by
+the direction of travel. Measured at foot contacts that pass the same depth
+gate the strike measure uses.
+
+Medians at touchdown, five distinct clips:
+
+    block start      33.1   (range 32.2 to 49.5)
+    am_IMG_3212      41.8   (range -0.0 to 50.6)
+    IMG_1246         40.3   (range 39.7 to 44.1)
+    IMG_1247         19.5   (range -1.4 to 41.9)
+    IMG_4002         11.9   (range -5.2 to 25.2)
+
+Bands set from that: 30+ is 5/5, 20-30 is 4, 12-20 is 3, 5-12 is 2, below 5
+is 1. The block start lands at the bottom of the top band, which is what the
+top band is meant to describe.
+
+**The bottom two bands are extrapolated, not observed.** Nothing measured here
+came in below 11 degrees, so 1/5 and 2/5 have no footage behind them yet.
+Check the frame before believing either.
+
+Acceleration only on purpose: the shin is angled hard forward out of the
+blocks and close to vertical by top speed, so the same number means opposite
+things at the two ends of a run.

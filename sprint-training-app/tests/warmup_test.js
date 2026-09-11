@@ -87,10 +87,13 @@ check('every measure tagged on an item is one the grader emits',
   unknown.length === 0, unknown.join(', '));
 // The reverse matters too: a measure nothing is tagged with can be scored 1/5
 // and never star anything, so the athlete is told to fix it and shown nowhere.
-const scoreable = ['Foot Strike vs Hips', 'Ankle at Touchdown', 'Support Stiffness',
-  'Hip Height', 'Torso-to-Thigh at Peak Lift', 'Thigh Separation (scissor)',
-  'Heel Recovery (knee fold)', 'Passing Position', 'Drive Position',
-  'Acceleration Posture', 'Upright Posture', 'Front/Back Swing Balance'];
+// The measures buildLocalAnalysis actually scores, after the set was cut from
+// nine per clip to five. Torso-to-Thigh, Passing Position, Front/Back Balance
+// and Upright Posture are computed for their flags but no longer scored, so
+// an athlete cannot be "weak at" them and nothing needs to star them.
+const scoreable = ['Foot Strike vs COM', 'Ankle at Touchdown', 'Support Stiffness',
+  'Hip Height', 'Thigh Separation (scissor)', 'Heel Recovery (knee fold)',
+  'Drive Position', 'Acceleration Posture', 'Shin Angle at Touchdown'];
 const unreachable = scoreable.filter((m) => !tagged.has(m));
 check('and every measure an athlete can be weak at stars something',
   unreachable.length === 0, unreachable.join(', '));
@@ -188,7 +191,7 @@ check('no clip-type mapping points at a session that does not exist',
 
 // ---------- what gets starred ----------
 const weak = ctx.buildWarmup(scores({
-  'Heel Recovery (knee fold)': 2, 'Foot Strike vs Hips': 3,
+  'Heel Recovery (knee fold)': 2, 'Foot Strike vs COM': 3,
   'Thigh Separation (scissor)': 4, 'Upright Posture': 5,
 }), MAXV);
 check('a weak measure stars the items that address it', flaggedItems(weak).length > 0,
@@ -202,11 +205,11 @@ const strongOnes = allItems(weak).filter((i) => i.flag && i.flag.score > ctx.WAR
 check('nothing scoring above the threshold is starred as a fault',
   strongOnes.length === 0, JSON.stringify(strongOnes.map((i) => i.name)));
 check('an item covering two faults is starred for the worse one',
-  (allItems(weak).find((i) => i.name === 'Ankling') || {}).flag.measure === 'Foot Strike vs Hips');
+  (allItems(weak).find((i) => i.name === 'Ankling') || {}).flag.measure === 'Foot Strike vs COM');
 
 // THE point of this rewrite: strong scores must not mean an empty page.
 const strong = ctx.buildWarmup(scores({
-  'Heel Recovery (knee fold)': 4, 'Foot Strike vs Hips': 5, 'Upright Posture': 4,
+  'Heel Recovery (knee fold)': 4, 'Foot Strike vs COM': 5, 'Upright Posture': 4,
 }), MAXV);
 check('an athlete with no faults still gets the whole warm-up',
   allItems(strong).length === allItems(weak).length);
