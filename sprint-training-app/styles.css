@@ -83,6 +83,28 @@ h3 { font-size: 1.1rem; }
   letter-spacing: -0.02em;
 }
 
+/* ---------- Brand mark ----------
+   An S drawn as three strokes of a lightning bolt: the letter the name starts
+   with, built out of the only thing the app is about. Line art rather than a
+   filled shape so it holds at 24px in the header and at 512 as an app icon
+   off the same path. */
+.brand-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.brand-mark {
+  width: 1.35em;
+  height: 1.35em;
+  flex: 0 0 auto;
+  /* The stroke ends are round, so the drawing sits optically low against
+     cap-height text unless it is nudged back up. */
+  margin-top: -0.06em;
+}
+.brand-lg { justify-content: center; gap: 0.55rem; }
+.brand-lg .brand-mark { width: 1.5em; height: 1.5em; }
+
 .settings-wrap { position: relative; }
 
 .icon-btn {
