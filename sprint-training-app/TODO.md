@@ -3,19 +3,33 @@
 Things that are decided but not done. Kept in the repo because the machine
 this gets built on is wiped between sessions.
 
-## Set the Google consent-screen app name  — Sebastian, 10 Sep
+## The Google sign-in screen says a supabase URL — parked
 
-The Google sign-in screen currently reads *"Choose an account to continue to
-`xxxx.supabase.co`"*. It should say **Sprintr**.
+Tried on 10 Sep, does not work the obvious way. Setting **App name** in
+Google's Branding page does not change what the sign-in prompt says: Google
+shows the **root domain of the OAuth callback** until the app is
+brand-verified, and the callback is `ukcmgoyqxbcxqfjgttyb.supabase.co`.
+Supabase's own docs list this exact case.
 
-- <https://console.cloud.google.com/auth/branding>
-- Set **App name** to `Sprintr`, and **User support email** to
-  `yeetpeppayeet@gmail.com` (same address as the legal pages).
-- A logo is optional; without one Google shows the app name as text, which is
-  already a large improvement on a raw hostname.
+What was tried: App name set (correctly, and worth keeping). Publishing to
+production from *Google Auth Platform → Audience*. The branding form's Save
+stays greyed out, most likely because **Authorized domains** will not accept
+`sebastianruth38-bit.github.io` — that domain belongs to GitHub, not us.
 
-Nothing in this repo changes — it is entirely a Google Cloud console setting,
-and it takes effect on the next sign-in.
+Three real fixes, none of them free:
+
+- **Own a domain** (`sprintr.app`, ~$15/yr). Fixes it permanently, gives the
+  privacy policy and terms a real home, and the App Store will want that
+  anyway. The clean answer.
+- **Supabase vanity subdomain** → `sprintr.supabase.co`. Needs Pro (we have
+  it) and the Supabase CLI. Better, still not our name.
+- **Google brand verification.** Free, days of review, and it needs an
+  authorized domain we can prove we own — so it depends on the first one.
+
+**Current plan: leave it.** Sign in with Apple is coming with the developer
+account and takes its name from the Services ID rather than the callback
+domain, so it should show "Sprintr" without any of this. Apple also requires
+it once the app offers other third-party sign-in.
 
 ## Deferred on purpose
 
