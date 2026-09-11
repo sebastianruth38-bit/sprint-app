@@ -822,6 +822,108 @@ blockquote {
   padding: 0.25rem 0 0.25rem 1rem;
 }
 
+/* The session editor, folded. Most visits to Workouts are to read the week,
+   not to change it, and a full form above the board pushed the board itself
+   below the fold on a phone. Same treatment as the filming guide. */
+.session-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 0.9rem 1.1rem;
+  margin-top: 1rem;
+}
+.session-editor summary {
+  cursor: pointer;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--glow);
+  list-style: none;
+}
+.session-editor summary::-webkit-details-marker { display: none; }
+.session-editor summary::after { content: ' +'; opacity: 0.7; }
+.session-editor[open] summary::after { content: ' \2212'; }
+.session-editor .card {
+  background: transparent;
+  border: 0;
+  padding: 0.9rem 0 0;
+  margin: 0;
+}
+.session-editor .card::before, .session-editor .card::after { display: none; }
+
+/* ---------- Motion for the built sections ---------- */
+/* Workouts and the warm-up render their contents into a container, so the
+   panel-level stagger above never reached them -- it only matches direct
+   children of .tab-panel. Both sections sat still while Form Analysis came
+   alive, which is most of why they felt flat next to it.
+   Each element carries its own --i so the cascade follows the order the
+   athlete reads in, rather than depending on nth-child in a list that gets
+   rebuilt. */
+.week-board .day-card,
+#warmupContent > .card,
+#warmupContent .warmup-list li {
+  animation: rise 0.38s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 0.035s + 0.04s);
+}
+/* Capped so a nine-drill phase does not keep the athlete waiting. */
+#warmupContent .warmup-list li:nth-child(n+9) { animation-delay: 0.32s; }
+
+/* Today is the card you are looking for. A left edge in the accent, and it
+   sits a touch proud of the rest. */
+.day-card.is-today {
+  border-left: 3px solid var(--glow);
+  background: linear-gradient(100deg, var(--glow-faint), transparent 45%), var(--surface);
+}
+.day-card.is-today h4::after {
+  content: 'TODAY';
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--glow);
+  margin-left: 0.5rem;
+  vertical-align: 0.1em;
+}
+.day-card { transform-origin: center; }
+.day-card:hover { transform: translateY(-1px); }
+
+/* The numeral lights up as you arrive at each phase. */
+.warmup-phase { position: relative; overflow: hidden; }
+.warmup-phase::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--star), transparent);
+  opacity: 0.55;
+}
+.warmup-numeral {
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.warmup-phase:hover .warmup-numeral {
+  color: var(--star);
+  border-color: var(--star);
+}
+
+/* A drill you are on should feel picked up rather than just hovered. */
+.warmup-list li {
+  transition: transform 0.16s var(--ease), background 0.16s var(--ease);
+  border-radius: var(--r-xs);
+  padding-left: 0.5rem;
+  margin-left: -0.5rem;
+}
+.warmup-list li:hover { background: var(--surface-2); transform: translateX(2px); }
+
+/* The stars arrive after the drill they sit on, so they read as a mark being
+   applied rather than as part of the name. */
+.warmup-star { animation: star-pop 0.3s var(--ease) both; animation-delay: 0.34s; }
+@keyframes star-pop {
+  from { opacity: 0; transform: scale(0.4) rotate(-25deg); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* ---------- Gym toggle ---------- */
 /* A single chip rather than a pair of radio buttons: there are two states and
    the label says which one you are in, so a second control would only add a
@@ -1249,6 +1351,14 @@ body.is-analysing .tab-panel.active { animation: none; }
   .skeleton::after { animation: none; }
   .analysis-ring { animation-duration: 2.4s; }
   .score-bar .progress-fill { animation: none; }
+  /* The built sections stagger too, and a cascade is exactly what somebody
+     asking for reduced motion is asking not to get. */
+  .week-board .day-card,
+  #warmupContent > .card,
+  #warmupContent .warmup-list li,
+  .warmup-star { animation: none; }
+  .warmup-list li:hover,
+  .day-card:hover { transform: none; }
   * { scroll-behavior: auto !important; }
 }
 

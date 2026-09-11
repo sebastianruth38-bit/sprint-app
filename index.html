@@ -10,7 +10,7 @@
        copy, which is the one thing that has to disappear when you read it.
        JetBrains Mono for anything that is a measurement. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=b4c6d86" />
+  <link rel="stylesheet" href="styles.css?v=c25ad32" />
 </head>
 <body>
   <!-- AUTH GATE -->
@@ -75,7 +75,7 @@
           <h3 style="margin:0">This Week's Availability</h3>
           <button id="closeAvailability" class="delete-btn" aria-label="Close">✕</button>
         </div>
-        <p class="hint">A guideline, not a schedule — mark the days you're generally free to sprint or lift this week. Workouts can still land on any day.</p>
+        <p class="hint">A guideline, not a schedule. Mark the days you're generally free to sprint or lift this week. Workouts can still land on any day.</p>
 
         <p class="avail-label">🏃 Can sprint</p>
         <div class="day-picker" id="sprintDayPicker"></div>
@@ -173,7 +173,7 @@
 
         <label class="ai-toggle">
           <input type="checkbox" id="aiAssist" />
-          <span>Also get AI coach notes <span class="hint">— uses your daily quota</span></span>
+          <span>Also get AI coach notes <span class="hint">uses your daily quota</span></span>
         </label>
 
         <details class="filming-guide">
@@ -246,10 +246,10 @@
             </div>
 
             <ul class="guide-list">
-              <li class="yes">Pan to keep yourself in frame — <b>three seconds of running</b> beats a long clip you cross in one.</li>
+              <li class="yes">Pan to keep yourself in frame. <b>Three seconds of running</b> beats a long clip you cross in one.</li>
               <li class="yes">Keep your feet in the picture. Cut off at the bottom edge and touchdown cannot be found.</li>
               <li class="yes">Film at <b>1080p, not 4K</b>. Fewer pixels means more frames a second, and frames are what get measured.</li>
-              <li class="no">Don't film into the sun or across deep shade — a silhouette has no joints.</li>
+              <li class="no">Don't film into the sun or across deep shade. A silhouette has no joints.</li>
               <li class="no">Don't include the blocks-set and the run in one long clip if you only care about one of them.</li>
               <li class="no">Don't hand the phone to someone who'll zoom mid-run. Zoom changes your size and splits the tracking.</li>
             </ul>
@@ -269,7 +269,7 @@
       </div>
 
       <h3>Past Sessions</h3>
-      <p class="hint">Look back at previous clips and the weak points found in each. Your video never leaves your phone — what's saved is a few still frames of the moments that were measured, and they're kept for good along with your scores.</p>
+      <p class="hint">Look back at previous clips and the weak points found in each. Your video never leaves your phone. What's saved is a few still frames of the moments that were measured, and they're kept for good along with your scores.</p>
       <div id="diagnosisList" class="entry-list"></div>
     </section>
 
@@ -283,43 +283,46 @@
       <button id="generateWeekPlan" class="btn primary" style="width:100%">Generate This Week's Plan</button>
       <p id="regenNote" class="regen-note"></p>
 
-      <div class="card">
-        <h3>Add / Update a session</h3>
-        <div class="form-grid">
-          <select id="workoutDay">
-            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
-            <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
-          </select>
-          <select id="workoutType">
-            <option>Acceleration (0-30m)</option>
-            <option>Max Velocity (flys/build-ups)</option>
-            <option>Speed Endurance (60-150m)</option>
-            <option>Special Endurance (150-300m)</option>
-            <option>Tempo (extensive/aerobic)</option>
-            <option>Race Modeling</option>
-            <option>Hill Sprints</option>
-            <option>Blocks / Starts</option>
-            <option>Pre-Meet</option>
-            <option>Meet Day</option>
-            <option>Recovery / Mobility</option>
-            <option>Lift Only</option>
-            <option>Rest Day</option>
-            <option>Custom</option>
-          </select>
-          <select id="workoutTimed">
-            <option value="">Timed / Untimed…</option>
-            <option>Timed</option>
-            <option>Untimed</option>
-          </select>
-        </div>
-        <input type="text" id="workoutDetails" placeholder="e.g. 6x60m @95%, 3min rest" style="margin-bottom:0.75rem" />
-        <input type="text" id="workoutLift" placeholder="Lift, e.g. Power Cleans 3x5, Broad Jumps 3x3..." style="margin-bottom:0.75rem" />
-        <div id="exerciseLog"></div>
-        <button id="saveWorkout" class="btn primary">Save Session</button>
-      </div>
-
       <div id="weekBoard" class="week-board"></div>
-    </section>
+
+      <details class="session-editor">
+        <summary>Add or change a session</summary>
+        <div class="card">
+          <h3>Add / Update a session</h3>
+          <div class="form-grid">
+            <select id="workoutDay">
+              <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+              <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
+            </select>
+            <select id="workoutType">
+              <option>Acceleration (0-30m)</option>
+              <option>Max Velocity (flys/build-ups)</option>
+              <option>Speed Endurance (60-150m)</option>
+              <option>Special Endurance (150-300m)</option>
+              <option>Tempo (extensive/aerobic)</option>
+              <option>Race Modeling</option>
+              <option>Hill Sprints</option>
+              <option>Blocks / Starts</option>
+              <option>Pre-Meet</option>
+              <option>Meet Day</option>
+              <option>Recovery / Mobility</option>
+              <option>Lift Only</option>
+              <option>Rest Day</option>
+              <option>Custom</option>
+            </select>
+            <select id="workoutTimed">
+              <option value="">Timed / Untimed…</option>
+              <option>Timed</option>
+              <option>Untimed</option>
+            </select>
+          </div>
+          <input type="text" id="workoutDetails" placeholder="e.g. 6x60m @95%, 3min rest" style="margin-bottom:0.75rem" />
+          <input type="text" id="workoutLift" placeholder="Lift, e.g. Power Cleans 3x5, Broad Jumps 3x3..." style="margin-bottom:0.75rem" />
+          <div id="exerciseLog"></div>
+          <button id="saveWorkout" class="btn primary">Save Session</button>
+        </div>
+      </details>
+</section>
 
     <!-- WEIGHT ROOM -->
     <section class="tab-panel" id="panel-weights">
@@ -388,7 +391,7 @@
     <!-- WARM-UP -->
     <section class="tab-panel" id="panel-warmup">
       <h2>Warm-up</h2>
-      <p class="hint">Four phases, every session. Your clips don't change the warm-up —
+      <p class="hint">Four phases, every session. Your clips don't change the warm-up.
       they star the parts worth nailing.</p>
       <div id="warmupContent"></div>
       <p class="hint warmup-caveat">Standard drills, not a coaching plan and not medical
@@ -409,7 +412,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=b4c6d86"></script>
-  <script src="app.js?v=b4c6d86"></script>
+  <script src="config.js?v=c25ad32"></script>
+  <script src="app.js?v=c25ad32"></script>
 </body>
 </html>
