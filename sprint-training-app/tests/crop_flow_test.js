@@ -262,29 +262,44 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   assert(justOver.played === false,
     `but scraping past the minimum is not treated as a good read (${justOver.withPose} posed, played=${justOver.played})`);
 
-  // ---------- the copy that gets stored ----------
-  // Storage, not egress, is the free tier's real ceiling: clips average 9.5MB
-  // off the phone and the 1GB limit arrives in about five weeks at a few a
-  // day. The grader downsamples to 480px internally, so shrinking the stored
-  // copy costs nothing in scoring -- this only has to stay watchable.
-  const shrunk = await page.evaluate(async (u) => {
-    const src = await (await fetch(u)).blob();
-    const { blob, note } = await compressForStorage(src, () => {});
-    const v = document.createElement('video');
-    v.src = URL.createObjectURL(blob); v.muted = true;
-    await new Promise((r) => { v.onloadedmetadata = r; v.onerror = r; setTimeout(r, 5000); });
-    return { inB: src.size, outB: blob.size, note, w: v.videoWidth, h: v.videoHeight,
-             dur: v.duration, srcDur: 4.27 };
+  // ---------- the refusal has to be diagnosable ----------
+  // This block replaces a suite of assertions about compressForStorage, which
+  // stopped existing when clips stopped being stored. It was --clips-only, so
+  // it rotted unnoticed and the whole file threw on a name that had been gone
+  // for days. A test nobody runs is a test that lies.
+  //
+  // What goes here instead is the wiring the node suites cannot reach:
+  // grading_test can check how a trace is FORMATTED, but only a real capture
+  // proves each attempt is recorded in the first place.
+  const trace = await page.evaluate(async (u) => {
+    const real = window.getPoseLandmarker;
+    window.getPoseLandmarker = async () => ({
+      detect: () => ({ landmarks: [] }),   // finds nobody, so every pass runs
+    });
+    const out = await extractFrames(await (await fetch(u)).blob(), 6, 480, () => {});
+    window.getPoseLandmarker = real;
+    return { attempts: out.capture.attempts, mode: out.capture.mode,
+             note: refusalReason('Could not follow anyone through this clip.', out.capture),
+             frames: out.capture.frames,
+             build: APP_BUILD };
   }, `http://localhost:${port}/clip/${CLIPS.blockStart}`);
-  assert(shrunk.outB < shrunk.inB / 4,
-    `the stored copy is much smaller than the upload (${(shrunk.inB/1048576).toFixed(1)}MB -> ${(shrunk.outB/1048576).toFixed(2)}MB)`);
-  assert(shrunk.w > 0 && shrunk.h > 0, `and is still a playable video (${shrunk.w}x${shrunk.h})`);
-  assert(Math.max(shrunk.w, shrunk.h) <= 720, `capped at 720 on the long edge (${shrunk.w}x${shrunk.h})`);
-  // Recording runs in real time for exactly this reason: playing the source
-  // faster to save time would shorten the recording and hand back a clip that
-  // plays at double speed, which is useless for watching your own mechanics.
-  assert(Math.abs(shrunk.dur - shrunk.srcDur) < 0.5,
-    `and plays at the original speed, not faster (${shrunk.dur.toFixed(2)}s vs ${shrunk.srcDur}s)`);
+
+  assert(Array.isArray(trace.attempts) && trace.attempts.length >= 2,
+    `every capture attempt is recorded, not just the winner (${(trace.attempts || []).length} attempts)`);
+  assert((trace.attempts || []).every((a) => a.mode && typeof a.found === 'number'
+                                             && typeof a.rate === 'number'),
+    `each one carries what it found and how densely (${JSON.stringify(trace.attempts)})`);
+  assert((trace.attempts || []).some((a) => a.mode === 'playback'),
+    `including whether playback ran at all (${(trace.attempts || []).map((a) => a.mode).join(', ')})`);
+  // The point of all of it: the message the athlete screenshots says which
+  // build produced it, so a deployed fix can be told apart from a stale page.
+  assert(trace.build && trace.note.includes(trace.build),
+    `and the refusal names the build it ran (${trace.build}) — note: ${trace.note}`);
+  // A pass that captured frames but found nobody must still report the
+  // frames. Holding an empty result instead reported the capture as zero
+  // frames over zero seconds, which stripped every number out of the refusal.
+  assert(trace.frames > 0,
+    `a capture that found nobody still reports the frames it took (${trace.frames})`);
 
   console.log(`\ntiming: blockStart ${bs.ms}ms, scrolled ${sc.ms}ms`);
   console.log(`\n${pass} passed, ${fail} failed`);

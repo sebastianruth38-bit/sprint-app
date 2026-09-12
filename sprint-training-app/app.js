@@ -1,3 +1,23 @@
+// Which build of this file is running, read off the URL the page loaded it
+// from. deploy.sh stamps `?v=<sha>` onto every asset, so there is already a
+// version in the request -- this only picks it back up.
+//
+// It exists because a fix can be deployed and still not be what the athlete
+// is running: a page open since before the deploy keeps the script it already
+// has, and tapping the button again re-runs the old code. That cost a round
+// of "it still says the same thing" on a bug that was already fixed, with no
+// way to tell the two apart from a screenshot. Now the refusal carries the
+// build, so the screenshot answers it.
+const APP_BUILD = (() => {
+  try {
+    const src = (document.currentScript && document.currentScript.src) || '';
+    const m = src.match(/[?&]v=([\w.-]+)/);
+    return m ? m[1] : 'dev';
+  } catch {
+    return 'dev';
+  }
+})();
+
 // ---------- Supabase client + auth ----------
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
@@ -2488,12 +2508,25 @@ function sampleRate(capture) {
   return span > 0 ? capture.frames / span : null;
 }
 
+// What each capture attempt managed, for a message someone can act on.
+//
+// "playback 3 @ 12/s, scan 17 @ 4/s, scan 30 @ 28/s" says which strategy ran
+// and which one won, which a single winning frame count cannot. The build is
+// in there because a deployed fix is not the same thing as a running one: a
+// page open since before a deploy keeps the script it already has.
+function captureTrace(capture) {
+  const runs = (capture && capture.attempts) || [];
+  if (!runs.length) return `build ${APP_BUILD}`;
+  const parts = runs.map((a) => `${a.mode} ${a.found}@${(a.rate || 0).toFixed(0)}/s`);
+  return `${parts.join(', ')}; build ${APP_BUILD}`;
+}
+
 function refusalReason(rejection, capture) {
   const perSecond = sampleRate(capture);
   if (perSecond != null && perSecond < MEASURABLE_FPS_MIN) {
     const inShot = capture.withPose / perSecond;
     const counts = `(you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s; `
-      + `${capture.withPose} of ${capture.frames} frames)`;
+      + `${capture.withPose} of ${capture.frames} frames — ${captureTrace(capture)})`;
     // Only a playback pass measures the device. When the seek fallback is
     // what produced these frames, the rate is a property of this browser's
     // seeking, not of the phone's decoder -- and telling an athlete his phone
@@ -2522,7 +2555,10 @@ function refusalReason(rejection, capture) {
 // the message because they separate a phone that could not decode the clip
 // from an athlete who was barely in it.
 function describeCapture(capture) {
-  if (!capture || !capture.frames || !capture.duration) return '';
+  // The trace survives even when there are no counts worth printing: a
+  // refusal with nothing in the brackets is the one nobody can diagnose.
+  if (!capture) return '';
+  if (!capture.frames || !capture.duration) return `(${captureTrace(capture)})`;
   const perSecond = sampleRate(capture) || 0;
   const inShot = perSecond > 0 ? capture.withPose / perSecond : 0;
   const parts = [`you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s`];
@@ -2537,6 +2573,7 @@ function describeCapture(capture) {
       : `the clip had to be stepped through, at ${perSecond.toFixed(0)} frames a second`);
   }
   if (!capture.played) parts.push('the clip would not play through');
+  parts.push(captureTrace(capture));
   return `(${parts.join('; ')})`;
 }
 
@@ -2969,18 +3006,36 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // nothing about the phone.
     let bestMode = 'none';
     let mode = 'none';
+    // What every attempt achieved, in the order they ran.
+    //
+    // A refusal names the winning pass and nothing else, so the two questions
+    // that actually matter -- did playback run, and did the dense pass rescue
+    // it -- were unanswerable from the message the athlete sees. Three of
+    // these lines say in one glance what a round of guessing did not.
+    const attempts = [];
     const keepIfBetter = () => {
       const take = () => {
         best.rows = framePoses;
         best.candidates = candidates.slice();
         bestMode = mode;
       };
+      attempts.push({
+        mode,
+        found: posedCount(framePoses),
+        rate: passDensity(framePoses),
+      });
       // A pass that can measure a stride always beats one that cannot,
       // however many times the sparse one happened to find him.
       const now = measurablePass(framePoses);
       const held = measurablePass(best.rows);
       if (held && !now) return;
       if (now && !held) { take(); return; }
+      // Nothing held yet. A pass that captured frames and found nobody in
+      // them still describes the attempt, and holding [] instead reports the
+      // capture as zero frames over zero seconds -- which makes describeCapture
+      // return an empty string and strips every number out of the one refusal
+      // that most needs them. Found by repairing a test that had rotted.
+      if (!best.rows.length && framePoses.length) { take(); return; }
       if (posedCount(framePoses) <= posedCount(best.rows)) return;
       take();
     };
@@ -3187,6 +3242,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         span: best.candidates.length > 1
           ? best.candidates[best.candidates.length - 1].t - best.candidates[0].t
           : 0,
+        attempts,
       },
     };
   } finally {

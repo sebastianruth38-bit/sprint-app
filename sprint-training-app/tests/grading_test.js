@@ -20,7 +20,10 @@ const vm = require('vm');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
-const ctx = { console, Math, JSON, Array, Object, Number, Infinity, isFinite };
+// APP_BUILD is read off the script URL at load time and lives above the
+// slice below, so the harness supplies it the way it supplies console.
+const ctx = { console, Math, JSON, Array, Object, Number, Infinity, isFinite,
+              APP_BUILD: 'test' };
 vm.createContext(ctx);
 // Wider than the other suites take: the refusal wording lives past the pose
 // loader, and it is half of what this file is about. Everything in between is
@@ -36,7 +39,8 @@ const names = ['buildLocalAnalysis', 'scoreGroundContact', 'scoreShinAngle',
                'bestWindow', 'gradeWindowFrames', 'sizeOfMetric', 'GRADE_WINDOW_S',
                'DENSE_MAX_SAMPLES', 'framingCheck', 'SUBJECT_PX_MIN', 'buildTracks',
                'signatureDistance', 'toPoints',
-               'passDensity', 'measurablePass', 'posedCount', 'PLAYBACK_GOOD_ENOUGH'];
+               'passDensity', 'measurablePass', 'posedCount', 'PLAYBACK_GOOD_ENOUGH',
+               'captureTrace'];
 vm.runInContext(
   src.slice(a, b).replace(/^function renderAnalysis[\s\S]*?^\}/m, '') + '\n' +
   names.map((n) => `globalThis.${n}=${n};`).join('\n'), ctx);
@@ -426,6 +430,46 @@ check('frames with no timestamp are ignored rather than counted as zero',
   `${ctx.passDensity([[{ metrics: {} }], [{ metrics: { t: 5 } }], [{ metrics: { t: 6 } }]])}/s`);
 check('and a missing list does not throw',
   ctx.passDensity(null) === 0 && ctx.posedCount(null) === 0 && !ctx.measurablePass(null));
+
+// ---------- a refusal has to be diagnosable from a screenshot ----------
+// A fix was deployed, the athlete tapped Analyze again, and the message came
+// back identical -- because the page had been open since before the deploy
+// and was still running the script it already had. Nothing in the message
+// could tell that apart from the fix not working, and a round was spent
+// finding out. So the refusal now carries the build it ran, and what each
+// capture attempt achieved rather than only the winner's frame count.
+const refusedWith = (attempts, mode) => ctx.refusalReason(
+  'Nobody in this clip is moving like a sprinter.',
+  { frames: 30, withPose: 17, duration: 7.0, span: 3.9, played: false, mode, attempts });
+
+const traced = refusedWith([
+  { mode: 'playback', found: 3, rate: 12.4 },
+  { mode: 'scan', found: 17, rate: 4.3 },
+  { mode: 'scan', found: 12, rate: 28.1 },
+], 'scan');
+check('the refusal says which build produced it',
+  /build test/.test(traced), traced.slice(-80));
+check('and that playback ran at all, which the winning count cannot show',
+  /playback 3@12\/s/.test(traced), traced.slice(-110));
+check('and that the dense pass ran, which is the question a retry turns on',
+  /scan 12@28\/s/.test(traced), traced.slice(-110));
+check('the athlete-facing half of the message is still first',
+  traced.indexOf('frames a second') < traced.indexOf('build test'), traced.slice(0, 60));
+
+// A capture from before attempts were recorded must not break the message.
+const untraced = refusedWith(undefined, 'scan');
+check('a refusal with no trace still reads as a sentence',
+  /frames a second/.test(untraced) && /build test/.test(untraced), untraced.slice(-60));
+check('and does not print an empty attempt list',
+  !/@\/s|, ;/.test(untraced), untraced.slice(-60));
+
+// The other refusal path carries it too -- that is the one most refusals take.
+const guarded = ctx.describeCapture({
+  frames: 30, withPose: 17, duration: 7.0, span: 3.9, played: false, mode: 'scan',
+  attempts: [{ mode: 'scan', found: 17, rate: 4.3 }],
+});
+check('the ordinary refusal carries the trace as well',
+  /scan 17@4\/s/.test(guarded) && /build test/.test(guarded), guarded);
 
 // ---------- sampling rate is measured over what was sampled ----------
 // The seek fallback takes its samples from a deliberately narrow window: 32

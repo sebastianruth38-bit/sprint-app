@@ -20,7 +20,26 @@ browser=(
   local_flow_test times_test ui_test4 sched_test e2e_sched
   avail_test ref_test btn_test quota_ui_test delete_account_test
 )
-[ "${1:-}" = "--clips" ] && browser+=(crop_flow_test)
+# crop_flow_test is the only suite that runs the real capture against real
+# clips, and the only place the diagnostics wiring can be proved at all. It
+# used to run only under --clips, so when compressForStorage was deleted it
+# threw on a missing name for days and nobody saw it. A suite nobody runs is a
+# suite that lies.
+#
+# Its clips are 33MB of the athlete's own footage and are deliberately not in
+# the repo, so it cannot simply be added to the list. It runs whenever they
+# are present, and when they are not it says so on its own line -- silence is
+# exactly how it rotted the first time. --clips stays accepted and does
+# nothing, for muscle memory.
+clips_present=0
+if [ -f "$here/clips/blockStart.webm" ] && [ -f "$here/clips/scrolled.webm" ]; then
+  browser+=(crop_flow_test)
+  clips_present=1
+fi
+
+if [ "$clips_present" = 0 ]; then
+  printf '%-18s %s\n' "crop_flow_test" "SKIPPED -- tests/clips/ is empty (33MB, not in the repo)"
+fi
 
 failed=()
 for t in "${node_only[@]}" "${browser[@]}"; do
