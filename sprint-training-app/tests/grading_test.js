@@ -32,7 +32,10 @@ const names = ['buildLocalAnalysis', 'scoreGroundContact', 'scoreShinAngle',
                'CONTACT_DEPTH_MIN', 'CONTACT_DEPTH_MAX', 'MIN_CONTACTS',
                'sampleRate', 'refusalReason', 'describeCapture', 'MEASURABLE_FPS_MIN',
                'ACCEL_STRIKE_BANDS', 'ACCEL_STRIKE_MIN_CONTACTS', 'STRIKE_BANDS',
-               'ACCEL_STRIKE_PLAUSIBLE_MIN', 'STRIKE_PLAUSIBLE_MIN', 'bandFor'];
+               'ACCEL_STRIKE_PLAUSIBLE_MIN', 'STRIKE_PLAUSIBLE_MIN', 'bandFor',
+               'bestWindow', 'gradeWindowFrames', 'sizeOfMetric', 'GRADE_WINDOW_S',
+               'DENSE_MAX_SAMPLES', 'framingCheck', 'SUBJECT_PX_MIN', 'buildTracks',
+               'signatureDistance', 'toPoints'];
 vm.runInContext(
   src.slice(a, b).replace(/^function renderAnalysis[\s\S]*?^\}/m, '') + '\n' +
   names.map((n) => `globalThis.${n}=${n};`).join('\n'), ctx);
@@ -276,6 +279,98 @@ check('acceleration tolerates a deeper strike than top speed does',
 const accelBand2 = ctx.ACCEL_STRIKE_BANDS.find((b) => b.score === 2);
 check('the acceleration overstride flag fires where its bands say it should',
   accelBand2 && accelBand2.min === 0.35, accelBand2 && `band 2 starts at ${accelBand2.min}`);
+
+// ---------- which stretch of the clip gets graded, and how much of it ----
+// Two complaints off one clip: "why does it say the athlete is too far away"
+// on a clip where he is plainly visible, and "it only measures a stride when
+// I'm in the clip for 5 seconds". Both came back to the same window.
+
+// How wide the window is.
+//
+// It used to be DENSE_MAX_SAMPLES = 32 frames, which is a budget for how many
+// expensive SEEKS the fallback may spend, not a statement about how much
+// running is worth grading. Measured on the recorded clips: a 7.1s clip with
+// the athlete detected in 202 frames graded 32 of them, and two clips came
+// out at 0.47s and 0.40s of measured running, because 32 frames is less time
+// the faster the capture.
+[[1 / 30, 54], [1 / 60, 108], [1 / 15, 27]].forEach(([spf, want]) => {
+  check(`a window is ${ctx.GRADE_WINDOW_S}s of running at ${Math.round(1 / spf)} frames a second`,
+    ctx.gradeWindowFrames(spf, 10000) === want,
+    `${ctx.gradeWindowFrames(spf, 10000)} frames, wanted ${want}`);
+});
+// The point of expressing it in seconds: the capture rate must not move it.
+const secondsAt = (spf) => ctx.gradeWindowFrames(spf, 10000) * spf;
+check('so the measured stretch is the same length whatever the capture rate',
+  Math.abs(secondsAt(1 / 30) - secondsAt(1 / 60)) < 0.05
+  && Math.abs(secondsAt(1 / 30) - secondsAt(1 / 15)) < 0.05,
+  [1 / 30, 1 / 60, 1 / 15].map((s) => secondsAt(s).toFixed(2) + 's').join(', '));
+// Wide enough to hold the three strides limitToStrides asks for. A stride is
+// both feet down, ~0.45s at sprint turnover.
+check('and wide enough to contain the three strides that get graded',
+  ctx.GRADE_WINDOW_S >= 3 * 0.45, `${ctx.GRADE_WINDOW_S}s vs 1.35s of stride`);
+check('never wider than the athlete was actually seen for',
+  ctx.gradeWindowFrames(1 / 30, 20) === 20, `${ctx.gradeWindowFrames(1 / 30, 20)}`);
+check('and never too short for the tracker to follow him',
+  ctx.gradeWindowFrames(1 / 30, 3) >= 3, `${ctx.gradeWindowFrames(1 / 30, 3)}`);
+
+// Which stretch it lands on.
+//
+// bestWindow ranks by how visible the athlete is. It used to read bodyFrac --
+// his share of the picture pose was handed. When he is far away that picture
+// is a CROP, and the crop padding pins him at roughly 1/2.2 of it however
+// distant he is, so bodyFrac rises exactly where he gets smaller. framingCheck
+// then refuses on bodyPx, which cropping cannot change. Measured across the
+// recorded clips, cropped frames read 0.45 frac / 183 px against 0.25 frac /
+// 274 px uncropped on the same clip, on five of seven -- so the ranking was
+// steering toward the stretch the refusal would reject.
+function runningClip(halves) {
+  // One athlete, running throughout, whose apparent size changes halfway.
+  //
+  // The shape rotates at a CONSTANT rate, which matters: the first version
+  // swung sinusoidally, so the motion rate dipped below the sprinter band at
+  // the turning points, only 69% of frames read as running against the 70%
+  // a window needs, and which window won was decided by which ones happened
+  // to pass rather than by size. The test passed and proved nothing. A
+  // constant rate puts every frame in the band, so the size preference is
+  // the only thing left to decide.
+  const W = 0.0668;  // ~2.0 units/s of shape change: mid-band for a sprinter
+  const frames = [];
+  halves.forEach(({ frac, px, n }) => {
+    for (let i = 0; i < n; i++) {
+      const th = frames.length * W;
+      const at = (base) => [
+        Math.cos(base + th), Math.sin(base + th),
+      ];
+      frames.push([{
+        sig: {
+          hip: [200, 300], size: 50,
+          norm: [at(0), at(1), at(2), at(3), at(4), at(5)],
+        },
+        metrics: { bodyFrac: frac, bodyPx: px, bodyAtEdge: false, midHip: [200, 300], legs: [] },
+      }]);
+    }
+  });
+  return frames;
+}
+// Second half looks bigger and is further away -- the exact shape of the bug.
+const mixed = runningClip([{ frac: 0.25, px: 300, n: 70 }, { frac: 0.45, px: 150, n: 70 }]);
+const picked = ctx.bestWindow(mixed, 1 / 30, ctx.gradeWindowFrames(1 / 30, 140));
+check('a window is found at all on a clip that is running throughout',
+  !!picked, JSON.stringify(picked));
+if (picked) {
+  const midpoint = (picked.from + picked.to) / 2;
+  check('the graded window lands where the athlete is biggest in real pixels',
+    midpoint < 70, `window ${picked.from}-${picked.to}, the distant half starts at 70`);
+  check('and not where he merely fills more of a crop',
+    picked.to < 105, `window ends at ${picked.to}`);
+}
+// The ranking key itself, directly.
+check('visibility is read in pixels when the capture recorded them',
+  ctx.sizeOfMetric({ bodyFrac: 0.45, bodyPx: 150 }, true) === 150);
+check('and falls back to share of the frame when it did not',
+  ctx.sizeOfMetric({ bodyFrac: 0.45, bodyPx: null }, false) === 0.45);
+check('a missing frame counts as nothing rather than throwing',
+  ctx.sizeOfMetric(null, true) === 0 && ctx.sizeOfMetric(undefined, false) === 0);
 
 // ---------- sampling rate is measured over what was sampled ----------
 // The seek fallback takes its samples from a deliberately narrow window: 32

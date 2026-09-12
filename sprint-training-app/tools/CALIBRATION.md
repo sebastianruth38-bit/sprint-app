@@ -380,6 +380,78 @@ stride", which claims Support Stiffness's subject and reads as a flat
 contradiction next to it. They now say what is actually measured: how much
 hip height varies between steps.
 
+## The graded window was one second of a five-second run (fixed 12 Sep)
+
+Two complaints from the same clip: *"why does it say the athlete is too far
+away"* on a clip where he is plainly visible, and *"it only measures like a
+stride when I'm in the clip for like 5 seconds, which is MULTIPLE strides."*
+One window, two symptoms.
+
+### It was sized by the seek budget
+
+`maxFrames = Math.min(DENSE_MAX_SAMPLES, seenIdx.length)`. `DENSE_MAX_SAMPLES
+= 32` is a budget for how many expensive *seeks* the fallback path may spend.
+It has nothing to say about how much running is worth grading, and the
+playback pass already holds every frame it captured for free.
+
+Measured, before:
+
+| clip | length | frames the athlete is in | frames graded | seconds graded | strides |
+|---|---|---|---|---|---|
+| 4002 | 7.1s | **202** | 32 | 1.00s | 2.5 |
+| wide grass (1999) | 6.5s | **122** | 32 | 0.47s | 2 |
+| block start | 4.3s | **111** | 33 | 0.60s | 2.5 |
+| 3212 | 7.9s | 36 | 26 | 0.40s | 2 |
+
+Note the seconds column: 32 frames is *less time the faster the capture*, so
+two clips were graded on under half a second of running. Every other
+threshold in the app is expressed per second so the capture rate cannot move
+it; this one quietly was not.
+
+`GRADE_WINDOW_S = 1.8`, its own constant, converted to frames at whatever
+rate the capture managed. 1.8s because a stride is both feet down (~0.45s at
+sprint turnover) and `limitToStrides` keeps three — 1.35s of stride, plus
+room to find six touchdowns inside it. After: 1999 went 2 → **3.5 strides**,
+4002 2.5 → **3**, block start 2.5 → **3**.
+
+Grading more than three strides is deliberately not the goal. Over a long run
+the athlete is still changing gear and averaging across it hides both ends.
+
+### And it was ranked by a number cropping inflates
+
+`bestWindow` picks the stretch where the athlete is easiest to see, which is
+right. It measured that as `bodyFrac` — his share of the picture pose was
+handed. When he is far away that picture is a **crop**, and `CROP_PADDING`
+pins him at roughly 1/2.2 of it however distant he is. So bodyFrac rises
+exactly where he gets smaller. `framingCheck` then refuses on `bodyPx`, which
+cropping cannot change.
+
+Cropped against uncropped frames of the same clip:
+
+| clip | cropped frac / px | uncropped frac / px | ranking prefers |
+|---|---|---|---|
+| wide grass (1999) | 0.45 / 183 | 0.25 / 274 | the smaller one |
+| 3212 | 0.60 / 183 | 0.27 / 291 | the smaller one |
+| 1247 | 0.45 / 432 | 0.26 / 508 | the smaller one |
+| 4002 | 0.44 / 166 | 0.45 / 326 | — |
+| block start | 0.42 / 105 | 0.07 / 94 | — |
+
+Five of seven distinct clips: the window picker was steering toward the
+stretch the refusal check would then reject. That is the "too far away" on a
+clip that is perfectly gradeable one second later. On the block start, the
+athlete ranges **17px to 179px** across the clip — the window that happened
+to win read 153px and graded, while a different 32-frame stretch of the same
+clip read **87px and would have been refused**.
+
+Ranking now reads `bodyPx` wherever the capture recorded it. With the wider
+window as well, the worst stretch available on the block start rose from 87px
+to 101px, and none of the recorded clips is refused.
+
+Worth knowing: the chosen window sits between the 28th and 86th percentile of
+all windows of its width by size, not at the top. That is correct — the first
+filter is "moving like a sprinter", and the stretch where the athlete is
+biggest is very often the one where he is standing still.
+
 ## Acceleration foot strike (PARTLY MEASURED — top of the scale only)
 
 The athlete's rule, in his words: 5 is the foot landing right under you (some

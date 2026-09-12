@@ -92,6 +92,13 @@ which of those failed when it will not grade.
 The `How to film it` panel above the Analyze button exists because every one
 of those refusals is decided before the phone starts recording.
 
+**It grades a window of the run, not the whole clip** — `GRADE_WINDOW_S`,
+1.8 seconds, which is the three strides `limitToStrides` keeps plus room to
+find them. Over a longer run the athlete is still changing gear and averaging
+across that hides both ends. The window is chosen by where the athlete is
+both moving like a sprinter and largest in real pixels; it is expressed in
+seconds, so the capture rate cannot shrink it.
+
 ### What it keeps: the moments, not the clip
 
 Storing the video meant storing 3MB to show the athlete a few tenths of a
