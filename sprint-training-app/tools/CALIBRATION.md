@@ -380,6 +380,44 @@ stride", which claims Support Stiffness's subject and reads as a flat
 contradiction next to it. They now say what is actually measured: how much
 hip height varies between steps.
 
+### The other end of the same bound was wrong (fixed 12 Sep)
+
+`CONTACT_DEPTH_MIN` stood at **0.8** on the reasoning that a real touchdown
+puts the foot "about one leg length" below the hip. The table above, in this
+same section, had already disproved it: the wide grass clip's four touchdowns
+read **0.775, 0.776, 0.747, 0.885**, and the start 1246 clip's shallowest is
+**0.792**. Three of those are below 0.8. They are ordinary touchdowns.
+
+Re-measured across nine recorded clips (seven distinct), the per-clip contact
+medians are 0.78, 0.83, 0.86, 0.87, 0.89 and 1.00. One whole clip sat at
+0.75–0.79 and lost every measure read at touchdown — Shin Angle, Foot Strike
+vs COM and Support Stiffness, three of the six acceleration measures — with
+nothing on the card to say why.
+
+There is no absolute number that separates a plant from a flight frame. On
+these same clips flight frames reach **0.92** while another clip's genuine
+contacts sit at **0.75**; the two ranges overlap outright:
+
+| clip | contact median | contact min | flight p90 |
+|---|---|---|---|
+| start 1246 | 0.86 | 0.80 | 0.78 |
+| start 1247 | 0.89 | 0.86 | 0.87 |
+| wide grass (1999) | 0.78 | 0.75 | 0.73 |
+| 4002 | 1.00 | 0.94 | **0.92** |
+| 3212 | 0.83 | 0.78 | 0.79 |
+| block start | 0.87 | 0.84 | 0.80 |
+
+The separation is done by `footContacts`, which keeps only frames within
+`CONTACT_TOLERANCE` (0.06) of the deepest — relative to the athlete, per
+clip. That is the mechanism that works, because it compares the athlete to
+himself. What is left for this constant is a plausibility floor, and it is
+now **0.7**: below every contact ever measured, above nothing real.
+
+The measures it had been silently deleting now come back either scored or
+labelled. That is the other half of the fix, and the more important one: the
+gate being slightly wrong cost three measures, but the measures disappearing
+without a word is what made it look like the grader was broken.
+
 ## Storage, not egress, is the free tier's ceiling
 
 After the egress fixes, browsing costs ~150KB. Storage is what runs out:

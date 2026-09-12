@@ -762,10 +762,26 @@ const MIN_CONTACTS = 2;
 // planted, and because the good end of the strike band is open, such a value
 // scored 5/5. Garbage reading as perfect is worse than garbage reading as
 // bad, so a strike outside the plausible range is dropped, not scored.
-// A real touchdown puts the foot near its full reach below the hip -- about
-// one leg length. Below this the "contact" is the lowest frame in a window
-// where the foot never actually planted.
-const CONTACT_DEPTH_MIN = 0.8;
+// A real touchdown puts the foot near its full reach below the hip. Below
+// this the "contact" is the lowest frame in a window where the foot never
+// actually planted.
+//
+// This was 0.8, which contradicted the measurement recorded four lines below
+// it: real touchdowns land at 0.75-1.03. Re-measured across nine recorded
+// clips (seven distinct), the per-clip contact medians are 0.78, 0.83, 0.86,
+// 0.87, 0.89, 1.00 -- and one whole clip's four contacts sat at 0.75-0.79,
+// every one of them a genuine plant and every one of them thrown away. That
+// clip lost Shin Angle, Foot Strike vs COM and Support Stiffness, which is
+// three of the six acceleration measures gone with no explanation.
+//
+// There is no absolute number that separates a plant from a flight frame:
+// on those same clips flight frames reach 0.92 while another clip's contacts
+// sit at 0.75, so the two ranges overlap. The separation is done by
+// footContacts, which keeps only frames within CONTACT_TOLERANCE of the
+// deepest -- relative to the athlete, per clip. What is left for this
+// constant is a plausibility floor, and it is set below every contact
+// actually measured rather than through the middle of them.
+const CONTACT_DEPTH_MIN = 0.7;
 // A planted foot cannot sit more than one leg length below the hip -- that is
 // a fully straight leg, and legLen is measured along the limb so it is always
 // at least the straight-line hip-to-ankle distance. Anything past this is not
@@ -1269,6 +1285,34 @@ function limitToStrides(metrics, strides = 3) {
   return metrics.slice(Math.max(0, from - 1), Math.min(metrics.length, to + 2));
 }
 
+// A measure that was attempted and could not be read.
+//
+// The alternative, and what every scorer here used to do, is return null and
+// vanish off the card. An athlete who films an acceleration expecting six
+// rows and gets one cannot tell whether the app measured him and found
+// nothing to say, or never measured him at all -- and the honest answer is
+// usually that one gate failed and took four measures down with it. A row
+// that says so, with the reason, is worth more than a gap.
+//
+// score is null on purpose: the renderer draws no bar for it, the hero
+// average skips it, and latestScores keeps it out of the warm-up, so a
+// measure that was not taken cannot be mistaken for a weakness.
+function notMeasurable(name, reason) {
+  return { name, score: null, value: null, note: `Not measurable. ${reason}` };
+}
+
+// Everything below the knee is read at the moment the foot is down, so when
+// there are too few of those moments the whole set fails together and for
+// one reason. Said once, in the same words, rather than four guesses.
+function touchdownShortfall(found) {
+  if (!found) {
+    return 'No touchdown could be read in the frames that were graded. '
+      + 'Film side-on with both feet in shot for the whole run.';
+  }
+  return `Only ${found} touchdown${found === 1 ? '' : 's'} could be read and ${MIN_CONTACTS} are needed. `
+    + 'A longer clip, filmed side-on with both feet in shot, gives it more to work with.';
+}
+
 // How the shin is angled the moment the foot lands. Acceleration only.
 function scoreShinAngle(metrics) {
   const facing = median(
@@ -1287,7 +1331,9 @@ function scoreShinAngle(metrics) {
       shins.push(leg.shinFromVertical * facing);
     });
   });
-  if (shins.length < MIN_CONTACTS) return null;
+  if (shins.length < MIN_CONTACTS) {
+    return notMeasurable('Shin Angle at Touchdown', touchdownShortfall(shins.length));
+  }
   const shin = median(shins);
   const band = bandFor(shin, SHIN_BANDS);
   return { name: 'Shin Angle at Touchdown', score: band.score,
@@ -1316,12 +1362,30 @@ function scoreGroundContact(metrics) {
   });
 
   const out = [];
-  if (strikes.length >= MIN_CONTACTS) {
+  if (strikes.length < MIN_CONTACTS) {
+    out.push(notMeasurable('Foot Strike vs COM', touchdownShortfall(strikes.length)));
+  } else {
     const strike = median(strikes);
     if (strike >= STRIKE_PLAUSIBLE_MIN && strike <= STRIKE_PLAUSIBLE_MAX) {
       const band = bandFor(strike, STRIKE_BANDS);
       out.push({ name: 'Foot Strike vs COM', score: band.score,
                  note: `${band.note} (${(strike * 100).toFixed(0)}% of a leg length ahead of the hips)`, value: strike });
+    } else if (strike < STRIKE_PLAUSIBLE_MIN) {
+      // Not a bad reading -- a drive-phase one. Measured across the recorded
+      // clips this tracks the lean almost exactly: 71 degrees of lean put the
+      // foot 63% of a leg length behind the hips, 49 degrees put it 46%
+      // behind, and an upright 5 degrees put it 3% behind. The bands are
+      // calibrated at top speed, where the foot lands near the hips, so
+      // scoring a drive-phase number against them would be inventing a grade.
+      // The measurement is real and it is shown; the score is not guessed.
+      out.push({ name: 'Foot Strike vs COM', score: null, value: null,
+        note: `Not graded on this clip. The foot landed ${Math.abs(strike * 100).toFixed(0)}% of a leg `
+            + 'length behind the hips, which is the shape of a drive phase rather than of top-speed '
+            + 'running. This measure is calibrated at top speed, so a score here would be a guess.' });
+    } else {
+      out.push(notMeasurable('Foot Strike vs COM',
+        `The foot read ${(strike * 100).toFixed(0)}% of a leg length ahead of the hips, which is further `
+        + 'than a leg reaches. The ankle was mistracked on these touchdowns rather than mislanded.'));
     }
   }
   // Only when the touchdowns agree. A spread wider than the bands themselves
@@ -1362,7 +1426,11 @@ function scoreGroundContact(metrics) {
 // hips "sinking" 227% of a leg length, which would put them underground.
 function scoreHipSink(metrics) {
   const rows = metrics.filter((m) => m.midHip && m.legs && m.legs.length);
-  if (rows.length < 5) return null;
+  if (rows.length < 5) {
+    return notMeasurable('Hip Height',
+      `Only ${rows.length} frame${rows.length === 1 ? '' : 's'} had the hips and both legs visible at once. `
+      + 'Keep the whole body in shot.');
+  }
   const legLen = median(rows.map((m) => median(m.legs.map((l) => l.legLen)))) || 1;
   // Only at touchdown. Off the ground the lowest foot is a recovering heel
   // somewhere behind him, not the track, so hip-above-foot swings wildly
@@ -1370,7 +1438,13 @@ function scoreHipSink(metrics) {
   const contactRows = [...footContacts(metrics, 0), ...footContacts(metrics, 1)]
     .map((c) => metrics[c.i])
     .filter((m) => m && m.midHip && m.legs && m.legs.length);
-  if (contactRows.length < 3) return null;
+  // Three, not two: this compares the highest touchdown against the lowest,
+  // and a range needs more than the two points that define it.
+  if (contactRows.length < 3) {
+    return notMeasurable('Hip Height',
+      `Hip height is compared across touchdowns and only ${contactRows.length} could be read. `
+      + 'Three are needed to see a range rather than a pair of numbers.');
+  }
   const heights = contactRows.map((m) => {
     const lowestFoot = Math.max(...m.legs.map((l) => l.ank[1]));
     return (lowestFoot - m.midHip[1]) / (median(m.legs.map((l) => l.legLen)) || legLen);
@@ -1378,7 +1452,11 @@ function scoreHipSink(metrics) {
   // sinking, which is the whole measurement -- clipping that would delete the
   // fault this is here to find.
   }).filter((h) => h <= CONTACT_DEPTH_MAX);
-  if (heights.length < 3) return null;
+  if (heights.length < 3) {
+    return notMeasurable('Hip Height',
+      'The hips read further above the foot than a leg is long on most of these touchdowns, '
+      + 'so the landmarks were not to be trusted. Filming closer and side-on steadies them.');
+  }
   // Percentiles, not min/max: one mistracked frame should not define the
   // athlete's whole range of hip height.
   const sorted = heights.slice().sort((a, b) => a - b);
@@ -1618,7 +1696,11 @@ function scoreMaxVelocity(metrics, surface) {
 // every athlete, because a high knee necessarily hangs the shin below it.
 function scoreKneeFold(metrics) {
   const folds = metrics.map((m) => m.kneeFold).filter((v) => v != null && v > 15);
-  if (folds.length < 3) return null;
+  if (folds.length < 3) {
+    return notMeasurable('Heel Recovery (knee fold)',
+      `The knee could be read in only ${folds.length} frame${folds.length === 1 ? '' : 's'} of the swing. `
+      + 'Film side-on so the swinging leg is not hidden behind the other one.');
+  }
   const tightest = Math.min(...folds);
   const band = bandFor(tightest, FOLD_BANDS);
   return { name: 'Heel Recovery (knee fold)', score: band.score,
@@ -1834,8 +1916,22 @@ function supportDrops(metrics) {
 
 function scoreSupportStiffness(metrics) {
   const drops = supportDrops(metrics);
-  if (drops.length < MIN_CONTACTS) return null;
-  if (Math.max(...drops) - Math.min(...drops) > SUPPORT_AGREEMENT_MAX) return null;
+  if (drops.length < MIN_CONTACTS) {
+    // Not the same shortfall as the others: this one needs the foot to stay
+    // put across several frames, so a touchdown can be perfectly readable and
+    // still be no use here.
+    return notMeasurable('Support Stiffness', drops.length
+      ? `Only ${drops.length} touchdown could be followed all the way through contact and `
+        + `${MIN_CONTACTS} are needed. A clip filmed closer, side-on, holds the foot long enough.`
+      : 'No touchdown stayed in frame long enough to watch the hips through it. '
+        + 'Film side-on, closer, with the whole body in shot.');
+  }
+  const spread = Math.max(...drops) - Math.min(...drops);
+  if (spread > SUPPORT_AGREEMENT_MAX) {
+    return notMeasurable('Support Stiffness',
+      `The touchdowns disagreed by ${(spread * 100).toFixed(0)}% of a leg length, which is wider than `
+      + 'the bands themselves. That is the hip landmark moving between frames, not the hips.');
+  }
   const drop = median(drops);
   const band = bandFor(drop, SUPPORT_BANDS);
   return {
@@ -1983,10 +2079,20 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     const shin = scoreShinAngle(metrics);
     if (shin) {
       pinpoints.push({ name: shin.name, score: shin.score, note: shin.note });
-      if (shin.value < 5) flags.push('Foot is landing ahead of the knee out of the start');
+      // value is null on a row that could not be read, and `null < 5` is
+      // true -- without this guard an unmeasured shin raises a fault the
+      // athlete does not have.
+      if (shin.value != null && shin.value < 5) {
+        flags.push('Foot is landing ahead of the knee out of the start');
+      }
     }
   } else {
     const maxv = scoreMaxVelocity(metrics, surface);
+    if (!maxv) {
+      pinpoints.push(notMeasurable('Thigh Separation (scissor)',
+        'The thigh never reached a clear peak in these frames, so there is no instant to read the '
+        + 'separation at. Film side-on with the whole body in shot.'));
+    }
     if (maxv) {
       // The scissor only. Torso-to-Thigh is read at the same instant off the
       // same frames and says the same thing in a second number.
@@ -2045,13 +2151,21 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     if (sink.value > 0.2) flags.push('Hips sinking through contact');
   }
 
-  const best = pinpoints.reduce((a, b) => (b.score > a.score ? b : a), pinpoints[0]);
-  const worst = pinpoints.reduce((a, b) => (b.score < a.score ? b : a), pinpoints[0]);
-  const summary = pinpoints.length
+  // Only rows that carry a score. An unscored row's score is null, and
+  // `null < a.score` is true for every positive score, so the reduce below
+  // used to hand "Work on:" to whichever measure could not be measured --
+  // a saved clip really did read "Strongest: drive position. Work on: ankle
+  // at touchdown" when the ankle row said, three lines lower, that it was
+  // not measurable. The renderer and the warm-up already filter on this;
+  // the summary was the one place that did not.
+  const graded = pinpoints.filter((p) => typeof p.score === 'number' && isFinite(p.score));
+  const best = graded.reduce((a, b) => (b.score > a.score ? b : a), graded[0]);
+  const worst = graded.reduce((a, b) => (b.score < a.score ? b : a), graded[0]);
+  const summary = graded.length
     ? (best === worst
         ? `${best.name.toLowerCase()} scored ${best.score}/5.`
         : `Strongest: ${best.name.toLowerCase()}. Work on: ${worst.name.toLowerCase()}.`)
-    : 'No scoreable positions found in this clip.';
+    : 'Nothing in this clip could be scored. Each measure below says why.';
 
   const readRate = usable.length / metrics.length;
   const strides = stridesMeasured(metrics);
@@ -2208,17 +2322,39 @@ const MEASURABLE_FPS_MIN = 10;
 // Refusing is still right at that rate -- two samples a stride cannot measure
 // a touchdown angle -- but the REASON has to be honest. The guard that
 // happened to trip first is not the cause; the device is.
+// How densely the frames that were graded were actually sampled.
+//
+// Over the stretch they were taken from, not over the whole clip. A seek pass
+// aims at roughly a second and takes its samples there; measuring it against
+// a seven-second clip divides the rate by seven and reports a full-rate
+// capture as a broken one.
+function sampleRate(capture) {
+  if (!capture || !capture.frames) return null;
+  const span = capture.span || capture.duration;
+  return span > 0 ? capture.frames / span : null;
+}
+
 function refusalReason(rejection, capture) {
-  const perSecond = capture && capture.frames && capture.duration
-    ? capture.frames / capture.duration
-    : null;
+  const perSecond = sampleRate(capture);
   if (perSecond != null && perSecond < MEASURABLE_FPS_MIN) {
     const inShot = capture.withPose / perSecond;
-    return `This phone only managed ${perSecond.toFixed(0)} frames a second. Too few to measure a `
-      + `stride, so this is about the device rather than your running. A shorter clip, or one `
-      + `recorded at a lower resolution, gives it a chance. `
-      + `(you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s; `
+    const counts = `(you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s; `
       + `${capture.withPose} of ${capture.frames} frames)`;
+    // Only a playback pass measures the device. When the seek fallback is
+    // what produced these frames, the rate is a property of this browser's
+    // seeking, not of the phone's decoder -- and telling an athlete his phone
+    // filmed at 4 frames a second, when he filmed at 30 and watched it back
+    // himself, reads as the app being broken rather than as a real limit.
+    if (capture.mode === 'playback') {
+      return `This phone only managed ${perSecond.toFixed(0)} frames a second while reading the clip. `
+        + `Too few to measure a stride, so this is about the device rather than your running -- the `
+        + `clip is fine, reading it back is what struggled. A shorter clip, or one recorded at a `
+        + `lower resolution, gives it a chance. ${counts}`;
+    }
+    return `This browser could not play the clip through, so it was read by stepping through it, and `
+      + `that only got ${perSecond.toFixed(0)} usable frames a second -- too few to measure a stride. `
+      + `Nothing is wrong with how you filmed it. A shorter clip, or one recorded at a lower `
+      + `resolution, is easier to step through. ${counts}`;
   }
   return `${rejection} ${describeCapture(capture)}`;
 }
@@ -2233,14 +2369,18 @@ function refusalReason(rejection, capture) {
 // from an athlete who was barely in it.
 function describeCapture(capture) {
   if (!capture || !capture.frames || !capture.duration) return '';
-  const perSecond = capture.frames / capture.duration;
+  const perSecond = sampleRate(capture) || 0;
   const inShot = perSecond > 0 ? capture.withPose / perSecond : 0;
   const parts = [`you were in shot about ${inShot.toFixed(1)}s of ${capture.duration.toFixed(1)}s`];
   parts.push(`${capture.withPose} of ${capture.frames} frames`);
-  // Well under the rate we ask for means the device could not keep up, which
-  // is a different problem from standing too far away and has a different fix.
+  // Well under the rate we ask for means the clip could not be read quickly
+  // enough, which is a different problem from standing too far away and has a
+  // different fix. Worded by which pass took the frames: only playback says
+  // anything about the device.
   if (perSecond < CAPTURE_RATE / 2) {
-    parts.push(`this device managed ${perSecond.toFixed(0)} frames a second`);
+    parts.push(capture.mode === 'playback'
+      ? `this device read ${perSecond.toFixed(0)} frames a second`
+      : `the clip had to be stepped through, at ${perSecond.toFixed(0)} frames a second`);
   }
   if (!capture.played) parts.push('the clip would not play through');
   return `(${parts.join('; ')})`;
@@ -2684,10 +2824,17 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // reads; taking poses from one pass and stills from another silently
     // mismatches them.
     const best = { rows: [], candidates: [] };
+    // Which strategy produced the frames that won. Only a playback pass
+    // measures what the device can decode in real time; a seek pass samples
+    // wherever it is told to, as fast as seeking allows, so its rate says
+    // nothing about the phone.
+    let bestMode = 'none';
+    let mode = 'none';
     const keepIfBetter = () => {
       if (posedCount(framePoses) <= posedCount(best.rows)) return;
       best.rows = framePoses;
       best.candidates = candidates.slice();
+      bestMode = mode;
     };
     const takeBest = () => {
       framePoses = best.rows;
@@ -2707,6 +2854,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // that happens to come back worse -- a stall, a decoder hiccup -- must
       // not throw away what the first pass already had.
       for (const rate of [PLAYBACK_RATE, 1]) {
+        mode = 'playback';
         try {
           framePoses = [];
           candidates.length = 0;
@@ -2737,6 +2885,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       for (let i = 0; i < sampleCount; i++) {
         times.push(clampT((duration * i) / Math.max(sampleCount - 1, 1)));
       }
+      mode = 'scan';
       framePoses = await scan(times, 'Scanning clip', true);
       keepIfBetter();
 
@@ -2773,6 +2922,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
           // describe the SAME pass when they are handed over, and candidates
           // was just cleared for this scan. The sweep was already offered
           // above, so a dense pass that finds less simply loses.
+          mode = 'scan';
           framePoses = await scan(dense, 'Looking closer', true);
           keepIfBetter();
         }
@@ -2869,6 +3019,21 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         withPose: framePoses.filter((p) => p.length).length,
         played: playedThrough,
         duration,
+        // How the winning frames were taken, and over how much of the clip.
+        //
+        // Sampling density is frames over the stretch they were taken FROM,
+        // which is the whole clip only for a playback pass. The seek passes
+        // aim at a narrow window on purpose -- the dense one takes 32 samples
+        // across about a second -- so dividing by the clip's full duration
+        // reported a healthy 30/s capture as 4/s, and the athlete was told
+        // his phone could not keep up when it had just sampled at the full
+        // rate. Which pass won is carried too, because "this phone only
+        // managed N frames a second" is a claim about the device and is only
+        // true when the device is what set the rate.
+        mode: bestMode,
+        span: best.candidates.length > 1
+          ? best.candidates[best.candidates.length - 1].t - best.candidates[0].t
+          : 0,
       },
     };
   } finally {

@@ -258,8 +258,14 @@ check('a plausible foot strike is reported', !!strikeSane, JSON.stringify(sane.m
 
 const mad = ctx.scoreGroundContact(contactFrames(-40));  // half a leg BEHIND
 const strikeMad = mad.find((p) => p.name === 'Foot Strike vs COM');
-check('an impossible foot strike is dropped rather than scored well',
-  !strikeMad, strikeMad && `${strikeMad.score}/5 ${strikeMad.note}`);
+check('an impossible foot strike is not scored well',
+  strikeMad && strikeMad.score == null, strikeMad && `${strikeMad.score}/5 ${strikeMad.note}`);
+// Half a leg length behind the hip is the drive-phase reading, and the bands
+// are calibrated at top speed. Saying that is more use than an empty row --
+// and far more use than the 5/5 an open-ended band would have given it.
+check('and says which it is rather than vanishing',
+  strikeMad && /drive phase/.test(strikeMad.note || ''),
+  strikeMad && (strikeMad.note || '').slice(0, 90));
 check('the rest of ground contact still reports', mad.some((p) => p.name === 'Ankle at Touchdown'));
 
 check('a single contact is not enough to call it a measurement',
@@ -339,9 +345,15 @@ check('it is measured in leg lengths, so filming distance cannot move it',
 // Contacts that disagree are noise, exactly as with the ankle.
 // One stiff stretch and one collapsing one is not a measurement of either.
 const mixed = loadedStride(0).concat(loadedStride(0.4));
+// Withheld, not absent: a measure that disappears off the card reads as the
+// app forgetting it. It comes back unscored, with the reason.
+const mixedSupport = ctx.scoreSupportStiffness(mixed);
 check('contacts that disagree with each other are not scored',
-  ctx.scoreSupportStiffness(mixed) === null,
+  mixedSupport && mixedSupport.score == null,
   JSON.stringify(ctx.supportDrops(mixed).map((x) => +x.toFixed(2))));
+check('and the row says why rather than vanishing',
+  mixedSupport && /not measurable/i.test(mixedSupport.note || '') && /disagreed/.test(mixedSupport.note),
+  mixedSupport && (mixedSupport.note || '').slice(0, 80));
 
 // ---------- which stretch of the clip gets measured ----------
 // Picking where he is biggest alone hands back a block start's set position;
@@ -468,9 +480,14 @@ check('a fully extended leg at touchdown is still counted',
   extended !== null && extended.value < 0.1,
   extended && `spread ${(extended.value * 100).toFixed(0)}%`);
 
-// Too few plausible contacts is withheld rather than guessed from one.
-check('with almost every contact impossible, nothing is reported',
-  ctx.scoreHipSink(plantedRun([0.95, 1.27, 1.24, 1.30])) === null);
+// Too few plausible contacts is withheld rather than guessed from one --
+// withheld meaning unscored and explained, not missing.
+const ghostly = ctx.scoreHipSink(plantedRun([0.95, 1.27, 1.24, 1.30]));
+check('with almost every contact impossible, no number is reported',
+  ghostly && ghostly.score == null, ghostly && `${ghostly.score}/5`);
+check('and the athlete is told why',
+  ghostly && /not measurable/i.test(ghostly.note || ''),
+  ghostly && (ghostly.note || '').slice(0, 80));
 
 // ---------- passing position ----------
 // The fold at the instant the thigh swings through vertical. The stance leg

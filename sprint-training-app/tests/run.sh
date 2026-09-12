@@ -11,7 +11,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Pure logic first: they are fast, and if the grader's maths is broken there
 # is no point spending two minutes booting browsers.
 node_only=(
-  tracking_test framing_test motion_test gait_test subject_test
+  tracking_test grading_test framing_test motion_test gait_test subject_test
   dense_test frames_test coverage_test v2_test
   logic_test split_test bodyweight_test expand_test2
   legal_test guide_test docs_test warmup_test gym_test

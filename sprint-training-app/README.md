@@ -51,6 +51,22 @@ forward out of the blocks and close to vertical by top speed.
 Each is scored 1–5 against bands in `tools/CALIBRATION.md`, every one of which
 came from measuring real footage rather than from a textbook.
 
+A measure that cannot be read says so. Everything below the knee is read at
+the moment the foot is down, so when a clip yields too few touchdowns those
+measures fail together — and they used to fail by vanishing off the card,
+which looks identical to the app forgetting them. They now come back with no
+score and the reason, and an unscored row is skipped by the overall average,
+by the summary line, and by the warm-up, so a measure nobody took can never
+be mistaken for a weakness.
+
+One case is worth knowing about: **Foot Strike vs COM is not graded on a
+drive-phase clip.** The bands are calibrated at top speed, where the foot
+lands near the hips. Out of the blocks it lands well behind them — measured
+across the recorded clips, a 71° lean put it 63% of a leg length behind, a 49°
+lean 46% behind — which is what a drive phase is supposed to look like and is
+off the end of those bands. The number is shown; the score is withheld rather
+than guessed. Grading it wants its own bands and its own calibration clips.
+
 ### It refuses clips it cannot read
 
 This is the part that matters most and the part that took longest to get
@@ -200,7 +216,7 @@ is public by design; Row Level Security is what protects the data, not the key.
 ./tests/run.sh --clips   # also the ones that need tests/clips/
 ```
 
-29 suites. The pure-logic ones run the grader's maths against recorded pose
+30 suites. The pure-logic ones run the grader's maths against recorded pose
 data; the rest drive the real page in headless Chromium with the network
 stubbed. `tests/setup.sh` builds the fixture copy of the app — **it runs
 automatically from `run.sh`, but if you test by hand after editing `app.js`,

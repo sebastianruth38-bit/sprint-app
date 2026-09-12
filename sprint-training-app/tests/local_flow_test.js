@@ -154,12 +154,21 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   // angle. Telling the athlete he was not sprinting is not.
   const reasons = await page.evaluate(() => ({
     slow: refusalReason('Nobody in this clip is moving like a sprinter.',
-      { frames: 34, withPose: 16, duration: 9.0, played: true }),
+      { frames: 34, withPose: 16, duration: 9.0, span: 9.0, played: true, mode: 'playback' }),
     normal: refusalReason('Tracking jumped between overlapping people — film one athlete alone, side-on.',
-      { frames: 85, withPose: 16, duration: 7.1, played: true }),
+      { frames: 85, withPose: 16, duration: 7.1, span: 7.1, played: true, mode: 'playback' }),
+    // The seek fallback: 32 samples taken across about a second of a long
+    // clip. That is the full capture rate, and dividing it by the clip's
+    // whole duration is what reported it as 4/s.
+    stepped: refusalReason('Nobody in this clip is moving like a sprinter.',
+      { frames: 32, withPose: 30, duration: 7.5, span: 1.07, played: false, mode: 'scan' }),
+    // The same pass genuinely sampling too thinly, over the stretch it
+    // covered rather than over the clip.
+    thin: refusalReason('Nobody in this clip is moving like a sprinter.',
+      { frames: 30, withPose: 12, duration: 7.5, span: 7.5, played: false, mode: 'scan' }),
   }));
   assert(/frames a second/.test(reasons.slow) && /about the device rather than your running/.test(reasons.slow),
-    'a 4fps capture blames the phone, not the athlete: ' + reasons.slow.slice(0, 90));
+    'a 4fps playback capture blames the phone, not the athlete: ' + reasons.slow.slice(0, 90));
   assert(!/moving like a sprinter/.test(reasons.slow),
     'and drops the guard message that would read as a verdict on him: ' + reasons.slow.slice(0, 60));
   assert(/in shot about 4\.2s of 9\.0s/.test(reasons.slow),
@@ -167,6 +176,23 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   // At a workable rate the real reason must survive untouched.
   assert(/overlapping people/.test(reasons.normal),
     'a 12fps capture keeps the guard that actually tripped: ' + reasons.normal.slice(0, 70));
+
+  // The bug this replaced: 32 samples over 1.07s is 30/s, the rate we ask
+  // for. Measured against the 7.5s clip it came out as 4/s and the athlete
+  // was told his phone could not keep up, on a clip he had filmed at 30fps
+  // and watched back himself.
+  assert(!/frames a second/.test(reasons.stepped),
+    'a dense seek pass at full rate is not reported as a slow one: ' + reasons.stepped.slice(0, 110));
+  assert(/moving like a sprinter/.test(reasons.stepped),
+    'so the guard that actually tripped is what gets shown: ' + reasons.stepped.slice(0, 80));
+  // And when a seek pass really is too thin, it still says so -- without
+  // pinning it on a phone that never got asked to decode anything.
+  assert(/frames a second/.test(reasons.thin),
+    'a genuinely thin seek pass still reports its rate: ' + reasons.thin.slice(0, 90));
+  assert(!/this phone|this device/i.test(reasons.thin),
+    'but does not blame the device for a rate the seek pass chose: ' + reasons.thin.slice(0, 120));
+  assert(/Nothing is wrong with how you filmed it/.test(reasons.thin),
+    'and says so plainly: ' + reasons.thin.slice(0, 120));
 
   // ---------- one-tap sign-in ----------
   // The point of the Google button is that a teammate standing on a track can
