@@ -1203,6 +1203,52 @@ const STRIKE_BANDS = [
   { min: 0.32, max: Infinity, score: 2, note: 'Overstriding badly -- braking on every step' },
 ];
 
+// Where the foot lands during acceleration, which is a different question
+// from where it lands at top speed and was previously not answered at all.
+//
+// The athlete's scale, in his words: 5 is the foot landing right under you --
+// some athletes even step back under themselves, rare but not a fault. 3 is
+// in front. 1 is way in front.
+//
+// So unlike the top-speed bands, landing BEHIND the hips is not a defect
+// here, it is the drive phase working. Measured across the recorded clips it
+// tracks the lean almost exactly: 71 degrees of lean put the foot 63% of a
+// leg length behind the hips, 49 degrees put it 46% behind, 39 degrees 17%
+// behind, and an upright 5 degrees put it 3% behind. Every one of those is a
+// 5 and the old bands had no way to say so -- they were dropping the reading
+// as implausible instead.
+//
+// The boundaries of the top three bands are the top-speed ones, because
+// "under", "slightly ahead" and "reaching" mean the same distances whatever
+// the athlete is doing. The bottom two are EXTRAPOLATED: nothing recorded
+// has landed in front during acceleration, so 0.5 as the edge of "way in
+// front" is reasoning from the athlete's scale, not a measurement. Treat 1/5
+// and 2/5 here as worth looking at the frame yourself.
+const ACCEL_STRIKE_BANDS = [
+  { min: -Infinity, max: 0.12, score: 5, note: 'Foot lands right under you, driving the ground back' },
+  { min: 0.12, max: 0.22, score: 4, note: 'Foot lands slightly ahead of you' },
+  { min: 0.22, max: 0.35, score: 3, note: 'Landing in front of you -- reaching rather than pushing' },
+  { min: 0.35, max: 0.5, score: 2, note: 'Well in front, braking against your own start' },
+  { min: 0.5, max: Infinity, score: 1, note: 'Way in front -- every step is fighting the last one' },
+];
+
+// A planted foot cannot be a full leg length behind the hip, so anything past
+// this is a mistrack rather than a deep drive step. Far below the top-speed
+// bound of -0.2, on purpose: at top speed a foot 20% behind the hip is a bad
+// read, and during acceleration 63% behind was the most ordinary thing in the
+// recorded set.
+const ACCEL_STRIKE_PLAUSIBLE_MIN = -1.0;
+
+// Touchdowns needed before acceleration foot strike is graded: two to judge
+// on, and one to throw away.
+//
+// The first step of a start lands ahead of the hips as a matter of course --
+// the athlete is behind his own feet and has to get out from under himself,
+// and that is how a start works rather than a fault to mark him down for. One
+// stride is therefore not a measurement of anything, and the first of several
+// is not either, so it is dropped and the rest are graded.
+const ACCEL_STRIKE_MIN_CONTACTS = 3;
+
 // Ankle angle at touchdown. Under ~95 the toes are up and the foot is
 // ready to be stiff; well over that it lands pointed and collapses.
 const DORSI_BANDS = [
@@ -1340,11 +1386,14 @@ function scoreShinAngle(metrics) {
            note: `${band.note} (${shin.toFixed(0)} degrees off vertical)`, value: shin };
 }
 
-function scoreGroundContact(metrics) {
+function scoreGroundContact(metrics, clipType) {
+  const accel = clipType === 'Acceleration';
   const facing = median(
     metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
   ) || 1;
 
+  // In time order, not foot by foot. Acceleration drops the FIRST touchdown,
+  // and "first" is meaningless in a list gathered left foot then right foot.
   const strikes = [];
   const dorsi = [];
   [0, 1].forEach((side) => {
@@ -1356,32 +1405,48 @@ function scoreGroundContact(metrics) {
       // whichever moment happened to be lowest, mid-flight included.
       const depth = (leg.ank[1] - row.midHip[1]) / (leg.legLen || 1);
       if (depth < CONTACT_DEPTH_MIN) return;
-      strikes.push(((leg.ank[0] - row.midHip[0]) * facing) / leg.legLen);
+      strikes.push({ i: c.i, value: ((leg.ank[0] - row.midHip[0]) * facing) / leg.legLen });
       if (leg.footVsShin != null) dorsi.push(leg.footVsShin);
     });
   });
+  strikes.sort((a, b) => a.i - b.i);
 
   const out = [];
-  if (strikes.length < MIN_CONTACTS) {
-    out.push(notMeasurable('Foot Strike vs COM', touchdownShortfall(strikes.length)));
+  // Acceleration needs one touchdown to spare, because it throws the first
+  // one away; top speed has no first step to allow for.
+  const needed = accel ? ACCEL_STRIKE_MIN_CONTACTS : MIN_CONTACTS;
+  const plausibleMin = accel ? ACCEL_STRIKE_PLAUSIBLE_MIN : STRIKE_PLAUSIBLE_MIN;
+  if (strikes.length < needed) {
+    out.push(notMeasurable('Foot Strike vs COM', accel
+      // Not the generic shortfall: this one is not about the filming. A first
+      // step lands ahead of the hips whoever is running, so grading a start
+      // off a single stride marks the athlete down for how a start works.
+      ? `Only ${strikes.length} touchdown${strikes.length === 1 ? '' : 's'} could be read, and the first `
+        + 'step of a start lands ahead of the hips whoever you are -- so it is thrown away rather than '
+        + `counted against you. That needs ${ACCEL_STRIKE_MIN_CONTACTS} touchdowns to grade: one to drop `
+        + 'and two to judge. Film a few more strides of the run.'
+      : touchdownShortfall(strikes.length)));
   } else {
-    const strike = median(strikes);
-    if (strike >= STRIKE_PLAUSIBLE_MIN && strike <= STRIKE_PLAUSIBLE_MAX) {
-      const band = bandFor(strike, STRIKE_BANDS);
+    // The first step goes. Everything after it is the athlete's mechanics
+    // rather than the geometry of getting out of a start.
+    const judged = accel ? strikes.slice(1) : strikes;
+    const strike = median(judged.map((s) => s.value));
+    if (strike >= plausibleMin && strike <= STRIKE_PLAUSIBLE_MAX) {
+      const band = bandFor(strike, accel ? ACCEL_STRIKE_BANDS : STRIKE_BANDS);
+      // Behind reads as behind. "-46% ahead of the hips" is a sentence that
+      // makes the athlete do the arithmetic to find out he did well.
+      const where = strike < 0
+        ? `${Math.abs(strike * 100).toFixed(0)}% of a leg length behind the hips`
+        : `${(strike * 100).toFixed(0)}% of a leg length ahead of the hips`;
+      const basis = accel
+        ? `, over ${judged.length} stride${judged.length === 1 ? '' : 's'} after the first step`
+        : '';
       out.push({ name: 'Foot Strike vs COM', score: band.score,
-                 note: `${band.note} (${(strike * 100).toFixed(0)}% of a leg length ahead of the hips)`, value: strike });
-    } else if (strike < STRIKE_PLAUSIBLE_MIN) {
-      // Not a bad reading -- a drive-phase one. Measured across the recorded
-      // clips this tracks the lean almost exactly: 71 degrees of lean put the
-      // foot 63% of a leg length behind the hips, 49 degrees put it 46%
-      // behind, and an upright 5 degrees put it 3% behind. The bands are
-      // calibrated at top speed, where the foot lands near the hips, so
-      // scoring a drive-phase number against them would be inventing a grade.
-      // The measurement is real and it is shown; the score is not guessed.
-      out.push({ name: 'Foot Strike vs COM', score: null, value: null,
-        note: `Not graded on this clip. The foot landed ${Math.abs(strike * 100).toFixed(0)}% of a leg `
-            + 'length behind the hips, which is the shape of a drive phase rather than of top-speed '
-            + 'running. This measure is calibrated at top speed, so a score here would be a guess.' });
+                 note: `${band.note} (${where}${basis})`, value: strike });
+    } else if (strike < plausibleMin) {
+      out.push(notMeasurable('Foot Strike vs COM',
+        `The foot read ${Math.abs(strike * 100).toFixed(0)}% of a leg length behind the hips, which is `
+        + 'further back than a planted leg reaches. The ankle was mistracked on these touchdowns.'));
     } else {
       out.push(notMeasurable('Foot Strike vs COM',
         `The foot read ${(strike * 100).toFixed(0)}% of a leg length ahead of the hips, which is further `
@@ -2129,14 +2194,19 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
   // under load, and whether the hips stay up.
   const support = scoreSupportStiffness(metrics);
   if (support) pinpoints.push(support);
-  scoreGroundContact(metrics).forEach((p) => {
+  scoreGroundContact(metrics, clipType).forEach((p) => {
     // Ankle at Touchdown is an acceleration read now. At top speed it said
     // the same thing as Support Stiffness off shakier landmarks, and two
     // numbers for one property, one of them known to be soft, is worse than
     // one.
     if (p.name === 'Ankle at Touchdown' && clipType !== 'Acceleration') return;
     pinpoints.push({ name: p.name, score: p.score, note: p.note });
-    if (p.name === 'Foot Strike vs COM' && p.value > 0.32) {
+    // Raised at the point the bands themselves call it overstriding, so the
+    // flag and the score can never disagree -- acceleration allows a little
+    // more reach before it counts, and hard-coding one number for both meant
+    // a clip could be flagged for overstriding while scoring 3/5 for not.
+    const overstride = clipType === 'Acceleration' ? 0.35 : 0.32;
+    if (p.name === 'Foot Strike vs COM' && p.value != null && p.value > overstride) {
       flags.push(clipType === 'Acceleration'
         ? 'Overstriding out of the start, reaching instead of pushing the ground back'
         : 'Overstriding, the foot is landing well in front of the hips');

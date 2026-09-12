@@ -30,7 +30,9 @@ const names = ['buildLocalAnalysis', 'scoreGroundContact', 'scoreShinAngle',
                'scoreSupportStiffness', 'scoreHipSink', 'scoreKneeFold',
                'notMeasurable', 'touchdownShortfall', 'median', 'footContacts',
                'CONTACT_DEPTH_MIN', 'CONTACT_DEPTH_MAX', 'MIN_CONTACTS',
-               'sampleRate', 'refusalReason', 'describeCapture', 'MEASURABLE_FPS_MIN'];
+               'sampleRate', 'refusalReason', 'describeCapture', 'MEASURABLE_FPS_MIN',
+               'ACCEL_STRIKE_BANDS', 'ACCEL_STRIKE_MIN_CONTACTS', 'STRIKE_BANDS',
+               'ACCEL_STRIKE_PLAUSIBLE_MIN', 'STRIKE_PLAUSIBLE_MIN', 'bandFor'];
 vm.runInContext(
   src.slice(a, b).replace(/^function renderAnalysis[\s\S]*?^\}/m, '') + '\n' +
   names.map((n) => `globalThis.${n}=${n};`).join('\n'), ctx);
@@ -147,6 +149,133 @@ const everyRow = [...(oneScore.pinpoints || [])];
 check('an unscored row carries null, never 0',
   everyRow.every((p) => typeof p.score === 'number' || p.score === null),
   JSON.stringify(everyRow.map((p) => `${p.name}:${p.score}`)));
+
+// ---------- where the foot lands during acceleration ----------
+// The athlete's scale, in his words: 5 is the foot landing right under you
+// (some athletes even step back under themselves, rare but not a fault), 3 is
+// in front, 1 is way in front. And: a first step lands in front as a matter
+// of course, that is how a start works rather than bad mechanics, so it takes
+// more than one stride to grade honestly.
+//
+// Worth stating plainly, because the scores this produces look flattering:
+// every clip recorded so far lands under or behind the hips and scores 5,
+// which is correct by the rule above but means REAL footage has never
+// exercised the 3 or the 1. These build the readings synthetically so the
+// whole scale is checked rather than the one end that happens to exist.
+function contactsAt(offsets, depth = 0.9, startFoot = 0) {
+  // One touchdown per entry, alternating feet, each with the ankle `offset`
+  // leg lengths ahead of the hip. Frames between them keep footContacts from
+  // merging the lot into one contact.
+  const out = [];
+  offsets.forEach((offset, k) => {
+    for (let f = 0; f < 3; f++) {
+      const planted = f === 1;
+      const mk = (on) => ({
+        hip: [200, 100], knee: [200, 150], legLen: 100, facing: 1,
+        ank: [200 + (on ? offset * 100 : 0), 100 + (on ? depth * 100 : 40)],
+        shinFromVertical: 12, footVsShin: 95, kneeAngle: on ? 165 : 60, thighSwing: 20, hipAngle: 110,
+      });
+      out.push({
+        midHip: [200, 100], torsoFromVertical: 40, scissor: 100, kneeFold: 70,
+        thighRise: 0.4, leadKnee: 90,
+        legs: (k + startFoot) % 2 ? [mk(false), mk(planted)] : [mk(planted), mk(false)],
+      });
+    }
+  });
+  return out;
+}
+const strikeOf = (offsets) => {
+  const rows = ctx.scoreGroundContact(contactsAt(offsets), 'Acceleration');
+  return rows.find((p) => p.name === 'Foot Strike vs COM');
+};
+
+// The scale end to end. The first entry of each list is the dropped first
+// step, so it is deliberately not the value being graded.
+[[[0.0, -0.05, 0.0, -0.02], 5, 'under you'],
+ [[0.0, 0.16, 0.15, 0.17], 4, 'slightly ahead'],
+ [[0.0, 0.28, 0.27, 0.30], 3, 'in front'],
+ [[0.0, 0.60, 0.62, 0.58], 1, 'way in front']].forEach(([offsets, want, what]) => {
+  const row = strikeOf(offsets);
+  check(`a foot landing ${what} scores ${want}`,
+    row && row.score === want, row ? `${row.score}/5 ${row.note}` : '(no row)');
+});
+
+// Landing behind is not a fault during acceleration -- it is the drive phase,
+// and the old top-speed bands threw it away as implausible.
+const behind = strikeOf([0.0, -0.45, -0.50, -0.47]);
+check('landing well behind the hips out of a start still scores 5',
+  behind && behind.score === 5, behind ? `${behind.score}/5 ${behind.note}` : '(no row)');
+check('and reads as behind rather than as a negative amount ahead',
+  behind && /behind the hips/.test(behind.note) && !/-\d/.test(behind.note),
+  behind && behind.note);
+
+// The first step is dropped.
+//
+// These values are picked so that counting the first step gives a DIFFERENT
+// score, which is harder than it sounds: a median already absorbs one outlier
+// among four, so the obvious test (first step way out in front, rest under)
+// passes whether the step is dropped or not and proves nothing. It has to be
+// a case where the first step drags the median across a band edge.
+//
+//   [0.60, 0.30, 0.10] -> counting it, the median is 0.30, which is a 3.
+//                         dropping it, the median of 0.30 and 0.10 is 0.20,
+//                         which is a 4.
+const forgiven = strikeOf([0.60, 0.30, 0.10]);
+check('a first step landing in front is not counted against the athlete',
+  forgiven && forgiven.score === 4,
+  forgiven ? `${forgiven.score}/5 (3 would mean it was counted) ${forgiven.note}` : '(no row)');
+
+// And the reverse, so the rule cannot hide a real fault: a tidy first step
+// followed by two reaching strides must be judged on the reaching.
+//
+//   [0.0, 0.30, 0.40] -> counting it, the median is 0.30, a 3.
+//                        dropping it, the median of 0.30 and 0.40 is 0.35, a 2.
+const caught = strikeOf([0.0, 0.30, 0.40]);
+check('but strides after the first are still judged',
+  caught && caught.score === 2,
+  caught ? `${caught.score}/5 (3 would mean the good first step masked them) ${caught.note}` : '(no row)');
+check('and the note says what it was judged on',
+  caught && /after the first step/.test(caught.note), caught && caught.note);
+check('and counts the strides it actually used, not the ones it read',
+  caught && /over 2 strides/.test(caught.note), caught && caught.note);
+
+// Which foot the athlete starts on must not change the answer. Touchdowns are
+// gathered one foot at a time, so before they were sorted into time order
+// "the first step" was whichever contact the LEFT foot happened to make
+// first. On a start off the left foot that is the right answer by accident,
+// which is why the unsorted version passed everything above.
+const otherFoot = ctx.scoreGroundContact(contactsAt([0.60, 0.30, 0.10], 0.9, 1), 'Acceleration')
+  .find((p) => p.name === 'Foot Strike vs COM');
+check('a start off the other foot drops the same first step',
+  otherFoot && otherFoot.score === 4,
+  otherFoot ? `${otherFoot.score}/5 ${otherFoot.note}` : '(no row)');
+
+// Too few strides to spare one is not a grade.
+const oneStride = strikeOf([0.4, 0.0]);
+check('two touchdowns are not enough to grade a start on',
+  oneStride && oneStride.score == null, oneStride && `${oneStride.score}/5`);
+check('and the reason given is the first step, not the filming',
+  oneStride && /first step of a start/.test(oneStride.note || ''),
+  oneStride && (oneStride.note || '').slice(0, 80));
+check('three touchdowns are enough', ctx.ACCEL_STRIKE_MIN_CONTACTS === 3,
+  `${ctx.ACCEL_STRIKE_MIN_CONTACTS}`);
+
+// Top speed keeps its own bands: there is no first step to allow for, and a
+// foot landing behind the hip there is a mistrack rather than a drive step.
+const atSpeed = ctx.scoreGroundContact(contactsAt([0.0, -0.45, -0.50, -0.47]), 'Max Velocity')
+  .find((p) => p.name === 'Foot Strike vs COM');
+check('the same reading at top speed is not scored well',
+  atSpeed && atSpeed.score == null, atSpeed && `${atSpeed.score}/5 ${atSpeed.note}`);
+check('acceleration tolerates a deeper strike than top speed does',
+  ctx.ACCEL_STRIKE_PLAUSIBLE_MIN < ctx.STRIKE_PLAUSIBLE_MIN,
+  `${ctx.ACCEL_STRIKE_PLAUSIBLE_MIN} vs ${ctx.STRIKE_PLAUSIBLE_MIN}`);
+
+// The flag and the score must not contradict each other. Flagging an athlete
+// for overstriding while scoring him 3/5 for not overstriding is the kind of
+// thing that makes the whole card look unreliable.
+const accelBand2 = ctx.ACCEL_STRIKE_BANDS.find((b) => b.score === 2);
+check('the acceleration overstride flag fires where its bands say it should',
+  accelBand2 && accelBand2.min === 0.35, accelBand2 && `band 2 starts at ${accelBand2.min}`);
 
 // ---------- sampling rate is measured over what was sampled ----------
 // The seek fallback takes its samples from a deliberately narrow window: 32

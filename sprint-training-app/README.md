@@ -59,13 +59,26 @@ score and the reason, and an unscored row is skipped by the overall average,
 by the summary line, and by the warm-up, so a measure nobody took can never
 be mistaken for a weakness.
 
-One case is worth knowing about: **Foot Strike vs COM is not graded on a
-drive-phase clip.** The bands are calibrated at top speed, where the foot
-lands near the hips. Out of the blocks it lands well behind them — measured
-across the recorded clips, a 71° lean put it 63% of a leg length behind, a 49°
-lean 46% behind — which is what a drive phase is supposed to look like and is
-off the end of those bands. The number is shown; the score is withheld rather
-than guessed. Grading it wants its own bands and its own calibration clips.
+**Foot Strike vs COM is read against different bands at each end of a run,**
+because the same number means opposite things. At top speed, landing under
+the hips is the target. Out of the blocks the foot lands well *behind* the
+hips and that is the drive phase working — measured across the recorded
+clips it tracks the lean almost exactly: 71° of lean puts the foot 63% of a
+leg length behind, 49° puts it 46% behind, upright puts it 3% behind. The
+acceleration scale is 5 for landing under you, 3 for in front, 1 for way in
+front, and landing behind is not a fault.
+
+**The first step of a start is thrown away rather than graded.** It lands
+ahead of the hips whoever is running — you are behind your own feet and have
+to get out from under yourself — so counting it marks the athlete down for how
+a start works. Acceleration foot strike therefore needs three touchdowns: one
+to drop and two to judge. Below that it says so instead of guessing.
+
+Worth knowing about those bands: every clip recorded so far lands under or
+behind the hips and scores 5, which is correct, but means **real footage has
+never exercised the 3 or the 1.** Those boundaries come from the scale above
+rather than from measurement. `tools/CALIBRATION.md` marks which numbers in
+this app are measured and which are reasoned.
 
 ### It refuses clips it cannot read
 

@@ -260,12 +260,23 @@ const mad = ctx.scoreGroundContact(contactFrames(-40));  // half a leg BEHIND
 const strikeMad = mad.find((p) => p.name === 'Foot Strike vs COM');
 check('an impossible foot strike is not scored well',
   strikeMad && strikeMad.score == null, strikeMad && `${strikeMad.score}/5 ${strikeMad.note}`);
-// Half a leg length behind the hip is the drive-phase reading, and the bands
-// are calibrated at top speed. Saying that is more use than an empty row --
-// and far more use than the 5/5 an open-ended band would have given it.
-check('and says which it is rather than vanishing',
-  strikeMad && /drive phase/.test(strikeMad.note || ''),
+check('and says why rather than vanishing',
+  strikeMad && /not measurable/i.test(strikeMad.note || ''),
   strikeMad && (strikeMad.note || '').slice(0, 90));
+
+// The same reading is not implausible during acceleration -- it is the drive
+// phase. At top speed a foot half a leg length behind the hip is a mistrack;
+// out of the blocks it is the athlete pushing the ground back, and every
+// recorded start measured between 3% and 63% behind. One number, two
+// meanings, so the clip type decides which bands it is read against.
+const madAccel = ctx.scoreGroundContact(contactFrames(-40), 'Acceleration');
+const strikeMadAccel = madAccel.find((p) => p.name === 'Foot Strike vs COM');
+check('the same foot strike during acceleration is a drive step, and scores',
+  strikeMadAccel && strikeMadAccel.score === 5,
+  strikeMadAccel && `${strikeMadAccel.score}/5 ${strikeMadAccel.note}`);
+check('and is described as behind the hips rather than as negative-ahead',
+  strikeMadAccel && /behind the hips/.test(strikeMadAccel.note || ''),
+  strikeMadAccel && (strikeMadAccel.note || '').slice(0, 80));
 check('the rest of ground contact still reports', mad.some((p) => p.name === 'Ankle at Touchdown'));
 
 check('a single contact is not enough to call it a measurement',

@@ -380,6 +380,57 @@ stride", which claims Support Stiffness's subject and reads as a flat
 contradiction next to it. They now say what is actually measured: how much
 hip height varies between steps.
 
+## Acceleration foot strike (PARTLY MEASURED — top of the scale only)
+
+The athlete's rule, in his words: 5 is the foot landing right under you (some
+athletes even step back under themselves, rare but not a fault), 3 is in
+front, 1 is way in front. And: *"some first steps are in front and it's not
+bad sprint mechanics, that's just how it is, but if you have multiple strides
+you can grade it better."*
+
+Measured, strike against the mid-hip in leg lengths, positive = ahead:
+
+| clip | torso lean | foot strike |
+|---|---|---|
+| wide grass (1999) | 71° | **0.63 behind** |
+| start 1246 | 49° | 0.46 behind |
+| block start | 39° | 0.17 behind |
+| 3212 | 3° | 0.22 behind |
+| start 1247 | 6° | 0.03 behind |
+| 4002 | 5° | 0.03 behind |
+
+It tracks the lean almost exactly, which is the check that this is measuring
+the drive phase and not noise. The top-speed bands rejected everything above
+39° of lean as implausible (`STRIKE_PLAUSIBLE_MIN = -0.2`), so on a real start
+this measure had never once reported.
+
+**What is measured and what is not.** Every clip in that table lands under or
+behind the hips and scores 5 under the athlete's rule. Nothing recorded has
+landed *in front* during acceleration, so:
+
+- the 5 band is observed, six clips of it;
+- the 4 and 3 boundaries (0.12, 0.22) are carried over from the top-speed
+  bands, on the argument that "under", "slightly ahead" and "reaching" are the
+  same distances whatever the athlete is doing;
+- the 2 and 1 boundaries (0.35, 0.5) are **extrapolated from the athlete's
+  scale alone.** No footage has produced one.
+
+A metric that returns 5/5 on 100% of available clips has not yet been shown to
+discriminate. Treat 1/5 and 2/5 as "go and look at the frame yourself" until
+a start that reaches out in front has been filmed and measured.
+
+`ACCEL_STRIKE_PLAUSIBLE_MIN = -1.0`: a planted foot cannot be a full leg
+length behind the hip. Far below the top-speed bound, because at top speed a
+foot 20% behind the hip is a mistrack and during acceleration 63% behind was
+the most ordinary reading in the set.
+
+**The first step is dropped** (`ACCEL_STRIKE_MIN_CONTACTS = 3` — one to throw
+away, two to judge). Worth noting what this is and is not worth: the median
+already absorbs a single outlier among four, so dropping the first step only
+changes the score when it drags the median across a band edge. It is still
+right — the athlete is not to be marked down for the geometry of getting out
+of a start — but it is a correction at the margins, not a large effect.
+
 ### The other end of the same bound was wrong (fixed 12 Sep)
 
 `CONTACT_DEPTH_MIN` stood at **0.8** on the reasoning that a real touchdown
