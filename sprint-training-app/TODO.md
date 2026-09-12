@@ -52,6 +52,22 @@ sorry to lose. Paywalling the AI notes is easy to build and would earn
 nothing, because zero of 18 clips used them. That is worth knowing before
 building it.
 
+## analyze-form is one rubric ahead of its deployment
+
+The Speed Endurance rubric was removed from
+`supabase/functions/analyze-form/index.ts` on 12 Sep. The **deployed** copy
+(version 8) still has it.
+
+Deliberately not redeployed. The branch is unreachable — the clip type is
+gone from the `<select>`, so `RUBRICS["Speed Endurance"]` can never be looked
+up, and `RUBRICS[clipType] ?? RUBRICS["Max Velocity"]` covers it anyway.
+Behaviour is identical either way, and pushing a new version costs a chance
+of corrupting a live function for no gain.
+
+**Fold it into the next real change to that function.** Until then the repo
+is correct and the deployment is harmlessly stale, which is the right way
+round.
+
 ## Deferred on purpose
 
 - **Add to Home Screen (PWA)** — asked for it to wait.
