@@ -332,25 +332,6 @@ function scoreAcceleration(metrics) {
 
 // Speed endurance is the max-velocity shape plus whether it survives to the
 // end of the rep, so the scissor is compared early-half against late-half.
-function scoreConsistency(metrics) {
-  const values = metrics.map((m) => m.scissor);
-  const half = Math.floor(values.length / 2);
-  const first = values.slice(0, half).filter((v) => v != null);
-  const second = values.slice(half).filter((v) => v != null);
-  if (!first.length || !second.length) return null;
-
-  const peakFirst = Math.max(...first);
-  const peakSecond = Math.max(...second);
-  const lost = peakFirst - peakSecond;
-
-  if (lost <= 3) {
-    return { name: 'Smoothness / Consistency', score: 5, note: 'Held form to the end of the rep' };
-  }
-  if (lost <= 8) {
-    return { name: 'Smoothness / Consistency', score: 4, note: `Slight fade late (-${lost.toFixed(0)}°)` };
-  }
-  return { name: 'Smoothness / Consistency', score: 2, note: `Form dropped off under fatigue (-${lost.toFixed(0)}°)` };
-}
 
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
@@ -386,10 +367,6 @@ function buildLocalAnalysis(metrics, clipType, surface) {
     if (fold) {
       pinpoints.push({ name: fold.name, score: fold.score, note: fold.note });
       if (fold.tightest > 75) flags.push('Heel is not recovering up under the hip');
-    }
-    if (clipType === 'Speed Endurance') {
-      const consistency = scoreConsistency(metrics);
-      if (consistency) pinpoints.push(consistency);
     }
   }
 

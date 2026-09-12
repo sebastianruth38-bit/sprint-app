@@ -52,7 +52,7 @@ for (const m of app.matchAll(/name: '([A-Z][^']*)'/g)) measures.add(m[1]);
 const quoted = [
   'Foot Strike vs COM', 'Hip Height', 'Support Stiffness', 'Ankle at Touchdown',
   'Drive Position', 'Acceleration Posture', 'Thigh Separation', 'Heel Recovery',
-  'Shin Angle at Touchdown', 'Smoothness / Consistency',
+  'Shin Angle at Touchdown',
 ];
 quoted.forEach((q) => {
   const inReadme = readme.includes(q);

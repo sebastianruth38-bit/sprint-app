@@ -72,7 +72,10 @@ create table if not exists public.diagnosis_entries (
   -- 3MB video, and each one is the exact instant a score refers to, which
   -- the video never told you.
   key_frames jsonb,
-  clip_type text, -- 'Acceleration' | 'Max Velocity' | 'Speed Endurance'
+  -- Free text rather than an enum on purpose: entries saved under a clip type
+  -- the app no longer offers still have to render. 'Speed Endurance' was one
+  -- of these until 12 Sep, and no row ever used it.
+  clip_type text, -- 'Acceleration' | 'Max Velocity'
   distance text,
   effort text,
   analysis jsonb, -- AI-generated: { summary, pinpoints[], additional_observations[], flags[] }

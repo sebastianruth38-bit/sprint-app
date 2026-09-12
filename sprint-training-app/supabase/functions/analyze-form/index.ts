@@ -40,14 +40,6 @@ MAX VELOCITY (top speed, not the start). Score 1-5, one-sentence why:
 3. Recovery Mechanics / Figure-4 — thigh driven up and forward, heel near glute. Flag explicitly if not achieved.
 Add anything else relevant (posture, arm action, knee drive) to additional_observations.
 `.trim(),
-
-  "Speed Endurance": `
-SPEED ENDURANCE (sub-max effort, holding form under fatigue). Score 1-5, one-sentence why:
-1. Smoothness / Consistency — early frames vs. late frames, any degradation
-2. Hip Extension — full extension at toe-off
-3. Recovery Mechanics — same figure-4 check; still matters. Flag if not achieved.
-Ground contact time is not scored here. Add anything else relevant to additional_observations.
-`.trim(),
 };
 
 const SYSTEM_PROMPT = `You're an expert sprint coach scoring still frames sampled from one clip.

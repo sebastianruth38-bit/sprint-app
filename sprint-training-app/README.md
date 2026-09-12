@@ -24,7 +24,7 @@ tall you are, so a measurement that depends on either is a measurement that
 cannot be trusted. Motion is measured over a fixed time gap rather than
 per-frame, so a clip captured at 8fps and one at 30fps give the same answer.
 
-Five measures per clip, not nine. The old set double-counted: Torso-to-Thigh
+Five or six measures per clip, not nine. The old set double-counted: Torso-to-Thigh
 and Thigh Separation are read at the same instant off the same frames, Passing
 Position and Heel Recovery are both the fold, Front/Back Balance moves with
 Foot Strike, and Upright Posture tracks Hip Height. An athlete reading nine
@@ -36,13 +36,12 @@ flags they raise, and no longer scored.
 |---|---|
 | **Acceleration** | Drive Position (or Acceleration Posture), Shin Angle at Touchdown, Ankle at Touchdown, Foot Strike vs COM, Support Stiffness, Hip Height |
 | **Max Velocity** | Thigh Separation, Heel Recovery, Foot Strike vs COM, Support Stiffness, Hip Height |
-| **Speed Endurance** | the same five, and Smoothness / Consistency, which is the whole point of the clip type |
 
 **Foot Strike vs COM** is where the foot lands relative to your centre of
 mass, as a fraction of your own leg length. The mid-hip is the COM proxy a
-single camera can see. Landing under the hips scores 5; nothing rewards
-landing behind them, which elite sprinters do and developing ones should not
-chase.
+single camera can see. At top speed, landing under the hips scores 5 and
+landing behind them is a mistracked ankle rather than a virtue. Out of the
+blocks it means something else entirely — see below.
 
 **Shin Angle at Touchdown** is acceleration only, because the same number
 means opposite things at the two ends of a run: the shin is angled hard
