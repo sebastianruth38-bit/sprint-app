@@ -1848,28 +1848,6 @@ function scoreAcceleration(metrics) {
     note: `Rises overall but unevenly (${start.toFixed(0)}° to ${end.toFixed(0)}°)`, start, end };
 }
 
-// Speed endurance is the max-velocity shape plus whether it survives to the
-// end of the rep, so the scissor is compared early-half against late-half.
-function scoreConsistency(metrics) {
-  const values = metrics.map((m) => m.scissor);
-  const half = Math.floor(values.length / 2);
-  const first = values.slice(0, half).filter((v) => v != null);
-  const second = values.slice(half).filter((v) => v != null);
-  if (!first.length || !second.length) return null;
-
-  const peakFirst = Math.max(...first);
-  const peakSecond = Math.max(...second);
-  const lost = peakFirst - peakSecond;
-
-  if (lost <= 3) {
-    return { name: 'Smoothness / Consistency', score: 5, note: 'Held form to the end of the rep' };
-  }
-  if (lost <= 8) {
-    return { name: 'Smoothness / Consistency', score: 4, note: `Slight fade late (-${lost.toFixed(0)}°)` };
-  }
-  return { name: 'Smoothness / Consistency', score: 2, note: `Form dropped off under fatigue (-${lost.toFixed(0)}°)` };
-}
-
 // Assembles the same JSON the AI path returns, so nothing downstream cares
 // which engine produced it.
 // How folded the leg is at the instant it swings through under the hip.
@@ -2181,12 +2159,6 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     const balance = scoreSwingBalance(metrics);
     if (balance && balance.back > balance.front * 1.4) {
       flags.push('Kicking too far back, backside recovery is longer than the front side');
-    }
-    if (clipType === 'Speed Endurance') {
-      // The one measure that only makes sense over a long rep, which is the
-      // whole reason the clip type exists.
-      const consistency = scoreConsistency(metrics);
-      if (consistency) pinpoints.push(consistency);
     }
   }
 
@@ -5161,7 +5133,7 @@ const WARMUP_PLANS = {
       { name: 'Tall high-knee run into a stride', detail: '2 x 30m. 10m of high knees holding your height, then run out of it without dropping.',
         measures: ['Hip Height', 'Thigh Separation (scissor)'] },
       { name: 'Rolling build-ups', detail: '4 x 60m. Jog 10m then build. Each faster than the last, the final at 95%.',
-        measures: ['Smoothness / Consistency'] },
+        measures: ['Thigh Separation (scissor)', 'Heel Recovery (knee fold)'] },
       { name: 'One fly', detail: '1 x 20m fly off a 20m run-in, to feel the top end before the session.',
         measures: [] },
     ],
@@ -5170,9 +5142,9 @@ const WARMUP_PLANS = {
     note: 'Rhythm, not raw speed. The reps are long enough that a bad one costs the session.',
     items: [
       { name: 'Rolling build-ups', detail: '3 x 60m, rising to 90%. Walk back between.',
-        measures: ['Smoothness / Consistency'] },
+        measures: ['Thigh Separation (scissor)', 'Heel Recovery (knee fold)'] },
       { name: 'One at race rhythm', detail: '1 x 80m at the pace the session is meant to hold.',
-        measures: ['Smoothness / Consistency'] },
+        measures: ['Hip Height', 'Support Stiffness'] },
     ],
   },
   tempo: {
@@ -5187,7 +5159,7 @@ const WARMUP_PLANS = {
       { name: 'Change into spikes', cue: true,
         detail: 'Do the strides and the starts in what you are racing in, not in trainers.', measures: [] },
       { name: 'Stride-throughs', detail: '4 x 50m off a rolling start, each faster than the last, the final at 95%.',
-        measures: ['Smoothness / Consistency'] },
+        measures: ['Thigh Separation (scissor)', 'Heel Recovery (knee fold)'] },
       { name: 'Practice starts', detail: '2 to 3 over 20m at race effort, finishing about 5 minutes before your race.',
         measures: ['Drive Position', 'Acceleration Posture'] },
       { name: 'Stay warm', cue: true,
@@ -5230,8 +5202,8 @@ const SESSION_TO_CLIP = {
   'Blocks / Starts': 'Acceleration',
   'Hill Sprints': 'Acceleration',
   'Max Velocity (flys/build-ups)': 'Max Velocity',
-  'Speed Endurance (60-150m)': 'Speed Endurance',
-  'Special Endurance (150-300m)': 'Speed Endurance',
+  'Speed Endurance (60-150m)': 'Max Velocity',
+  'Special Endurance (150-300m)': 'Max Velocity',
   'Race Modeling': 'Max Velocity',
   'Pre-Meet': 'Max Velocity',
   'Meet Day': 'Max Velocity',
