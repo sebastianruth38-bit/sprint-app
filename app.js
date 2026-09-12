@@ -665,6 +665,44 @@ const SCOUT_MAX_SAMPLES = 30;
 const DENSE_RATE = 30;
 const DENSE_WINDOW_S = 0.9;   // ~3 strides at sprint turnover
 const DENSE_MAX_SAMPLES = 32;
+
+// How much of the run gets measured, in seconds.
+//
+// Its own constant, because DENSE_MAX_SAMPLES was doing this job as well as
+// its own and they are not the same question. That one is a budget: how many
+// expensive SEEKS the fallback path may spend. This one is editorial: how
+// much of a run is worth grading. The playback pass already holds every frame
+// it captured at no further cost, so there was never a reason for the seek
+// budget to decide how much of them to look at.
+//
+// The cost of the confusion: on a 7.1s clip with the athlete detected in 202
+// frames, 32 of them were graded -- one second -- and the card said "about 1
+// stride" to an athlete who had filmed several. Worse at high capture rates,
+// where 32 frames is less time: two recorded clips came out at 0.47s and
+// 0.40s of measured running.
+//
+// In seconds rather than frames for exactly that reason. Every other
+// threshold in this file is per-second so the capture rate cannot move it,
+// and this one quietly was not.
+//
+// 1.8s: a stride is both feet down, about 0.45s at sprint turnover, and
+// limitToStrides keeps three of them. That needs six touchdowns inside the
+// window, so the window has to be wider than the three strides it wants --
+// 1.35s of stride with room to find them at either end. Grading more than
+// that is deliberately not the goal: over a long run the athlete is still
+// changing gear, and averaging across it hides both ends.
+const GRADE_WINDOW_S = 1.8;
+
+// GRADE_WINDOW_S expressed in frames of whatever rate this capture managed,
+// never more than the athlete was actually seen in, never so few that the
+// tracker has nothing to follow.
+function gradeWindowFrames(secondsPerFrame, seenCount) {
+  if (!(secondsPerFrame > 0)) return seenCount;
+  return Math.min(
+    Math.max(MIN_TRACK_FRAMES, Math.round(GRADE_WINDOW_S / secondsPerFrame)),
+    seenCount
+  );
+}
 // A cut has to clear BOTH a ratio against the clip's own median difference
 // and an absolute floor. The ratio alone is not stable: it falls as the
 // sweep thins (measured 8.7x at 10 samples/s, 6.3x at 6/s, because sparser
@@ -1017,11 +1055,34 @@ function longestConsistentRun(metrics) {
 // measured 61 frames of him set in the blocks (35% of frame, 1.32/s) against
 // 44 frames of the actual run (45% of frame, 4.09/s), and graded the blocks.
 // The size preference below would have chosen the run; it never saw it.
+// How visible the athlete is in one frame, for choosing between stretches.
+//
+// bodyPx where it exists, NOT bodyFrac. This mattered more than it looks.
+// bodyFrac is his share of the picture pose was handed, and when he is far
+// away that picture is a crop -- CROP_PADDING pins him at roughly 1/2.2 of
+// it however distant he is. So bodyFrac goes UP exactly where he gets
+// smaller, while framingCheck refuses on bodyPx, which cropping cannot
+// change. Ranking on bodyFrac therefore steered this function toward the
+// stretch most likely to be refused as "too far away": measured across the
+// recorded clips, the cropped frames read 0.45 frac / 183 px against the
+// uncropped 0.25 frac / 274 px on the same clip, on five of seven.
+//
+// One key for the whole call. Mixing pixels and fractions in one comparison
+// would rank frames against each other in different units.
+function sizeOfMetric(m, usePx) {
+  if (!m) return 0;
+  return usePx ? (m.bodyPx || 0) : (m.bodyFrac || 0);
+}
+
 function bestWindow(framePoses, secondsPerFrame, maxFrames) {
   if (!(secondsPerFrame > 0)) return null;
   const tracks = buildTracks(framePoses, secondsPerFrame)
     .filter((t) => t.history.length >= MIN_TRACK_FRAMES);
   if (!tracks.length) return null;
+
+  // Real pixels if the capture recorded them. It does on both capture paths;
+  // metrics assembled anywhere else fall back to the share of the frame.
+  const usePx = tracks.some((t) => t.metrics.some((m) => m && m.bodyPx != null));
 
   const gap = Math.max(1, Math.round(MOTION_GAP_S / secondsPerFrame));
   let best = null;
@@ -1047,7 +1108,7 @@ function bestWindow(framePoses, secondsPerFrame, maxFrames) {
         rate.push(seconds > 0 && !partial
           ? signatureDistance(track.history[i].norm, track.history[j].norm) / seconds
           : null);
-        size.push(track.metrics[i].bodyFrac || 0);
+        size.push(sizeOfMetric(track.metrics[i], usePx));
       }
 
       for (let start = 0; start + span <= n; start++) {
@@ -3007,7 +3068,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       shotPoses.forEach((poses, i) => { if (poses.length) seenIdx.push(i); });
 
       if (seenIdx.length) {
-        const maxFrames = Math.min(DENSE_MAX_SAMPLES, seenIdx.length);
+        const maxFrames = gradeWindowFrames(secondsPerFrame, seenIdx.length);
         const win = bestWindow(shotPoses, secondsPerFrame, maxFrames);
         const lo = win ? win.from : seenIdx[0];
         const hi = win ? win.to + 1 : Math.min(seenIdx[seenIdx.length - 1] + 1, lo + maxFrames);
