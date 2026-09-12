@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Sprintr</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Three faces, three jobs. Space Grotesk for headings and UI, because its
+       geometry reads modern where Barlow read sporty-generic. Inter for body
+       copy, which is the one thing that has to disappear when you read it.
+       JetBrains Mono for anything that is a measurement. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600;700&display=swap" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3ClinearGradient id='a' x1='0' y1='1' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%2338e8ff'/%3E%3Cstop offset='1' stop-color='%23a78bfa'/%3E%3C/linearGradient%3E%3Cpath d='M26 6 L14 6 L20 15.5 L9 15.5 L21 26' fill='none' stroke='url(%23a)' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <svg class="brand-defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="sprintrG" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stop-color="#38e8ff" />
+        <stop offset="1" stop-color="#a78bfa" />
+      </linearGradient>
+    </defs>
+  </svg>
+  <!-- AUTH GATE -->
+  <div id="authGate" class="auth-gate">
+    <div class="card auth-card">
+      <h1 class="brand brand-lg"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><path d="M26 6 L14 6 L20 15.5 L9 15.5 L21 26" stroke="url(#sprintrG)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Sprintr</span></h1>
+      <p class="hint">Sign in to sync your training across devices.</p>
+
+      <!-- One tap, and it both creates the account and signs in. Typing an
+           email and inventing a password while standing on a track is exactly
+           where people give up, so this leads and email is the fallback. -->
+      <button id="authGoogle" class="btn google-btn">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12.1c-.2 2-1.6 5-4.5 7l6.9 5.4c4.1-3.8 6.6-9.4 6.6-15.7z"/>
+          <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41.1 15.4 46 24 46z"/>
+          <path fill="#FBBC05" d="M11.5 28.4c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4l-7.1-5.5C2.9 17 2 20.4 2 24s.9 7 2.4 9.9l7.1-5.5z"/>
+          <path fill="#EA4335" d="M24 10.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 4.3 29.9 2 24 2 15.4 2 8.1 6.9 4.4 14.1l7.1 5.5c1.8-5.3 6.7-9.1 12.5-9.1z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+
+      <div class="auth-divider"><span>or use email</span></div>
+
+      <input type="email" id="authEmail" placeholder="Email" autocomplete="email" />
+      <input type="password" id="authPassword" placeholder="Password (min 6 characters)" autocomplete="current-password" />
+      <div class="row">
+        <button id="authSignIn" class="btn primary">Sign In</button>
+        <button id="authSignUp" class="btn">Create Account</button>
+      </div>
+      <button id="authMagicLink" class="btn" style="width:100%">Email me a sign-in link instead</button>
+      <p id="authMessage" class="hint"></p>
+      <p class="hint auth-legal">
+        By continuing you agree to the <a href="terms.html">Terms</a> and
+        <a href="privacy.html">Privacy Policy</a>.
+      </p>
+    </div>
+  </div>
+
+  <!-- APP SHELL (hidden until signed in) -->
+  <div id="appShell" hidden>
+    <header class="app-header">
+      <button id="calendarBtn" class="icon-btn" aria-label="Weekly availability" aria-haspopup="true" aria-expanded="false">📅</button>
+      <h1 class="brand"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><path d="M26 6 L14 6 L20 15.5 L9 15.5 L21 26" stroke="url(#sprintrG)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Sprintr</span></h1>
+      <div class="settings-wrap">
+        <button id="settingsBtn" class="icon-btn" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙️</button>
+        <div id="settingsMenu" class="settings-menu" hidden>
+          <button id="profileBtn" class="btn" style="width:100%;margin-bottom:0.5rem">Profile</button>
+          <button id="trainingSetupBtn" class="btn" style="width:100%;margin-bottom:0.5rem">Training Setup</button>
+          <button id="signOutBtn" class="btn" style="width:100%">Sign Out</button>
+          <button id="deleteAccountBtn" class="btn danger-btn" style="width:100%;margin-top:0.5rem">Delete Account</button>
+          <div class="settings-legal">
+            <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- WEEKLY AVAILABILITY MODAL -->
+    <div id="availabilityModal" class="modal-overlay" hidden>
+      <div class="card modal-card">
+        <div class="entry-top">
+          <h3 style="margin:0">This Week's Availability</h3>
+          <button id="closeAvailability" class="delete-btn" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">A guideline, not a schedule. Mark the days you're generally free to sprint or lift this week. Workouts can still land on any day.</p>
+
+        <p class="avail-label">🏃 Can sprint</p>
+        <div class="day-picker" id="sprintDayPicker"></div>
+
+        <p class="avail-label">💪 Can hit the gym</p>
+        <div class="day-picker" id="gymDayPicker"></div>
+
+        <p class="avail-label">🏆 When do you compete?</p>
+        <div class="form-grid">
+          <div>
+            <label class="hint season-label">Indoor season</label>
+            <input type="date" id="indoorStart" />
+            <input type="date" id="indoorEnd" style="margin-top:0.4rem" />
+          </div>
+          <div>
+            <label class="hint season-label">Outdoor season</label>
+            <input type="date" id="outdoorStart" />
+            <input type="date" id="outdoorEnd" style="margin-top:0.4rem" />
+          </div>
+        </div>
+        <p class="hint" style="margin-top:0.2rem">Leave indoor blank if you don't compete indoors.</p>
+
+        <button id="saveAvailability" class="btn primary" style="width:100%;margin-top:0.75rem">Save</button>
+      </div>
+    </div>
+
+    <!-- ATHLETE PROFILE MODAL -->
+    <div id="profileModal" class="modal-overlay" hidden>
+      <div class="card modal-card">
+        <div class="entry-top">
+          <h3 style="margin:0">Athlete Profile</h3>
+          <button id="closeProfile" class="delete-btn" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">Latest score per category from your analyzed clips.</p>
+        <div id="profileContent"></div>
+      </div>
+    </div>
+
+    <!-- TRAINING SETUP MODAL -->
+    <div id="trainingSetupModal" class="modal-overlay" hidden>
+      <div class="card modal-card">
+        <div class="entry-top">
+          <h3 style="margin:0">Training Setup</h3>
+          <button id="closeTrainingSetup" class="delete-btn" aria-label="Close">✕</button>
+        </div>
+        <p class="hint">Feeds workout suggestions and the training phase.</p>
+
+        <label class="hint season-label">Events you normally compete in</label>
+        <input type="text" id="primaryEvents" placeholder="e.g. 100m, 200m" />
+
+        <p class="avail-label">🏋️ Weight room</p>
+        <div class="gym-toggle">
+          <button type="button" id="hasGymBtn" class="day-chip" aria-pressed="true">I have a gym</button>
+          <p class="hint" id="hasGymNote"></p>
+        </div>
+
+        <p class="avail-label">🎒 Equipment available</p>
+        <div class="day-picker" id="equipmentPicker" style="grid-template-columns:repeat(3,1fr)"></div>
+
+        <label class="hint season-label" style="margin-top:0.9rem">Next meet date</label>
+        <input type="date" id="nextMeetDate" />
+        <label class="hint season-label" style="margin-top:0.6rem">Events at that meet</label>
+        <input type="text" id="nextMeetEvents" placeholder="e.g. 100m, 4x100 relay" />
+
+        <button id="saveTrainingSetup" class="btn primary" style="width:100%;margin-top:0.75rem">Save</button>
+      </div>
+    </div>
+
+  <main id="app">
+    <!-- FORM DIAGNOSIS -->
+    <section class="tab-panel active" id="panel-diagnosis">
+      <h2>Form Analysis</h2>
+      <p class="hint">Upload a clip of your sprint, tag what it was, and analyze it.</p>
+
+      <div class="card">
+        <h3>Add a clip</h3>
+        <label class="file-label">Upload a video file
+          <input type="file" id="videoUpload" accept="video/*" />
+        </label>
+
+        <div class="form-grid" style="margin-top:0.75rem">
+          <select id="clipType">
+            <option value="">Clip type…</option>
+            <option>Acceleration</option>
+            <option>Max Velocity</option>
+          </select>
+          <input type="text" id="clipDistance" placeholder="Distance, e.g. 30m" />
+          <input type="text" id="clipEffort" placeholder="Effort, e.g. 95%" />
+          <select id="clipSurface">
+            <option>Track</option>
+            <option>Grass</option>
+          </select>
+        </div>
+
+        <label class="ai-toggle">
+          <input type="checkbox" id="aiAssist" />
+          <span>Also get AI coach notes <span class="hint">uses your daily quota</span></span>
+        </label>
+
+        <details class="filming-guide">
+          <summary>How to film it</summary>
+          <div class="guide-body">
+
+            <div class="guide-item">
+              <svg viewBox="0 0 120 70" class="guide-svg" aria-hidden="true">
+                <defs>
+                  <marker id="gArrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                    <path d="M0,0 L5,2.5 L0,5 Z" class="g-run-head" />
+                  </marker>
+                </defs>
+                <!-- Left: square to the lane. Right: down the lane from the end. -->
+                <rect x="6" y="10" width="50" height="50" rx="4" class="g-frame ok" />
+                <line x1="11" y1="21" x2="51" y2="21" class="g-lane" />
+                <line x1="11" y1="35" x2="51" y2="35" class="g-lane" />
+                <path d="M17,28 L44,28" class="g-run" marker-end="url(#gArrow)" />
+                <circle cx="31" cy="53" r="4" class="g-cam ok" />
+                <path d="M31,49 L31,38" class="g-sight ok" />
+
+                <rect x="64" y="10" width="50" height="50" rx="4" class="g-frame bad" />
+                <line x1="69" y1="21" x2="109" y2="21" class="g-lane" />
+                <line x1="69" y1="35" x2="109" y2="35" class="g-lane" />
+                <path d="M75,28 L102,28" class="g-run" marker-end="url(#gArrow)" />
+                <circle cx="70" cy="53" r="4" class="g-cam bad" />
+                <path d="M73.5,51 L104,38" class="g-sight bad" />
+              </svg>
+              <div>
+                <b>Stand square to the lane</b>
+                <span>Side-on, level with where you'll be running. Angled from the end and the joint angles read wrong.</span>
+              </div>
+            </div>
+
+            <div class="guide-item">
+              <svg viewBox="0 0 120 70" class="guide-svg" aria-hidden="true">
+                <rect x="6" y="6" width="50" height="58" rx="4" class="g-frame ok" />
+                <g class="g-figure ok" transform="translate(31,20) scale(1.55)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+                <rect x="64" y="6" width="50" height="58" rx="4" class="g-frame bad" />
+                <g class="g-figure bad" transform="translate(89,32) scale(0.55)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+              </svg>
+              <div>
+                <b>Fill the frame with the athlete</b>
+                <span>Closer is better. Too far and there are not enough pixels of you to measure a joint.</span>
+              </div>
+            </div>
+
+            <div class="guide-item">
+              <svg viewBox="0 0 120 70" class="guide-svg" aria-hidden="true">
+                <rect x="6" y="10" width="50" height="50" rx="4" class="g-frame ok" />
+                <g class="g-figure ok" transform="translate(31,20) scale(1.2)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+                <rect x="64" y="10" width="50" height="50" rx="4" class="g-frame bad" />
+                <g class="g-figure bad" transform="translate(78,20) scale(1.2)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+                <g class="g-figure bad" transform="translate(97,22) scale(1.1)">
+                  <circle cx="0" cy="0" r="2.4" /><path d="M0,3 L0,11 M0,5 L-4,9 M0,5 L4,8 M0,11 L-4,18 M0,11 L4,18" />
+                </g>
+              </svg>
+              <div>
+                <b>One runner in shot</b>
+                <span>With two people overlapping, the tracking hops between them and the scores are a blend of both.</span>
+              </div>
+            </div>
+
+            <ul class="guide-list">
+              <li class="yes">Pan to keep yourself in frame. <b>Three seconds of running</b> beats a long clip you cross in one.</li>
+              <li class="yes">Keep your feet in the picture. Cut off at the bottom edge and touchdown cannot be found.</li>
+              <li class="yes">Film at <b>1080p, not 4K</b>. Fewer pixels means more frames a second, and frames are what get measured.</li>
+              <li class="no">Don't film into the sun or across deep shade. A silhouette has no joints.</li>
+              <li class="no">Don't include the blocks-set and the run in one long clip if you only care about one of them.</li>
+              <li class="no">Don't hand the phone to someone who'll zoom mid-run. Zoom changes your size and splits the tracking.</li>
+            </ul>
+          </div>
+        </details>
+
+        <button id="saveDiagnosis" class="btn primary">Analyze</button>
+        <div class="analysis-live">
+          <div id="analysisRing" class="analysis-ring" hidden aria-hidden="true"></div>
+          <p id="analysisStatus" class="hint" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <div class="card" id="scoreTrendCard" hidden>
+        <h3>Overall, clip by clip</h3>
+        <div id="scoreTrend"></div>
+      </div>
+
+      <h3>Past Sessions</h3>
+      <p class="hint">Look back at previous clips and the weak points found in each. Your video never leaves your phone. What's saved is a few still frames of the moments that were measured, and they're kept for good along with your scores.</p>
+      <div id="diagnosisList" class="entry-list"></div>
+    </section>
+
+    <!-- WORKOUTS -->
+    <section class="tab-panel" id="panel-workouts">
+      <h2>Workout Plan</h2>
+      <div id="phaseBadge" class="phase-badge"></div>
+      <p class="hint">Each day's sprint session and the lifts that go with it.</p>
+      <p id="planNote" class="plan-note"></p>
+
+      <button id="generateWeekPlan" class="btn primary" style="width:100%">Generate This Week's Plan</button>
+      <p id="regenNote" class="regen-note"></p>
+
+      <div id="weekBoard" class="week-board"></div>
+
+      <details class="session-editor">
+        <summary>Add or change a session</summary>
+        <div class="card">
+          <h3>Add / Update a session</h3>
+          <div class="form-grid">
+            <select id="workoutDay">
+              <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+              <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
+            </select>
+            <select id="workoutType">
+              <option>Acceleration (0-30m)</option>
+              <option>Max Velocity (flys/build-ups)</option>
+              <option>Speed Endurance (60-150m)</option>
+              <option>Special Endurance (150-300m)</option>
+              <option>Tempo (extensive/aerobic)</option>
+              <option>Race Modeling</option>
+              <option>Hill Sprints</option>
+              <option>Blocks / Starts</option>
+              <option>Pre-Meet</option>
+              <option>Meet Day</option>
+              <option>Recovery / Mobility</option>
+              <option>Lift Only</option>
+              <option>Rest Day</option>
+              <option>Custom</option>
+            </select>
+            <select id="workoutTimed">
+              <option value="">Timed / Untimed…</option>
+              <option>Timed</option>
+              <option>Untimed</option>
+            </select>
+          </div>
+          <input type="text" id="workoutDetails" placeholder="e.g. 6x60m @95%, 3min rest" style="margin-bottom:0.75rem" />
+          <input type="text" id="workoutLift" placeholder="Lift, e.g. Power Cleans 3x5, Broad Jumps 3x3..." style="margin-bottom:0.75rem" />
+          <div id="exerciseLog"></div>
+          <button id="saveWorkout" class="btn primary">Save Session</button>
+        </div>
+      </details>
+</section>
+
+    <!-- WEIGHT ROOM -->
+    <section class="tab-panel" id="panel-weights">
+      <h2>Form Reference</h2>
+      <p class="hint">Look up how a movement should be performed before you train it. Your lifts themselves live in the workout plan.</p>
+
+      <div class="card">
+        <h3>Add an exercise</h3>
+        <div class="form-grid">
+          <input type="text" id="customExName" placeholder="Exercise name" />
+          <input type="text" id="customExUrl" placeholder="YouTube link (optional)" />
+        </div>
+        <button id="addCustomEx" class="btn primary">Add Exercise</button>
+      </div>
+
+      <div id="weightsList" class="entry-list"></div>
+    </section>
+
+    <!-- TIMES & GOALS -->
+    <section class="tab-panel" id="panel-times">
+      <h2>Times &amp; Goals</h2>
+
+      <div class="card">
+        <h3>Log a time</h3>
+        <div class="form-grid">
+          <select id="timeDistance">
+            <option>30m</option><option>60m</option><option>100m</option>
+            <option>150m</option><option>200m</option><option>400m</option><option>Other</option>
+          </select>
+          <input type="text" id="timeValue" placeholder="e.g. 11.42" />
+          <input type="date" id="timeDate" />
+        </div>
+        <button id="saveTime" class="btn primary">Log Time</button>
+      </div>
+      <div class="card" id="timeTrendCard" hidden>
+        <h3>Your times</h3>
+        <div class="segmented" id="timeDistancePicker" role="tablist"></div>
+        <div id="timeTrend"></div>
+      </div>
+      <div id="timesList" class="entry-list"></div>
+
+      <div class="card">
+        <h3>What you're chasing</h3>
+        <p class="hint">Your best against the marks that matter to you. Add a record, a qualifying standard, or the person you're trying to beat.</p>
+        <div id="chasingBoard"></div>
+        <div class="form-grid" style="margin-top:0.9rem">
+          <input type="text" id="benchLabel" placeholder="Who or what, e.g. State qualifier" />
+          <input type="text" id="benchDistance" placeholder="Distance, e.g. 100m" />
+          <input type="text" id="benchSeconds" placeholder="Time, e.g. 10.85" inputmode="decimal" />
+        </div>
+        <button id="addBenchmark" class="btn primary">Add a mark</button>
+      </div>
+
+      <h3>Goals</h3>
+      <div class="card">
+        <h3>Big Goal (the mountain)</h3>
+        <div class="form-grid">
+          <input type="text" id="bigGoalText" placeholder="e.g. Run 100m in 10.9" />
+        </div>
+        <button id="addBigGoal" class="btn primary">Add Big Goal</button>
+      </div>
+      <div id="bigGoalsList" class="entry-list"></div>
+    </section>
+
+    <!-- MOTIVATION -->
+    <!-- WARM-UP -->
+    <section class="tab-panel" id="panel-warmup">
+      <h2>Warm-up</h2>
+      <p class="hint">Four phases, every session. Your clips don't change the warm-up.
+      they star the parts worth nailing.</p>
+      <div id="warmupContent"></div>
+      <p class="hint warmup-caveat">Standard drills, not a coaching plan and not medical
+      advice. If something hurts, stop and ask someone in person.</p>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" id="tabs">
+    <button class="tab-btn" data-tab="workouts"><span class="tab-icon">📋</span><span class="tab-label">Workouts</span></button>
+    <button class="tab-btn" data-tab="weights"><span class="tab-icon">💪</span><span class="tab-label">Reference</span></button>
+    <button class="tab-btn tab-btn-center active" data-tab="diagnosis">
+      <span class="tab-center-icon">🐆</span>
+      <span class="tab-label">Form Analysis</span>
+    </button>
+    <button class="tab-btn" data-tab="times"><span class="tab-icon">⏱️</span><span class="tab-label">Times</span></button>
+    <button class="tab-btn" data-tab="warmup"><span class="tab-icon">🔥</span><span class="tab-label">Warm-up</span></button>
+  </nav>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

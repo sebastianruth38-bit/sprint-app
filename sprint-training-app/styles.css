@@ -1,0 +1,1963 @@
+/* Sprintr commits to one look: soft charcoal, rounded, always-on dark. */
+:root {
+  --bg: #161618;
+  --surface: #1f1f23;
+  --surface-2: #292930;
+  --surface-3: #34343d;
+  --text: #f5f5f7;
+  --muted: #92929c;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --accent: #ffffff;
+  --accent-text: #141418;
+
+  --r-xs: 10px;
+  --r-sm: 14px;
+  --r-md: 18px;
+  --r-lg: 24px;
+  --r-xl: 30px;
+  --r-pill: 999px;
+
+  --shadow-soft: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Renders native bits (date picker, select popups, scrollbars) dark. */
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 400;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input, select, textarea { font-family: inherit; }
+
+/* Sentence-case, tightly-tracked headings -- no boxy all-caps slabs. */
+h1, h2, h3, h4 {
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 0 0 1rem;
+  font-size: 1.6rem;
+  line-height: 1.15;
+}
+
+h3 { font-size: 1.1rem; }
+
+.tab-label, .type {
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 600;
+}
+
+/* ---------- Header ---------- */
+.app-header {
+  background: transparent;
+  padding: 1rem 1.25rem 0.6rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background: linear-gradient(to bottom, var(--bg) 55%, rgba(22, 22, 24, 0));
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Brand mark ----------
+   An S drawn as three strokes of a lightning bolt: the letter the name starts
+   with, built out of the only thing the app is about. Line art rather than a
+   filled shape so it holds at 24px in the header and at 512 as an app icon
+   off the same path. */
+.brand-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.brand-mark {
+  width: 1.35em;
+  height: 1.35em;
+  flex: 0 0 auto;
+  /* The stroke ends are round, so the drawing sits optically low against
+     cap-height text unless it is nudged back up. */
+  margin-top: -0.06em;
+}
+.brand-lg { justify-content: center; gap: 0.55rem; }
+.brand-lg .brand-mark { width: 1.5em; height: 1.5em; }
+
+.settings-wrap { position: relative; }
+
+.icon-btn {
+  background: var(--surface-2);
+  border: none;
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease);
+}
+.icon-btn:hover { background: var(--surface-3); }
+.icon-btn:active { transform: scale(0.93); }
+
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 0.6rem;
+  width: 210px;
+  z-index: 30;
+}
+
+.settings-note { margin: 0 0 0.6rem; font-size: 0.8rem; }
+
+/* ---------- Modals ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 430px;
+  margin-bottom: 0;
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-soft);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.avail-label {
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 1.1rem 0 0.6rem;
+}
+
+.day-picker {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.35rem;
+}
+
+/* Pill chips, not boxes. */
+.day-chip {
+  background: var(--surface-2);
+  border: none;
+  color: var(--muted);
+  border-radius: var(--r-pill);
+  padding: 0.6rem 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.12s var(--ease);
+}
+.day-chip:active { transform: scale(0.94); }
+
+.day-chip.selected {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.day-badges {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.day-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+/* Tiny uppercase micro-label, like the stat captions in the reference. */
+.season-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+/* ---------- Athlete profile ---------- */
+.profile-row {
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.profile-row:last-child { border-bottom: none; }
+.profile-row .entry-top { margin-bottom: 0.25rem; }
+
+/* ---------- Auth gate ---------- */
+.auth-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  border-radius: var(--r-xl);
+  padding: 1.75rem 1.5rem;
+}
+
+.auth-card h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.auth-card input { margin-bottom: 0.6rem; }
+.auth-card .row { margin-bottom: 0.6rem; }
+.auth-card .row .btn { flex: 1; }
+
+#authMessage:empty { display: none; }
+
+/* ---------- Bottom navigation: floating pill bar ---------- */
+.bottom-nav {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  background: rgba(38, 38, 44, 0.72);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 0.45rem 0.5rem max(0.45rem, env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-soft);
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  flex: 1;
+  color: var(--muted);
+  padding: 0.2rem;
+  font-size: 0.62rem;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  min-height: 48px;
+  transition: color 0.15s var(--ease);
+}
+
+.tab-btn.active { color: var(--text); }
+
+/* Inactive icons sit bare; only the active one gets a soft chip. */
+.tab-btn .tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: transparent;
+  transition: background 0.18s var(--ease), transform 0.12s var(--ease);
+}
+.tab-btn.active .tab-icon { background: rgba(255, 255, 255, 0.12); }
+.tab-btn:active .tab-icon { transform: scale(0.9); }
+
+.tab-btn-center {
+  flex: 0 0 auto;
+  margin-top: -1.9rem;
+  min-height: auto;
+}
+
+.tab-center-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 1.75rem;
+  border: 4px solid var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  transition: transform 0.14s var(--ease);
+}
+
+.tab-btn-center.active .tab-center-icon,
+.tab-btn-center:active .tab-center-icon {
+  transform: scale(1.06);
+}
+
+.tab-btn-center .tab-label { color: var(--muted); }
+.tab-btn-center.active .tab-label { color: var(--text); }
+
+/* ---------- Layout ---------- */
+main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0.75rem 1.25rem calc(6.5rem + env(safe-area-inset-bottom));
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.hint {
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* Tucks a subtitle up under the heading it belongs to. Scoped to exactly that
+   job: as a blanket rule it silently pulled every other .hint paragraph over
+   whatever sat above it -- it ate the chart axis dates once and the auth
+   legal line once -- and each time the fix was another specificity fight. */
+h1 + p.hint, h2 + p.hint, h3 + p.hint, h4 + p.hint { margin-top: -0.6rem; }
+
+/* ---------- Cards: big radii, hairline borders, no hard shadows ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.1rem;
+}
+
+.card h3 { margin-top: 0; margin-bottom: 0.9rem; }
+
+.row {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ---------- Fields: soft, rounded, no hard outlines ---------- */
+input, select, textarea {
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 0.75rem 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  width: 100%;
+  font-family: inherit;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+/* Custom chevron so selects stop looking like OS boxes. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.3rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%2392929c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.95rem center;
+}
+select option { background: var(--surface-2); color: var(--text); }
+
+/* Custom checkbox -- rounded, filled white when checked. */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface-2);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  content: '';
+  width: 11px;
+  height: 6px;
+  border-left: 2.2px solid var(--accent-text);
+  border-bottom: 2.2px solid var(--accent-text);
+  transform: rotate(-45deg) translate(1px, -2px);
+}
+
+input[type="date"] { min-height: 46px; }
+
+/* The OS file button is the boxiest thing on the page -- make it a pill. */
+input[type="file"]::-webkit-file-upload-button,
+input[type="file"]::file-selector-button {
+  background: var(--surface-3);
+  color: var(--text);
+  border: none;
+  border-radius: var(--r-pill);
+  padding: 0.5rem 1.1rem;
+  margin-right: 0.75rem;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+input[type="file"]::-webkit-file-upload-button:hover,
+input[type="file"]::file-selector-button:hover { background: var(--border-strong); }
+
+textarea {
+  min-height: 76px;
+  resize: vertical;
+  margin-bottom: 0.75rem;
+}
+
+/* ---------- Buttons: pills everywhere ---------- */
+.btn {
+  background: var(--surface-2);
+  border: none;
+  color: var(--text);
+  border-radius: var(--r-pill);
+  padding: 0.72rem 1.25rem;
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease), opacity 0.15s var(--ease);
+}
+
+.btn:hover { background: var(--surface-3); }
+.btn:active { transform: scale(0.97); }
+
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.btn.primary:hover { background: #e9e9ee; }
+
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Destructive-but-available: greyed and dashed so it reads as "only if you
+   mean it", rather than as the obvious next tap. */
+.btn.regen {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+  font-weight: 600;
+}
+.btn.regen:hover {
+  background: var(--surface-2);
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+#generateWeekPlan { margin-bottom: 0.9rem; }
+
+.regen-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+  margin: -0.55rem 0 0.9rem;
+  line-height: 1.4;
+}
+.regen-note:empty { display: none; }
+
+.file-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 0.75rem 0.9rem;
+  width: 100%;
+}
+.file-label input { width: auto; background: none; padding: 0; }
+
+.ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+.ai-toggle .hint { font-size: 0.85rem; }
+
+.ai-note { border-left: 2px solid var(--border-strong); padding-left: 0.6rem; margin-top: 0.4rem; }
+
+/* ---------- Entries ---------- */
+.entry-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.entry {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1rem;
+}
+
+.entry-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.entry-top .date { color: var(--muted); font-size: 0.85rem; }
+
+.entry video { width: 100%; max-width: 380px; border-radius: var(--r-sm); margin-top: 0.5rem; }
+.video-holder { margin-top: 0.5rem; max-width: 380px; }
+.video-holder video { margin-top: 0; }
+.video-load-btn {
+  width: 100%; padding: 0.85rem 1rem; border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); background: var(--surface-2); color: var(--text);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.video-load-btn:hover:not(:disabled) { background: var(--surface-3); }
+.video-load-btn:disabled { opacity: 0.6; cursor: default; }
+/* With a preview behind it the label needs to stay readable over whatever
+   the frame happens to be -- a bright sky or a dark track. */
+.video-load-btn.has-thumb {
+  aspect-ratio: 16 / 9; background-size: cover; background-position: center;
+  color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+.video-load-btn.has-thumb:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.2);
+}
+
+/* The stills kept in place of the clip. Scrolls sideways rather than
+   stacking: they are one stride in sequence, and reading them along a line
+   is what makes the sequence visible at all. */
+.key-frames {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.25rem;
+}
+.key-frames figure {
+  margin: 0;
+  flex: 0 0 148px;
+  scroll-snap-align: start;
+}
+/* A fixed box with the frame contained inside it, not cropped to fill.
+   Clips arrive both portrait and landscape and the athlete is the subject:
+   cropping to a uniform shape is exactly as likely to cut off the foot at
+   touchdown, which is the thing the caption is pointing at. */
+.key-frames img {
+  width: 100%;
+  height: 190px;
+  object-fit: contain;
+  display: block;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+.key-frames figcaption {
+  margin-top: 0.3rem;
+  line-height: 1.3;
+}
+.key-frames figcaption b {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.key-frames figcaption span {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.6rem;
+  font-weight: 600;
+}
+.score-pill {
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  padding: 0.15rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.score-note { margin-top: 0.1rem; }
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.2rem;
+  border-radius: var(--r-pill);
+  transition: color 0.15s var(--ease);
+}
+.delete-btn:hover { color: var(--text); }
+
+.phase-badge {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  padding: 0.4rem 0.95rem;
+  border-radius: var(--r-pill);
+  margin-bottom: 0.75rem;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.plan-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin: -0.35rem 0 0.9rem;
+  line-height: 1.45;
+}
+.plan-note:empty { display: none; }
+
+.phase-badge.competition { background: #e5484d; color: #fff; }
+.phase-badge.taper { background: #f5a623; color: #1a1a1a; }
+.phase-badge.deload { background: #f5d90a; color: #1a1a1a; }
+
+/* ---------- Week board ---------- */
+.week-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.7rem;
+}
+
+.day-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease);
+}
+.day-card:hover { background: var(--surface-2); }
+.day-card:active { transform: scale(0.99); }
+.day-card h4 { margin: 0 0 0.45rem; font-size: 1.02rem; }
+.day-card .type { color: var(--text); font-weight: 600; font-size: 0.9rem; }
+.day-card .details { color: var(--muted); font-size: 0.88rem; margin-top: 0.3rem; overflow-wrap: anywhere; line-height: 1.45; }
+.day-card.empty { opacity: 0.45; }
+.day-card.blocked-day { border-style: dashed; }
+.day-card .type.blocked { color: var(--muted); font-weight: 600; }
+.day-card .hint.blocked { color: var(--muted); font-style: italic; }
+.day-card .hint { font-size: 0.85rem; margin-top: 0.35rem; overflow-wrap: anywhere; }
+.day-card .delete-btn { margin-top: 0.4rem; }
+
+/* ---------- Exercise rows / logging ---------- */
+.ex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.ex-row:last-child { border-bottom: none; }
+.ex-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ex-name a { color: var(--muted); text-decoration: none; font-size: 0.85rem; margin-left: 0.5rem; }
+.ex-name a:hover { color: var(--text); }
+
+.ex-name-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.ex-name-link:hover { color: var(--muted); }
+
+.ex-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.ex-link-btn {
+  background: var(--surface-2);
+  border: none;
+  color: var(--muted);
+  border-radius: var(--r-pill);
+  padding: 0.35rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.79rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.ex-link-btn:hover { background: var(--surface-3); color: var(--text); }
+.ex-link-btn:active { transform: scale(0.96); }
+
+.explog-group-label {
+  font-weight: 600;
+  font-size: 0.86rem;
+  margin: 0.9rem 0 0.3rem;
+  overflow-wrap: anywhere;
+}
+.explog-input {
+  width: 96px;
+  flex: 0 0 auto;
+}
+.explog-set-select {
+  flex: 1;
+  min-width: 0;
+}
+.explog-row { border-bottom: none; padding: 0.25rem 0; }
+
+/* The weight-room checklist is a bare list of rows -- give it a panel. */
+#weightsList {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 0.35rem 1.15rem;
+  gap: 0;
+}
+#weightsList:empty { display: none; }
+/* The actions stay together as a group and drop to their own line when the
+   movement's name needs the room, rather than squeezing or splitting up. */
+#weightsList .ex-row { flex-wrap: wrap; row-gap: 0.4rem; }
+#weightsList .ex-name { flex: 1 1 50%; }
+
+/* ---------- Goals ---------- */
+.goal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1rem 1.1rem;
+}
+.goal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  gap: 0.5rem;
+}
+.progress-bar {
+  background: var(--surface-3);
+  border-radius: var(--r-pill);
+  height: 6px;
+  margin: 0.7rem 0;
+  overflow: hidden;
+}
+.progress-fill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: var(--r-pill);
+  transition: width 0.35s var(--ease);
+}
+/* Tighter than the profile's, because an analysis card stacks eight of them
+   and the profile shows one per criterion. The note belongs to the bar above
+   it, so the gap below is smaller than the gap above. */
+.score-bar { margin: 0.35rem 0 0.3rem; }
+.small-goal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0;
+}
+.small-goal-row.done span { text-decoration: line-through; color: var(--muted); }
+.add-small-goal {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+blockquote {
+  font-size: 1.15rem;
+  font-style: italic;
+  line-height: 1.5;
+  border-left: 3px solid var(--border-strong);
+  margin: 0.5rem 0 1rem;
+  padding: 0.25rem 0 0.25rem 1rem;
+}
+
+/* The session editor, folded. Most visits to Workouts are to read the week,
+   not to change it, and a full form above the board pushed the board itself
+   below the fold on a phone. Same treatment as the filming guide. */
+.session-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 0.9rem 1.1rem;
+  margin-top: 1rem;
+}
+.session-editor summary {
+  cursor: pointer;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--glow);
+  list-style: none;
+}
+.session-editor summary::-webkit-details-marker { display: none; }
+.session-editor summary::after { content: ' +'; opacity: 0.7; }
+.session-editor[open] summary::after { content: ' \2212'; }
+.session-editor .card {
+  background: transparent;
+  border: 0;
+  padding: 0.9rem 0 0;
+  margin: 0;
+}
+.session-editor .card::before, .session-editor .card::after { display: none; }
+
+/* ---------- Motion for the built sections ---------- */
+/* Workouts and the warm-up render their contents into a container, so the
+   panel-level stagger above never reached them -- it only matches direct
+   children of .tab-panel. Both sections sat still while Form Analysis came
+   alive, which is most of why they felt flat next to it.
+   Each element carries its own --i so the cascade follows the order the
+   athlete reads in, rather than depending on nth-child in a list that gets
+   rebuilt. */
+.week-board .day-card,
+#warmupContent > .card,
+#warmupContent .warmup-list li {
+  animation: rise 0.38s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 0.035s + 0.04s);
+}
+/* Capped so a nine-drill phase does not keep the athlete waiting. */
+#warmupContent .warmup-list li:nth-child(n+9) { animation-delay: 0.32s; }
+
+/* Today is the card you are looking for. A left edge in the accent, and it
+   sits a touch proud of the rest. */
+.day-card.is-today {
+  border-left: 3px solid var(--glow);
+  background: linear-gradient(100deg, var(--glow-faint), transparent 45%), var(--surface);
+}
+.day-card.is-today h4::after {
+  content: 'TODAY';
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--glow);
+  margin-left: 0.5rem;
+  vertical-align: 0.1em;
+}
+.day-card { transform-origin: center; }
+.day-card:hover { transform: translateY(-1px); }
+
+/* The numeral lights up as you arrive at each phase. */
+.warmup-phase { position: relative; overflow: hidden; }
+.warmup-phase::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--star), transparent);
+  opacity: 0.55;
+}
+.warmup-numeral {
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.warmup-phase:hover .warmup-numeral {
+  color: var(--star);
+  border-color: var(--star);
+}
+
+/* A drill you are on should feel picked up rather than just hovered. */
+.warmup-list li {
+  transition: transform 0.16s var(--ease), background 0.16s var(--ease);
+  border-radius: var(--r-xs);
+  padding-left: 0.5rem;
+  margin-left: -0.5rem;
+}
+.warmup-list li:hover { background: var(--surface-2); transform: translateX(2px); }
+
+/* The stars arrive after the drill they sit on, so they read as a mark being
+   applied rather than as part of the name. */
+.warmup-star { animation: star-pop 0.3s var(--ease) both; animation-delay: 0.34s; }
+@keyframes star-pop {
+  from { opacity: 0; transform: scale(0.4) rotate(-25deg); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- Gym toggle ---------- */
+/* A single chip rather than a pair of radio buttons: there are two states and
+   the label says which one you are in, so a second control would only add a
+   way to be in neither. */
+.gym-toggle #hasGymBtn { width: 100%; padding: 0.7rem 1rem; font-size: 0.85rem; }
+.gym-toggle .hint { margin: 0.45rem 0 0; }
+
+/* ---------- Warm-up ---------- */
+/* Violet, taken from the ambient purple already in the background wash. The
+   marking used to be an amber flag with the measure and score written out
+   against every drill that touched it -- three lines of the same sentence in
+   a warning colour, on a screen the athlete reads between reps. */
+:root { --star: #a78bfa; }
+
+.warmup-day { margin-bottom: 1rem; }
+.warmup-day select { width: 100%; }
+
+.warmup-star {
+  color: var(--star);
+  letter-spacing: 0.08em;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.warmup-summary { border-left: 3px solid var(--star); }
+.warmup-flags { list-style: none; margin: 0.55rem 0 0.7rem; padding: 0; }
+.warmup-flags li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+.warmup-flags li a {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex: 1;
+  text-decoration: none;
+}
+.warmup-flags li a:hover { text-decoration: underline; }
+
+.warmup-phase h3 { display: flex; align-items: baseline; gap: 0.55rem; }
+/* The numeral is what you scan for when you are half way through and looking
+   for your place. */
+.warmup-numeral {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  padding: 0.1rem 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.warmup-list { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.warmup-list li { padding: 0.5rem 0; border-top: 1px solid var(--border); }
+.warmup-list li:first-child { border-top: 0; }
+.warmup-list li > a {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.warmup-list li > a:hover { text-decoration: underline; }
+.warmup-list li > a + .warmup-star { margin-left: 0.4rem; }
+/* Targeted by class, not by element. As `li > span` this rule also matched
+   the star sitting next to the drill name and repainted it muted grey --
+   `.warmup-star` is one class and loses to two classes plus an element. */
+.warmup-detail {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.79rem;
+  color: var(--muted);
+}
+
+.warmup-caveat { margin-top: 1.5rem; opacity: 0.75; }
+
+/* ---------- Mobile: bigger targets, no auto-zoom ---------- */
+@media (max-width: 640px) {
+  .app-header {
+    padding: max(0.7rem, env(safe-area-inset-top)) 1rem 0.6rem;
+  }
+  .app-header h1 { font-size: 1.15rem; }
+
+  main { padding: 0.5rem 1rem calc(5.75rem + env(safe-area-inset-bottom)); }
+
+  h2 { font-size: 1.45rem; }
+
+  .form-grid,
+  .week-board {
+    grid-template-columns: 1fr;
+  }
+
+  input, select, textarea {
+    font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
+  }
+
+  .btn {
+    min-height: 46px;
+    padding: 0.72rem 1.25rem;
+    font-size: 0.95rem;
+  }
+
+  .row { flex-direction: column; }
+  .row .btn { width: 100%; }
+
+  .file-label {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .file-label input { width: 100%; }
+
+  .entry-top { flex-wrap: wrap; }
+
+  .explog-row { flex-wrap: wrap; }
+  .explog-row .ex-name { flex-basis: 100%; }
+  .explog-combo-row .explog-set-select { flex-basis: 100%; }
+  .explog-input {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+/* ---------- iPad / tablet-sized screens ---------- */
+@media (min-width: 768px) {
+  main { padding-left: 2rem; padding-right: 2rem; }
+
+  .bottom-nav {
+    max-width: 460px;
+    margin: 0 auto;
+  }
+
+  .tab-btn { font-size: 0.72rem; }
+  .tab-center-icon { width: 64px; height: 64px; font-size: 1.9rem; }
+}
+
+/* ---------- Landscape phones: reclaim vertical space ---------- */
+@media (max-height: 480px) and (orientation: landscape) {
+  .app-header { padding-top: 0.4rem; }
+  .app-header h1 { font-size: 1rem; }
+  main { padding-top: 0.5rem; padding-bottom: 4.5rem; }
+  .bottom-nav { bottom: 0.5rem; padding: 0.3rem 0.4rem; }
+  .tab-btn { min-height: 36px; font-size: 0.58rem; }
+  .tab-btn .tab-icon { width: 30px; height: 30px; font-size: 0.95rem; }
+  .tab-btn-center { margin-top: -1.1rem; }
+  .tab-center-icon { width: 46px; height: 46px; font-size: 1.4rem; border-width: 3px; }
+}
+
+/* Surface/footwear caveat on every analysis -- stiffness of the ground
+   changes the numbers, so scores are only comparable like for like. */
+.surface-note {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.surface-note summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--glow);
+  opacity: 0.8;
+}
+.surface-note summary::-webkit-details-marker { display: none; }
+.surface-note summary::after {
+  content: ' +';
+  opacity: 0.7;
+}
+.surface-note[open] summary::after { content: ' −'; }
+.surface-note summary:hover { opacity: 1; }
+.surface-note p { margin: 0.55rem 0 0; }
+
+/* How many strides a score rests on -- shown under the summary, quieter than
+   the scores themselves but not hidden away at the bottom. */
+.basis-note {
+  margin: 0.15rem 0 0.5rem;
+  opacity: 0.75;
+  font-size: 0.82rem;
+}
+
+/* ---- Settings menu footer: the legal pages ---- */
+.settings-legal {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.settings-legal a { color: var(--muted); text-decoration: none; }
+.settings-legal a:hover { color: var(--text); text-decoration: underline; }
+
+/* ---- Privacy / Terms pages ----
+   Plain reading pages. They reuse the app's shell so they do not look like a
+   different site, but they are static HTML with no script: the App Store needs
+   a privacy policy at a public URL that loads without signing in. */
+.legal-page main { max-width: 46rem; margin: 0 auto; padding-bottom: 4rem; }
+.legal-page h2 {
+  margin: 2rem 0 0.6rem;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+.legal-page p, .legal-page li { line-height: 1.65; color: var(--muted); }
+.legal-page ul { padding-left: 1.2rem; margin: 0.6rem 0; }
+.legal-page li { margin-bottom: 0.5rem; }
+.legal-page strong { color: var(--text); }
+/* --accent is white here, which reads as emphasis rather than a link in
+   running text, so legal-page links get an underline to stay recognisable. */
+.legal-page a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.legal-page .app-header h1 { font-size: 1.1rem; }
+
+/* Destructive action. Deliberately not styled like the buttons beside it --
+   Sign Out and Delete Account sit next to each other in a small menu, and
+   they must not be one mis-tap apart in appearance as well as position. */
+.danger-btn {
+  background: transparent;
+  color: #e5484d;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+}
+.danger-btn:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.12);
+  border-color: #e5484d;
+}
+.danger-btn:disabled { opacity: 0.6; }
+
+/* =====================================================================
+   Sprintr: motion and depth
+   =====================================================================
+   One hard rule governs everything below: while a clip is being analysed,
+   the main thread is saturated. Pose inference is the app's capture rate --
+   two model runs a frame measured out at 10 frames a second on the athlete's
+   iPad, which is the difference between a clip grading and being refused.
+   Any animation that costs main-thread work during that window is taken
+   directly out of frames we need.
+   So: every animation here is transform/opacity only, which the compositor
+   runs off the main thread, and the ambient ones stop entirely while
+   `body.is-analysing` is set. Decoration must never slow down measurement.  */
+
+:root {
+  --glow: #38e8ff;
+  --glow-dim: rgba(56, 232, 255, 0.35);
+  --glow-faint: rgba(56, 232, 255, 0.12);
+}
+
+/* ---- Ambient depth ----
+   Two very large, very slow radial washes. Sitting on a fixed pseudo-element
+   with its own layer, so it never triggers layout on the content above it. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -30%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 30% at 22% 12%, rgba(56, 232, 255, 0.10), transparent 70%),
+    radial-gradient(42% 34% at 82% 78%, rgba(120, 80, 255, 0.10), transparent 70%);
+  animation: drift 24s var(--ease) infinite alternate;
+  will-change: transform;
+}
+@keyframes drift {
+  from { transform: translate3d(-2%, -1%, 0) scale(1); }
+  to   { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+/* A hairline of light under the header, so the sticky edge reads as a plane
+   rather than a seam. */
+.app-header::after {
+  content: '';
+  position: absolute;
+  left: 1.25rem; right: 1.25rem; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glow-dim), transparent);
+  opacity: 0.55;
+}
+
+/* ---- Panels arrive rather than appear ---- */
+.tab-panel.active { animation: panel-in 0.32s var(--ease) both; }
+@keyframes panel-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Cards stagger in behind the panel. Six steps is enough: past that the last
+   card is waiting long enough to feel like a bug rather than a flourish. */
+.tab-panel.active > .card,
+.tab-panel.active > h2,
+.tab-panel.active > .entry {
+  animation: rise 0.4s var(--ease) both;
+}
+.tab-panel.active > *:nth-child(1) { animation-delay: 0.02s; }
+.tab-panel.active > *:nth-child(2) { animation-delay: 0.06s; }
+.tab-panel.active > *:nth-child(3) { animation-delay: 0.10s; }
+.tab-panel.active > *:nth-child(4) { animation-delay: 0.14s; }
+.tab-panel.active > *:nth-child(5) { animation-delay: 0.18s; }
+.tab-panel.active > *:nth-child(n+6) { animation-delay: 0.20s; }
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---- Surfaces catch the light ---- */
+.card {
+  position: relative;
+  transition: border-color 0.25s var(--ease), transform 0.25s var(--ease);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(140deg, var(--glow-faint), transparent 40%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+}
+.card:hover::before { opacity: 1; }
+
+/* ---- The primary action reads as powered ---- */
+.btn.primary {
+  position: relative;
+  box-shadow: 0 0 0 0 var(--glow-dim);
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease),
+              box-shadow 0.3s var(--ease);
+}
+.btn.primary:hover:not(:disabled) { box-shadow: 0 0 22px -2px var(--glow-dim); }
+.btn.primary:active:not(:disabled) { transform: scale(0.97); }
+
+/* Anything focused by keyboard gets the accent, not the browser's outline. */
+.btn:focus-visible, .icon-btn:focus-visible, select:focus-visible,
+input:focus-visible, .tab-btn:focus-visible {
+  outline: 2px solid var(--glow);
+  outline-offset: 2px;
+}
+
+/* ---- The active tab is lit ---- */
+.tab-btn.active .tab-icon {
+  background: rgba(56, 232, 255, 0.16);
+  box-shadow: 0 0 16px -4px var(--glow-dim);
+}
+.tab-btn .tab-icon { transition: background 0.25s var(--ease), box-shadow 0.25s var(--ease); }
+.tab-btn-center .tab-center-icon { transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease); }
+.tab-btn-center.active .tab-center-icon { box-shadow: 0 0 26px -4px var(--glow-dim); }
+
+/* ---- Score bars fill rather than jump ----
+   The fill is full width and scaled horizontally, so the animation is a
+   composited transform rather than a width change laying the page out on
+   every frame. --fill is set inline per row by the renderer. */
+.score-bar .progress-fill {
+  transform-origin: left center;
+  transform: scaleX(var(--fill, 1));
+  animation: fill-bar 0.7s var(--ease) both;
+}
+@keyframes fill-bar {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(var(--fill, 1)); }
+}
+
+/* ---- Waiting ----
+   A skeleton for lists that are still loading, and a ring for the analysis
+   itself. Both are pure transform/opacity. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  height: 1rem;
+  margin-bottom: 0.6rem;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  animation: sweep 1.4s infinite;
+}
+@keyframes sweep { to { transform: translateX(100%); } }
+
+.analysis-live {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+.analysis-ring {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--glow);
+  animation: spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* The status line reads as instrument output while work is happening. */
+.analysis-live .hint {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Analysis owns the device ----
+   Ambient motion stops while measuring. The spinner stays: it is the one
+   animation carrying information, and it is a single compositor transform. */
+body.is-analysing::before { animation-play-state: paused; }
+body.is-analysing .tab-panel.active > *,
+body.is-analysing .tab-panel.active { animation: none; }
+
+/* ---- Anyone who asked for less gets less ---- */
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+  .tab-panel.active,
+  .tab-panel.active > .card,
+  .tab-panel.active > h2,
+  .tab-panel.active > .entry { animation: none; }
+  .skeleton::after { animation: none; }
+  .analysis-ring { animation-duration: 2.4s; }
+  .score-bar .progress-fill { animation: none; }
+  /* The built sections stagger too, and a cascade is exactly what somebody
+     asking for reduced motion is asking not to get. */
+  .week-board .day-card,
+  #warmupContent > .card,
+  #warmupContent .warmup-list li,
+  .warmup-star { animation: none; }
+  .warmup-list li:hover,
+  .day-card:hover { transform: none; }
+  * { scroll-behavior: auto !important; }
+}
+
+/* =====================================================================
+   Instrument panel
+   =====================================================================
+   The app is a measuring device, so it should look like one. Numbers set in
+   mono with tabular figures, HUD framing on the surfaces that carry readings,
+   and a signal-green accent that belongs to a track rather than a spaceship.
+   Same rule as above: transforms and opacity only, and all of it parks while
+   a clip is being measured.                                                  */
+
+:root {
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --grid-line: rgba(56, 232, 255, 0.045);
+}
+
+/* ---- A faint grid, far back ----
+   Sits under the colour wash. Two hairline gradients, no repetition cost
+   worth speaking of, and it gives every surface something to float above. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* ---- Readings are set in mono ----
+   Scoped to the things that ARE readings. Body copy stays in Inter: a whole
+   interface in monospace is a costume, not a design. */
+.score-pill,
+.day-badge,
+.explog-input,
+.time-value,
+.analysis-live .hint,
+.legal-page .hint {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.score-pill {
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  border: 1px solid var(--border-strong);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+/* The measurement in each note -- the parenthetical with the angle in it --
+   is the payload of the whole row. */
+.score-note { font-variant-numeric: tabular-nums; }
+
+/* ---- HUD framing ----
+   Corner brackets on the cards that carry readings. Drawn with a single
+   background layer, no extra elements, no cost while idle. */
+.entry, .card {
+  --bracket: rgba(56, 232, 255, 0.30);
+  --bracket-len: 14px;
+  background-image:
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket));
+  background-repeat: no-repeat;
+  background-size:
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len);
+  background-position:
+    12px 10px, 10px 12px,
+    calc(100% - 12px) 10px, calc(100% - 10px) 12px,
+    12px calc(100% - 10px), 10px calc(100% - 12px),
+    calc(100% - 12px) calc(100% - 10px), calc(100% - 10px) calc(100% - 12px);
+}
+
+/* ---- The title reads as a readout ---- */
+.app-header h1 {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: linear-gradient(92deg, var(--text) 30%, var(--glow));
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- Section headings get a leading tick ---- */
+.tab-panel > h2::before {
+  content: '';
+  display: inline-block;
+  width: 3px; height: 0.78em;
+  margin-right: 0.5rem;
+  vertical-align: -0.04em;
+  background: var(--glow);
+  box-shadow: 0 0 10px var(--glow-dim);
+}
+
+/* ---- Score bars carry a live edge ----
+   A bright leading edge on the fill, so a bar reads as a level rather than a
+   coloured rectangle. Pure box-shadow on the same element that already moves. */
+.score-bar { background: rgba(255, 255, 255, 0.05); }
+.score-bar .progress-fill {
+  box-shadow: 0 0 12px -1px currentColor;
+  filter: saturate(1.15);
+}
+
+/* ---- Waiting, at length ----
+   The analysis is the app's slowest moment and the one that most needs to
+   look deliberate. A segmented ring with a sweep behind it. */
+.analysis-live {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: rgba(56, 232, 255, 0.03);
+  padding: 0.7rem 0.85rem;
+  position: relative;
+  overflow: hidden;
+}
+body:not(.is-analysing) .analysis-live {
+  border-color: transparent;
+  background: none;
+  padding: 0.1rem 0;
+}
+body.is-analysing .analysis-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(56, 232, 255, 0.10), transparent);
+  transform: translateX(-100%);
+  animation: sweep 1.8s linear infinite;
+  pointer-events: none;
+}
+.analysis-ring {
+  border-width: 2px;
+  border-style: solid;
+  border-color: rgba(56, 232, 255, 0.15);
+  border-top-color: var(--glow);
+  border-right-color: var(--glow-dim);
+  box-shadow: 0 0 14px -2px var(--glow-dim);
+}
+
+/* ---- The bottom bar is the console ---- */
+.bottom-nav {
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 -2px 30px -12px var(--glow-dim), var(--shadow-soft);
+}
+.tab-btn .tab-label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ---- Reduced motion: the framing stays, the movement goes ---- */
+@media (prefers-reduced-motion: reduce) {
+  body.is-analysing .analysis-live::after { animation: none; }
+}
+
+/* Mono, uppercase and letter-spaced is wider than the sentence-case labels it
+   replaced -- enough to push the console 23px past the screen on a 320px
+   phone. Tighten rather than truncate: "FORM ANALYSIS" losing its end is
+   worse than it being a point smaller. */
+@media (max-width: 360px) {
+  .tab-btn .tab-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.02em;
+  }
+  .bottom-nav { left: 0.6rem; right: 0.6rem; }
+}
+
+/* =====================================================================
+   Deep field
+   =====================================================================
+   Pulled towards the references: a near-black ground rather than charcoal,
+   a violet-to-blue signature instead of pure cyan, bloom around the one
+   thing that matters on a screen, and a single hero reading with small
+   uppercase stats beneath it.                                              */
+
+:root {
+  --bg: #08080c;
+  --surface: rgba(24, 24, 32, 0.72);
+  --surface-2: rgba(38, 38, 50, 0.72);
+  --surface-3: rgba(52, 52, 68, 0.8);
+
+  --violet: #8b5cf6;
+  --indigo: #5b6cff;
+  --azure: #38bdf8;
+  --grad: linear-gradient(120deg, var(--violet), var(--indigo) 55%, var(--azure));
+  --glow: #7c8bff;
+  --glow-dim: rgba(124, 139, 255, 0.38);
+  --glow-faint: rgba(124, 139, 255, 0.14);
+  --grid-line: rgba(124, 139, 255, 0.04);
+}
+
+/* The wash goes violet, and deeper. */
+body::before {
+  background:
+    radial-gradient(46% 34% at 18% 6%, rgba(139, 92, 246, 0.20), transparent 70%),
+    radial-gradient(44% 34% at 84% 72%, rgba(56, 189, 248, 0.14), transparent 70%),
+    radial-gradient(60% 40% at 50% 110%, rgba(91, 108, 255, 0.10), transparent 70%);
+}
+
+/* Surfaces become glass over that field. */
+.card, .entry {
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+          backdrop-filter: blur(18px) saturate(140%);
+}
+
+/* ---- The primary action is the gradient ---- */
+.btn.primary {
+  background: var(--grad);
+  color: #fff;
+  border: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--grad);
+  box-shadow: 0 8px 30px -6px var(--glow-dim);
+}
+
+/* ---- The hero reading ----
+   One number, bloomed, with its stats in small uppercase beneath -- the shape
+   every one of the references leads with. */
+.hero-score {
+  position: relative;
+  text-align: center;
+  padding: 1.6rem 0 1.1rem;
+  margin-bottom: 0.4rem;
+}
+.hero-halo {
+  position: absolute;
+  left: 50%; top: 46%;
+  width: 210px; height: 210px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 139, 255, 0.30), rgba(139, 92, 246, 0.12) 45%, transparent 68%);
+  filter: blur(6px);
+  pointer-events: none;
+  animation: breathe 5.5s var(--ease) infinite alternate;
+  will-change: transform, opacity;
+}
+@keyframes breathe {
+  from { transform: translate(-50%, -50%) scale(0.94); opacity: 0.75; }
+  to   { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+}
+.hero-value {
+  position: relative;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 3.5rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #fff 40%, var(--glow));
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-label {
+  position: relative;
+  margin-top: 0.15rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero-stats {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 1.6rem;
+  margin-top: 1.1rem;
+}
+.hero-stats div { display: flex; flex-direction: column; gap: 0.2rem; }
+.hero-stats span {
+  font-family: var(--mono);
+  font-size: 0.56rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--glow);
+  opacity: 0.85;
+}
+.hero-stats b {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Brackets tighten against the darker ground. */
+.entry, .card { --bracket: rgba(124, 139, 255, 0.32); }
+
+/* The lit tick and the header rule follow the new accent automatically via
+   --glow, but the title gradient should carry the full sweep. */
+.app-header h1 {
+  background: linear-gradient(100deg, #fff 20%, var(--violet) 60%, var(--azure));
+  -webkit-background-clip: text;
+          background-clip: text;
+}
+
+/* ---- The console, darker and lifted ---- */
+.bottom-nav { background: rgba(16, 16, 24, 0.78); }
+.tab-btn.active .tab-icon {
+  background: rgba(124, 139, 255, 0.18);
+  box-shadow: 0 0 18px -4px var(--glow-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-halo { animation: none; }
+}
+
+/* ---- Charts ----
+   The SVG is stretched with preserveAspectRatio="none", so stroke width has
+   to be vector-effect'd or the line thins and thickens as the box changes. */
+.chart { position: relative; }
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--glow);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 6px var(--glow-dim));
+}
+.chart-dot {
+  fill: #fff;
+  stroke: var(--glow);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chart-foot { margin-top: 0.75rem; font-size: 0.78rem; }
+.chart-foot b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.chart-empty { margin: 0.4rem 0 0; }
+
+/* The line draws itself in. Stroke-dash is a paint-only property here, and
+   it runs once per render rather than continuously. */
+.chart-line {
+  stroke-dasharray: 260;
+  stroke-dashoffset: 260;
+  animation: draw 1s var(--ease) forwards;
+}
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.chart-dot { animation: dot-in 0.4s var(--ease) both 0.55s; }
+@keyframes dot-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- Segmented control ---- */
+.segmented {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  margin-bottom: 0.9rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.segmented::-webkit-scrollbar { display: none; }
+.seg-btn {
+  flex: 1 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s var(--ease), background 0.25s var(--ease);
+}
+.seg-btn.active {
+  background: var(--grad);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 4px 18px -6px var(--glow-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-line { animation: none; stroke-dashoffset: 0; }
+  .chart-dot { animation: none; }
+}
+
+/* ---- Google sign-in ----
+   Deliberately NOT the gradient. Google's brand guidance wants their mark on a
+   neutral surface, and a provider button that looks like the app's own primary
+   action reads as "sign up" rather than "hand off to Google". */
+.google-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: #fff;
+  color: #1f1f1f;
+  font-weight: 600;
+  padding: 0.8rem 1.25rem;
+}
+.google-btn:hover:not(:disabled) { background: #f1f1f4; }
+.google-btn svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.google-btn:disabled { opacity: 0.6; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 0.85rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.auth-divider::before, .auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.auth-legal { font-size: 0.72rem; margin-top: 0.9rem; }
+.auth-legal a { color: var(--muted); }
+.auth-legal a:hover { color: var(--text); }
+
+/* ---- What you're chasing ----
+   A ladder per distance, fastest at the top, with the athlete's own best in
+   the header so every row reads as a distance from something real. */
+.chase-group { margin-bottom: 1.1rem; }
+.chase-group:last-child { margin-bottom: 0; }
+.chase-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--glow);
+}
+.chase-mine { color: var(--muted); letter-spacing: 0.04em; }
+
+.chase-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.35rem;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid var(--border-strong);
+}
+.chase-row.caught { border-left-color: #2e7d32; background: rgba(46, 125, 50, 0.10); }
+.chase-row.chasing { border-left-color: var(--glow); }
+.chase-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.chase-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chase-gap {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+.chase-row.caught .chase-gap { color: #7fd18a; }
+.chase-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.chase-del { flex: 0 0 auto; padding: 0 0.2rem; }
+
+/* ---- How to film it ----
+   Collapsed by default: the athlete who built this does not need it, and the
+   team-mate opening the app for the first time does. Every point comes from a
+   clip this app actually refused, not from general advice. */
+.filming-guide {
+  margin: 0.9rem 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: rgba(124, 139, 255, 0.04);
+  padding: 0.7rem 0.85rem;
+}
+.filming-guide summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--glow);
+}
+.filming-guide summary::-webkit-details-marker { display: none; }
+.filming-guide summary::after { content: ' +'; opacity: 0.7; }
+.filming-guide[open] summary::after { content: ' −'; }
+.guide-body { margin-top: 0.9rem; }
+
+.guide-item {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin-bottom: 0.9rem;
+}
+.guide-svg { width: 104px; flex: 0 0 104px; height: auto; }
+.guide-item b { display: block; font-size: 0.85rem; margin-bottom: 0.15rem; }
+.guide-item span { font-size: 0.76rem; line-height: 1.45; color: var(--muted); }
+
+/* Diagram parts. Green reads as the way to do it, red as the way not to --
+   the same language the score bars already use. */
+.g-lane { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; stroke-dasharray: 3 3; }
+.g-run { stroke: var(--glow); stroke-width: 1.6; fill: none; }
+.g-run-head { fill: var(--glow); }
+.g-cam { fill: none; stroke-width: 1.6; }
+.g-sight { stroke-width: 1.4; stroke-dasharray: 2 2; }
+.g-cam.ok, .g-sight.ok { stroke: #4ade80; }
+.g-cam.bad, .g-sight.bad { stroke: #f87171; }
+.g-frame { fill: none; stroke-width: 1.4; }
+.g-frame.ok { stroke: #4ade80; }
+.g-frame.bad { stroke: #f87171; }
+.g-figure { fill: none; stroke-width: 1.5; stroke-linecap: round; }
+.g-figure.ok { stroke: #4ade80; }
+.g-figure.ok circle { fill: #4ade80; stroke: none; }
+.g-figure.bad { stroke: #f87171; }
+.g-figure.bad circle { fill: #f87171; stroke: none; }
+
+.guide-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+}
+.guide-list li {
+  position: relative;
+  padding-left: 1.4rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.guide-list li b { color: var(--text); font-weight: 600; }
+.guide-list li::before {
+  position: absolute;
+  left: 0;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.guide-list li.yes::before { content: '✓'; color: #4ade80; }
+.guide-list li.no::before { content: '✕'; color: #f87171; }
