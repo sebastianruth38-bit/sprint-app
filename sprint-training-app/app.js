@@ -783,6 +783,57 @@ function framingCheck(metricsList) {
 // fast, so anything above the ceiling means the tracker lost the plot.
 const MAX_PEOPLE_IN_FRAME = 3;
 const MIN_TRACK_FRAMES = 8;
+
+// Frames the athlete is actually IN, which is the only count that decides
+// whether there is enough to grade. Counting captured frames instead meant a
+// clip where he crosses the shot in a second declared success on the strength
+// of two hundred frames of empty track: 236 captured is far past the minimum,
+// so the fallback never ran, while pose had found him in five of them. That
+// is exactly the clip the athlete reported.
+function posedCount(rows) {
+  return (rows || []).filter((p) => p && p.length).length;
+}
+
+// Comfortably more than the track minimum, not merely equal to it. The
+// athlete needs MIN_TRACK_FRAMES of CONTINUOUS tracking, and detections
+// scattered through a clip do not join up: a real refusal read "10 of 71
+// frames over 7.1s had anyone in them", which clears a bare minimum of 8 and
+// still could not follow anyone. Accepting the fast pass at the bare minimum
+// means never retrying on exactly the clips that need it.
+const PLAYBACK_GOOD_ENOUGH = MIN_TRACK_FRAMES * 2;
+
+// How densely a capture pass found him -- the question counting cannot ask.
+//
+// A count of detections says nothing about whether a stride can be measured
+// from them. The scout sweep spreads 30 samples across the whole clip: on a
+// 7s clip that is 4.3 a second, and seventeen of them can contain the athlete
+// while not one stride is measurable from the lot. A playback pass that found
+// fifteen at 30 a second can measure four.
+//
+// Ranking by count puts the useless pass first, and that is what happened to
+// a perfectly ordinary clip -- 1080x1920, H.264, 210 frames at 29.9fps, seven
+// seconds. The sweep found 17, which beat the playback pass AND cleared
+// PLAYBACK_GOOD_ENOUGH, so the dense pass -- the only one that samples at
+// DENSE_RATE, and the only thing that could have rescued the clip -- never
+// ran. The athlete was then told his clip "only got 4 usable frames a second"
+// about a sampling rate the app had chosen for itself.
+function passDensity(rows) {
+  const ts = [];
+  (rows || []).forEach((poses) => {
+    if (!poses || !poses.length) return;
+    const t = poses[0].metrics && poses[0].metrics.t;
+    if (typeof t === 'number' && isFinite(t)) ts.push(t);
+  });
+  if (ts.length < 2) return 0;
+  const span = ts[ts.length - 1] - ts[0];
+  return span > 0 ? (ts.length - 1) / span : 0;
+}
+
+// Both questions at once: did it find him enough times, and did it look often
+// enough for that to mean anything.
+function measurablePass(rows) {
+  return posedCount(rows) >= PLAYBACK_GOOD_ENOUGH && passDensity(rows) >= MEASURABLE_FPS_MIN;
+}
 // Whatever the athlete filmed is what gets graded -- a short clip is not a
 // reason to refuse, only a reason to say less about it. Each measure carries
 // its own evidence requirement instead, so a clip that only supports posture
@@ -2901,21 +2952,6 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     // the point, since going back is what used to cost ninety seconds.
     let framePoses = [];
     let playedThrough = false;
-    // Frames the athlete is actually IN, which is the only count that decides
-    // whether there is enough to grade. Counting captured frames instead
-    // meant a clip where he crosses the shot in a second declared success on
-    // the strength of two hundred frames of empty track: 236 captured is far
-    // past the minimum, so the fallback never ran, while pose had found him
-    // in five of them. That is exactly the clip the athlete reported.
-    const posedCount = (rows) => rows.filter((p) => p.length).length;
-    // Comfortably more than the track minimum, not merely equal to it. The
-    // athlete needs MIN_TRACK_FRAMES of CONTINUOUS tracking, and detections
-    // scattered through a clip do not join up: a real refusal read "10 of 71
-    // frames over 7.1s had anyone in them", which clears a bare minimum of 8
-    // and still could not follow anyone. Accepting the fast pass at the bare
-    // minimum means never retrying on exactly the clips that need it.
-    const PLAYBACK_GOOD_ENOUGH = MIN_TRACK_FRAMES * 2;
-
     // Every strategy below is an ATTEMPT, and the best one wins.
     //
     // Each was originally written to replace what came before it, which threw
@@ -2934,10 +2970,19 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
     let bestMode = 'none';
     let mode = 'none';
     const keepIfBetter = () => {
+      const take = () => {
+        best.rows = framePoses;
+        best.candidates = candidates.slice();
+        bestMode = mode;
+      };
+      // A pass that can measure a stride always beats one that cannot,
+      // however many times the sparse one happened to find him.
+      const now = measurablePass(framePoses);
+      const held = measurablePass(best.rows);
+      if (held && !now) return;
+      if (now && !held) { take(); return; }
       if (posedCount(framePoses) <= posedCount(best.rows)) return;
-      best.rows = framePoses;
-      best.candidates = candidates.slice();
-      bestMode = mode;
+      take();
     };
     const takeBest = () => {
       framePoses = best.rows;
@@ -2970,9 +3015,10 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
           console.warn(`Playback capture at ${rate}x failed:`, playErr);
         }
         keepIfBetter();
-        if (posedCount(best.rows) >= PLAYBACK_GOOD_ENOUGH) break;
+        // Stop retrying only once a pass can actually be measured from.
+        if (measurablePass(best.rows)) break;
       }
-      playedThrough = posedCount(best.rows) >= PLAYBACK_GOOD_ENOUGH;
+      playedThrough = measurablePass(best.rows);
       video.playbackRate = 1;
     }
 
@@ -3012,7 +3058,11 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // more, and it used the bare track minimum while acceptance needs twice
       // that -- so a sweep finding 8 to 15 settled instead of looking closer,
       // on exactly the clips sitting near the edge.
-      if (landmarker && seenTimes.length && posedCount(best.rows) < PLAYBACK_GOOD_ENOUGH) {
+      // The dense pass is the only thing that samples at DENSE_RATE, so it
+      // is what a sparse sweep needs. Gated on measurability, not on a
+      // count: a 4.3/s sweep that found seventeen used to clear the count
+      // and skip the one pass that could have rescued the clip.
+      if (landmarker && seenTimes.length && !measurablePass(best.rows)) {
         const pad = 1 / SCOUT_RATE;
         const from = Math.max(0, Math.min(...seenTimes) - pad);
         const to = Math.min(duration, Math.max(...seenTimes) + pad);

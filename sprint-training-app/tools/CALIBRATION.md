@@ -380,6 +380,54 @@ stride", which claims Support Stiffness's subject and reads as a flat
 contradiction next to it. They now say what is actually measured: how much
 hip height varies between steps.
 
+## Counting detections is not measuring a clip (fixed 12 Sep)
+
+The athlete sent the clip that was refused. Its own numbers, read out of the
+container:
+
+| | |
+|---|---|
+| resolution | 1080 x 1920, portrait |
+| codec | avc1 (H.264), audio mp4a |
+| frames | 210 over 7.035s = **29.9 fps** |
+| keyframes | 8, one every 26 frames (0.88s) |
+| moov | after mdat, the ordinary iPhone layout |
+
+Nothing unusual anywhere in it. No HEVC, no 4K, no 60fps, no variable frame
+rate. The app said:
+
+> This browser could not play the clip through, so it was read by stepping
+> through it, and that only got 4 usable frames a second — too few to measure
+> a stride. (you were in shot about 3.9s of 7.0s; 17 of 30 frames)
+
+**30 is exactly `SCOUT_MAX_SAMPLES` for a 7s clip.** So the scout sweep is
+what won, and 17 detections spread over the 3.9s he was in shot is 4.3 a
+second — under `MEASURABLE_FPS_MIN`, which is the threshold the app refuses
+on. It refused the clip for a sampling rate it had chosen for itself.
+
+The reason it never did better is that **17 ≥ `PLAYBACK_GOOD_ENOUGH` (16)**,
+so the dense pass — the only pass that samples at `DENSE_RATE`, and the only
+thing that could have rescued the clip — was skipped. Both decisions in that
+chain compared raw detection counts:
+
+- `keepIfBetter` kept whichever pass found him more times, so a sweep with 17
+  at 4.3/s outranked a playback pass with 15 at 30/s. Fifteen dense frames
+  can measure four strides; seventeen sparse ones cannot measure one.
+- the dense-pass guard asked `posedCount < PLAYBACK_GOOD_ENOUGH`, so clearing
+  a count was taken as proof the clip had been read well enough.
+
+A count of detections says nothing about how far apart they were. Both now
+ask `measurablePass()`: enough detections **and** dense enough to see a
+stride, using the same `MEASURABLE_FPS_MIN` the refusal already quotes. A
+pass that can measure a stride beats one that cannot however many times the
+sparse one happened to find him.
+
+Why the playback pass underperformed on that iPad is **not established** —
+the clip decodes normally and the element is muted, `playsinline` and
+attached at a real size, which is what Safari's inline autoplay wants. What
+is established is that when playback came back thin, everything after it was
+built to settle rather than to try the one pass that samples densely.
+
 ## The graded window was one second of a five-second run (fixed 12 Sep)
 
 Two complaints from the same clip: *"why does it say the athlete is too far

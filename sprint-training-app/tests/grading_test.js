@@ -35,7 +35,8 @@ const names = ['buildLocalAnalysis', 'scoreGroundContact', 'scoreShinAngle',
                'ACCEL_STRIKE_PLAUSIBLE_MIN', 'STRIKE_PLAUSIBLE_MIN', 'bandFor',
                'bestWindow', 'gradeWindowFrames', 'sizeOfMetric', 'GRADE_WINDOW_S',
                'DENSE_MAX_SAMPLES', 'framingCheck', 'SUBJECT_PX_MIN', 'buildTracks',
-               'signatureDistance', 'toPoints'];
+               'signatureDistance', 'toPoints',
+               'passDensity', 'measurablePass', 'posedCount', 'PLAYBACK_GOOD_ENOUGH'];
 vm.runInContext(
   src.slice(a, b).replace(/^function renderAnalysis[\s\S]*?^\}/m, '') + '\n' +
   names.map((n) => `globalThis.${n}=${n};`).join('\n'), ctx);
@@ -371,6 +372,60 @@ check('and falls back to share of the frame when it did not',
   ctx.sizeOfMetric({ bodyFrac: 0.45, bodyPx: null }, false) === 0.45);
 check('a missing frame counts as nothing rather than throwing',
   ctx.sizeOfMetric(null, true) === 0 && ctx.sizeOfMetric(undefined, false) === 0);
+
+// ---------- a pass has to be measurable, not merely lucky ----------
+// The athlete's refused clip, by its own numbers: 1080x1920 H.264, 210 frames
+// at 29.9fps, 7.0s, nothing unusual about it. The app reported "30 frames, 17
+// with pose, 4 usable frames a second, could not play the clip through".
+//
+// 30 is exactly SCOUT_MAX_SAMPLES for a 7s clip, so the scout sweep is what
+// won -- and 17 detections cleared PLAYBACK_GOOD_ENOUGH (16), so the dense
+// pass, the only one that samples at DENSE_RATE and the only thing that could
+// have rescued the clip, never ran. The app settled for a sampling rate it
+// had chosen itself and then refused the clip for it.
+//
+// Both decisions compared counts. Neither asked how far apart the frames were.
+const pass_ = (n, from, to) => {
+  // n detections spread evenly between two timestamps, in the shape the
+  // capture hands over: one array per frame, each holding its poses.
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? from : from + (to - from) * (i / (n - 1));
+    rows.push([{ metrics: { t } }]);
+  }
+  return rows;
+};
+const sweep = pass_(17, 0.2, 4.1);     // the real one: 17 over 3.9s = 4.3/s
+const playback = pass_(16, 1.0, 1.5);  // fewer detections, 30 a second
+
+check('the sweep that won really is the sparse one',
+  Math.round(ctx.passDensity(sweep)) === 4, `${ctx.passDensity(sweep).toFixed(1)}/s`);
+check('and the playback pass really is the dense one',
+  Math.round(ctx.passDensity(playback)) === 30, `${ctx.passDensity(playback).toFixed(1)}/s`);
+check('17 detections at 4 a second cannot measure a stride',
+  !ctx.measurablePass(sweep), `${ctx.posedCount(sweep)} detections`);
+check('16 at 30 a second can',
+  ctx.measurablePass(playback), `${ctx.posedCount(playback)} detections`);
+// The threshold the app already refuses on, applied where the decision is
+// made rather than only in the apology afterwards.
+check('measurability uses the same floor the refusal message quotes',
+  ctx.passDensity(pass_(20, 0, 20 / ctx.MEASURABLE_FPS_MIN)) >= ctx.MEASURABLE_FPS_MIN * 0.9);
+// Counting alone still matters: dense but barely there is not enough either.
+check('a handful of frames is not rescued by being close together',
+  !ctx.measurablePass(pass_(4, 1.0, 1.1)), `${ctx.posedCount(pass_(4, 1.0, 1.1))} detections`);
+check('and a pass that found nobody is not measurable',
+  !ctx.measurablePass([[], [], []]) && ctx.passDensity([[], []]) === 0);
+check('nor does a single detection divide by a zero span',
+  ctx.passDensity(pass_(1, 2, 2)) === 0 && ctx.passDensity([[{ metrics: { t: 1 } }], [{ metrics: { t: 1 } }]]) === 0);
+// Timestamps that never arrived must be dropped, not read as t=0: a stray
+// zero stretches the span from one second to six and turns a measurable pass
+// into a sparse one. The values matter here -- an undated frame alongside
+// t=1 and t=2 gives 1/s either way, and proves nothing.
+check('frames with no timestamp are ignored rather than counted as zero',
+  ctx.passDensity([[{ metrics: {} }], [{ metrics: { t: 5 } }], [{ metrics: { t: 6 } }]]) === 1,
+  `${ctx.passDensity([[{ metrics: {} }], [{ metrics: { t: 5 } }], [{ metrics: { t: 6 } }]])}/s`);
+check('and a missing list does not throw',
+  ctx.passDensity(null) === 0 && ctx.posedCount(null) === 0 && !ctx.measurablePass(null));
 
 // ---------- sampling rate is measured over what was sampled ----------
 // The seek fallback takes its samples from a deliberately narrow window: 32
