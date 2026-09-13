@@ -11,6 +11,14 @@ No framework and no build step. `index.html`, `app.js`, `styles.css` and a
 `config.js` are copied to a branch and served as static files. Accounts and
 storage are Supabase.
 
+`tools/deploy.sh` stamps the current commit onto every asset URL, and writes
+a `version.json` that `index.html` reads at load time to decide which build to
+pull. The stamp alone was not enough: it stops a cached `app.js` shadowing a
+new one, but not a cached `index.html` pinning the whole app to the version it
+shipped with. Two fixes in a row reached the site and neither reached the
+device that needed them. The build in Settings, and in any refusal message,
+says which one is actually running.
+
 ## How the grading works
 
 **The pose model runs in your browser, on your phone.** MediaPipe Tasks reads
@@ -235,7 +243,7 @@ is public by design; Row Level Security is what protects the data, not the key.
 ./tests/run.sh --clips   # also the ones that need tests/clips/
 ```
 
-30 suites. The pure-logic ones run the grader's maths against recorded pose
+31 suites. The pure-logic ones run the grader's maths against recorded pose
 data; the rest drive the real page in headless Chromium with the network
 stubbed. `tests/setup.sh` builds the fixture copy of the app — **it runs
 automatically from `run.sh`, but if you test by hand after editing `app.js`,

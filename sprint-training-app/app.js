@@ -143,6 +143,12 @@ document.getElementById('deleteAccountBtn').addEventListener('click', async () =
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsMenu = document.getElementById('settingsMenu');
 
+// Which build is running, where it can be read without making the app fail
+// first. A fix can be deployed and still not be what the device is running,
+// and until this existed there was no way to tell from the outside.
+const settingsBuild = document.getElementById('settingsBuild');
+if (settingsBuild) settingsBuild.textContent = `build ${APP_BUILD}`;
+
 settingsBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   const willOpen = settingsMenu.hidden;

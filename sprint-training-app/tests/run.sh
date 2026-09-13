@@ -17,7 +17,7 @@ node_only=(
   legal_test guide_test docs_test warmup_test gym_test
 )
 browser=(
-  local_flow_test times_test ui_test4 sched_test e2e_sched
+  boot_test local_flow_test times_test ui_test4 sched_test e2e_sched
   avail_test ref_test btn_test quota_ui_test delete_account_test
 )
 # crop_flow_test is the only suite that runs the real capture against real

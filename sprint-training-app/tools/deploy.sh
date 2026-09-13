@@ -27,6 +27,14 @@ for page in "${PAGES[@]}"; do
   cp "$APP/$page" "$WORK/"
 done
 
+# What index.html's bootstrap reads to find out which build to load.
+#
+# The ?v= stamps below cannot help when the PAGE is the stale thing -- a
+# cached index.html keeps pointing at the app.js it shipped with, and every
+# later deploy is invisible to that device. This file is fetched with
+# no-store on every load, so the version is never the cached one.
+printf '{"build":"%s"}\n' "$SHA" > "$WORK/version.json"
+
 # Version every local asset so a cached copy can never shadow a new deploy.
 # Every page, not just index: the legal pages load the same stylesheet and
 # would otherwise keep serving a cached copy of it.

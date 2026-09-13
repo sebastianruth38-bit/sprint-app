@@ -73,6 +73,13 @@
           <div class="settings-legal">
             <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a>
           </div>
+          <!--
+            Which build is actually running. Checkable without having to
+            provoke a refusal first, which is how a day went into a bug that
+            had already been fixed twice on a device still running the old
+            code. Filled in by app.js.
+          -->
+          <div class="settings-build" id="settingsBuild"></div>
         </div>
       </div>
     </header>
@@ -420,7 +427,56 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+
+  <!--
+    The app is loaded at the version the SERVER has, not the one this page was
+    cached with.
+
+    deploy.sh stamps ?v=<sha> onto the script tags so a new app.js can never be
+    shadowed by a cached old one. That works right up until the page itself is
+    the cached thing: an index.html held by the browser keeps pointing at the
+    app.js it shipped with, and every later deploy is invisible. Two fixes in a
+    row reached GitHub Pages and neither reached the iPad, which spent a day
+    reporting a bug that had already been fixed twice.
+
+    So the version is discovered at load time from a file fetched with
+    no-store, and the scripts are injected with it. This bootstrap is the only
+    part that has to stay cacheable, and it never changes.
+
+    async=false keeps them in order -- app.js reads config.js's constants at
+    its first line. Both are injected after the Supabase tag above has already
+    run, because that one is parser-blocking and this script comes after it.
+  -->
+  <script>
+    (function () {
+      var add = function (src) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        document.head.appendChild(s);
+      };
+      var boot = function (build) {
+        var q = build ? '?v=' + encodeURIComponent(build) : '';
+        // The stylesheet is pinned by the same cached page, so re-point it too.
+        if (build) {
+          var css = document.querySelector('link[rel="stylesheet"][href*="styles.css"]');
+          if (css && css.href.indexOf(build) === -1) css.href = 'styles.css' + q;
+        }
+        add('config.js' + q);
+        add('app.js' + q);
+      };
+      // Never let this be the thing that stops the app loading: no version
+      // file, no network, a served 404 -- all fall through to loading it
+      // unversioned, which is exactly what happened before this existed.
+      try {
+        fetch('version.json', { cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) { boot(j && j.build); })
+          .catch(function () { boot(null); });
+      } catch (e) {
+        boot(null);
+      }
+    })();
+  </script>
 </body>
 </html>
