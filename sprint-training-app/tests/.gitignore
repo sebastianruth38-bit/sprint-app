@@ -1,0 +1,6 @@
+# Built by setup.sh from the app directory -- never edit by hand.
+fixtures/
+# Screenshots and dumps the browser suites write.
+out/
+# Real footage of the athlete: large, and not ours to commit.
+clips/
