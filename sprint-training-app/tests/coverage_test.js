@@ -9,18 +9,26 @@ const defaults = src.match(/const DEFAULT_EXERCISES = \[[\s\S]*?\n\];/)[0];
 eval(lift);
 eval(defaults.replace('const DEFAULT_EXERCISES', 'globalThis.DEFAULT_EXERCISES'));
 
-// Every phase/role combination the generator can produce.
+// Every phase/role/VERSION combination the generator can produce.
+//
+// The versions matter: each lifting day used to be one fixed string, and this
+// walked all of it by calling the function once per role. Now there is a pool,
+// and a movement that appears only in version 2 is exactly the one that would
+// reach an athlete with nothing in the Reference to look it up under.
 const roles = ['accel', 'maxv', 'tempo1', 'tempo2', 'competitionLight'];
 const phases = [{ seasonPhase: 'off' }, { seasonPhase: 'pre' }, { seasonPhase: 'in' }];
+const VARIANTS = (src.match(/const LIFT_VARIANTS = (\d+)/) || [null, '1'])[1] | 0;
 const prescribed = new Set();
 phases.forEach(p => roles.forEach(r => {
-  const s = buildLiftDetails(r, p);
-  if (!s) return;
+for (let v = 0; v < VARIANTS; v++) {
+  const s = buildLiftDetails(r, p, true, v);
+  if (!s) continue;
   s.split(',').map(x => x.trim()).forEach(item => {
     // strip the sets/reps and any trailing note -> bare movement name
     const name = item.replace(/\s+\d+(-\d+)?\s*x.*$/i, '').trim();
     if (name) prescribed.add(name);
   });
+}
 }));
 
 // How a prescribed name maps onto a reference entry. Anything not listed

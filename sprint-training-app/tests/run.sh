@@ -13,7 +13,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 node_only=(
   tracking_test grading_test framing_test motion_test gait_test subject_test
   dense_test frames_test coverage_test v2_test
-  logic_test split_test bodyweight_test expand_test2
+  logic_test workouts_test split_test bodyweight_test expand_test2
   legal_test guide_test docs_test warmup_test gym_test
 )
 browser=(
