@@ -330,6 +330,13 @@ function scoreColor(score) {
 // profile and the warm-up rather than written twice: the warm-up drills
 // whatever this says is weakest, and two copies of the rule would eventually
 // disagree about what the athlete's weakness even is.
+// The clip types the profile lays out, in the order it lays them out, and
+// independently of what happens to have been filmed. Kept next to
+// latestScores because they are two halves of the same statement: scores are
+// held per clip type, and the page shows every type whether or not that type
+// has any.
+const PROFILE_CLIP_TYPES = ['Acceleration', 'Max Velocity'];
+
 function latestScores(entries) {
   const byType = {};
   (entries || []).forEach((entry) => {
@@ -363,33 +370,49 @@ async function renderProfile() {
 
   const byType = latestScores(data);
 
-  const types = Object.keys(byType);
-  if (!types.length) {
+  // Both kinds of clip always get a heading, in a fixed order, whether or not
+  // anything has been measured for them.
+  //
+  // They used to be listed in whatever order the entries happened to arrive
+  // in, and a type with nothing scored simply did not appear -- so a profile
+  // could show max velocity alone with no indication that acceleration was a
+  // thing at all, let alone a thing to go and film. The two are separate
+  // standings and the page has to read like it: a weakness at top speed says
+  // nothing about the start.
+  const known = PROFILE_CLIP_TYPES.filter((t) => byType[t]);
+  const legacy = Object.keys(byType).filter((t) => !PROFILE_CLIP_TYPES.includes(t));
+  const types = [...PROFILE_CLIP_TYPES, ...legacy];
+  if (!known.length && !legacy.length) {
     content.innerHTML = '<p class="hint">No scored categories yet.</p>';
     return;
   }
 
   content.innerHTML = types
-    .map(
-      (type) => `
-    <h3>${escapeHtml(type)}</h3>
-    ${Object.entries(byType[type])
-      .map(
-        ([name, score]) => `
+    .map((type) => {
+      const rows = Object.entries(byType[type] || {})
+        // Weakest first. The point of the page is what to work on, and that
+        // is not something the reader should have to find by scanning.
+        .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+      if (!rows.length) {
+        return `<h3>${escapeHtml(type)}</h3>
+          <p class="hint">Nothing measured yet. Film a ${escapeHtml(type.toLowerCase())} clip.</p>`;
+      }
+      return `<h3>${escapeHtml(type)}</h3>${rows.map(([name, score]) => {
+        // The same threshold and the same stars the warm-up uses, so the two
+        // pages cannot disagree about what the athlete's weak points are.
+        const stars = score <= WARMUP_WEAK_MAX ? Math.max(1, WARMUP_WEAK_MAX + 1 - score) : 0;
+        return `
       <div class="profile-row">
         <div class="entry-top">
-          <span>${escapeHtml(name)}</span>
+          <span>${stars ? `<span class="warmup-star" aria-hidden="true">${'★'.repeat(stars)}</span> ` : ''}${escapeHtml(name)}</span>
           <span class="score-pill">${score}/5</span>
         </div>
         <div class="progress-bar">
           <div class="progress-fill" style="width:${(score / 5) * 100}%;background:${scoreColor(score)}"></div>
         </div>
-      </div>
-    `
-      )
-      .join('')}
-  `
-    )
+      </div>`;
+      }).join('')}`;
+    })
     .join('');
 }
 
@@ -2974,16 +2997,36 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       return poses;
     };
 
-    const scan = async (times, label, collect) => {
+    // `enough` stops the walk early. Seeking is the entire cost of this path
+    // -- the decoder rebuilds a frame from scratch each time -- so a sample
+    // taken after the question has been answered is pure waiting.
+    const scan = async (times, label, collect, enough) => {
       const poseRows = [];
       for (let i = 0; i < times.length; i++) {
         onProgress(`${label} ${i + 1}/${times.length}…`);
         const t = times[i];
         await seekTo(t);
         poseRows.push(processFrame(t, collect));
+        if (enough && enough(poseRows)) break;
       }
       return poseRows;
     };
+
+    // The sweep is only looking for WHERE the athlete is, so the dense pass
+    // knows where to aim. It is not measuring anything: every angle that gets
+    // graded comes from the dense pass afterwards.
+    //
+    // So it can stop as soon as it has found him often enough to aim, and on
+    // a clip where he is in shot for half the run that is a long way before
+    // the end. It used to walk all thirty samples every time -- twenty of
+    // them, on a clip like that, seeking to a frame whose only job was to
+    // confirm something already known.
+    //
+    // The aim is taken from the EARLIEST sighting either way, so stopping
+    // early does not move the window it hands over; it only stops paying for
+    // sightings past the ones that set it.
+    const SCOUT_ENOUGH = MIN_TRACK_FRAMES;
+    const foundHimEnough = (rows) => posedCount(rows) >= SCOUT_ENOUGH;
 
     // Nudge timestamps off the very ends -- setting currentTime to the value
     // it already holds can silently no-op the seek.
@@ -3096,7 +3139,7 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
         times.push(clampT((duration * i) / Math.max(sampleCount - 1, 1)));
       }
       mode = 'scan';
-      framePoses = await scan(times, 'Scanning clip', true);
+      framePoses = await scan(times, 'Scanning clip', true, foundHimEnough);
       keepIfBetter();
 
       // A sweep spread over the whole clip is far too thin when the athlete
@@ -3125,9 +3168,29 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       // and skip the one pass that could have rescued the clip.
       if (landmarker && seenTimes.length && !measurablePass(best.rows)) {
         const pad = 1 / SCOUT_RATE;
-        const from = Math.max(0, Math.min(...seenTimes) - pad);
-        const to = Math.min(duration, Math.max(...seenTimes) + pad);
         const step = 1 / DENSE_RATE;
+        const from = Math.max(0, Math.min(...seenTimes) - pad);
+        // The dense pass takes its full budget of samples from `from`, even
+        // when the sweep only saw him over a short stretch.
+        //
+        // This used to stop at the last sighting, which tied the size of the
+        // measuring pass to how much of the clip the LOCATING pass happened to
+        // cover. That was survivable while the sweep always walked the whole
+        // clip; it stops being survivable the moment the sweep is allowed to
+        // stop early, because then a short scout directly starves the pass
+        // that does the measuring -- the same "not enough frames to measure a
+        // stride" the athlete has already seen too much of.
+        //
+        // Honest about the guard: neither recorded clip exercises it. The
+        // sweep samples at SCOUT_RATE, so the first SCOUT_ENOUGH sightings
+        // span more than DENSE_MAX_SAMPLES/DENSE_RATE on any clip longer than
+        // about a second and a half, and both fixtures are longer than that.
+        // It bites on a short clip, and on any future change that samples the
+        // sweep more tightly or asks the dense pass for more -- which is to
+        // say, on exactly the change that would otherwise reintroduce this
+        // quietly.
+        const wanted = Math.min(duration, from + DENSE_MAX_SAMPLES * step);
+        const to = Math.min(duration, Math.max(Math.max(...seenTimes) + pad, wanted));
         const dense = [];
         for (let t = from; t <= to && dense.length < DENSE_MAX_SAMPLES; t += step) dense.push(clampT(t));
         if (dense.length) {
@@ -5474,19 +5537,30 @@ const SESSION_TO_CLIP = {
 // At or below this is a fault worth calling out mid-warm-up.
 const WARMUP_WEAK_MAX = 3;
 
-// Flattens the per-clip-type scores into one score per measure, preferring
-// what the session's own kind of clip said.
+// The scores for the kind of clip this session IS, and no others.
+//
+// This used to prefer the session's own clip type and then fall through to
+// every other one for measures that type had not scored. The fall-through is
+// the bug: acceleration and top speed do not share weaknesses. They barely
+// share measures -- the accel set is Drive Position, Shin Angle and Ankle at
+// Touchdown, the top-speed set is Thigh Separation and Heel Recovery -- and
+// for the two they do share the same number means different things at the two
+// ends of a run, which is why Foot Strike vs COM is read against different
+// bands for each.
+//
+// So an acceleration warm-up was starring "Thigh Separation" off a max-velocity
+// clip, and an athlete drilling his start was told to work on something
+// measured while he was already at top speed. A weakness at one end of the run
+// is not evidence of a weakness at the other.
+//
+// Nothing measured for this session's clip type means nothing to flag. That is
+// the honest answer, and it points at filming that kind of clip.
 function measureScores(scores, sessionType) {
-  const preferred = SESSION_TO_CLIP[sessionType];
+  const clipType = SESSION_TO_CLIP[sessionType];
+  const pool = (clipType && scores && scores[clipType]) || {};
   const out = {};
-  const pools = [];
-  if (preferred && scores[preferred]) pools.push(scores[preferred]);
-  Object.keys(scores || {}).forEach((k) => { if (k !== preferred) pools.push(scores[k]); });
-  pools.forEach((pool) => {
-    Object.entries(pool || {}).forEach(([measure, score]) => {
-      if (typeof score !== 'number') return;
-      if (!(measure in out)) out[measure] = score;   // first pool wins
-    });
+  Object.entries(pool).forEach(([measure, score]) => {
+    if (typeof score === 'number') out[measure] = score;
   });
   return out;
 }
@@ -5569,6 +5643,12 @@ function buildWarmup(scores, sessionType) {
 
   return {
     sessionType: sessionType || null,
+    // Which kind of clip this session's flags come from. Carried so the
+    // empty case can say WHICH clip to go and film: now that a session only
+    // reads its own clip type, "nothing measured yet" on an acceleration day
+    // is a specific statement about acceleration clips, not about the app
+    // never having seen the athlete run.
+    clipType: SESSION_TO_CLIP[sessionType] || null,
     phases,
     // Every flag raised, whether or not a drill happened to carry it -- the
     // summary at the top has to be able to say so.
@@ -5645,8 +5725,14 @@ async function renderWarmup() {
       </div>`
     : `<div class="card">
         <h3>Nothing measured yet</h3>
-        <p class="hint">Film a sprint on Form Analysis and the drills that fix what it
-        finds get starred here.</p></div>`;
+        <p class="hint">${plan.clipType
+          ? `Film ${escapeHtml(plan.clipType === 'Acceleration' ? 'an' : 'a')}
+             <strong>${escapeHtml(plan.clipType)}</strong> clip on Form Analysis and the drills
+             that fix what it finds get starred here. This session is drilled off
+             ${escapeHtml(plan.clipType.toLowerCase())} clips only \u2014 a weakness at one end of
+             a run says nothing about the other.`
+          : 'Film a sprint on Form Analysis and the drills that fix what it finds get starred here.'}
+        </p></div>`;
 
   let itemIndex = 0;
   const item = (d) => `

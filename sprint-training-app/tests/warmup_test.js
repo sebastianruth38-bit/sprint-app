@@ -36,6 +36,7 @@ const check = (name, cond, extra) => {
 };
 
 const MAXV = 'Max Velocity (flys/build-ups)';
+const ACCEL = 'Acceleration (0-30m)';
 const scores = (obj) => ({ 'Max Velocity': obj });
 const flaggedItems = (plan) =>
   plan.phases.flatMap((p) => p.items.filter((i) => i.flag).map((i) => i.name));
@@ -229,14 +230,50 @@ check('with nothing starred, because nothing is known',
   Object.keys(nothing.flags).length === 0 && flaggedItems(nothing).length === 0);
 
 // ---------- which clips are believed ----------
+// Only the session's own kind. This used to prefer the session's clip type
+// and then fall through to every other one for measures that type had not
+// scored, which meant an acceleration warm-up starred "Thigh Separation" off
+// a max-velocity clip -- telling an athlete drilling his start to work on
+// something measured while he was already at top speed.
+//
+// The two ends of a run barely share measures, and for the ones they do share
+// the same number means different things, which is why Foot Strike vs COM is
+// read against different bands for each. A weakness at one end is not
+// evidence of a weakness at the other.
 const mixed = ctx.warmupFlags({
   'Acceleration': { 'Drive Position': 1 },
   'Max Velocity': { 'Drive Position': 4, 'Hip Height': 2 },
 }, MAXV);
 check("the session's own clip type is believed over another's for the same measure",
   !mixed['Drive Position'], JSON.stringify(Object.keys(mixed)));
-check('but a fault only the other clip type saw is still raised',
-  !!ctx.warmupFlags({ 'Acceleration': { 'Drive Position': 2 } }, MAXV)['Drive Position']);
+check('and the session sees its own clip type at all',
+  !!mixed['Hip Height'], JSON.stringify(Object.keys(mixed)));
+check('a fault only the OTHER clip type saw is not raised here',
+  !ctx.warmupFlags({ 'Acceleration': { 'Drive Position': 2 } }, MAXV)['Drive Position'],
+  JSON.stringify(ctx.warmupFlags({ 'Acceleration': { 'Drive Position': 2 } }, MAXV)));
+check('and a max-velocity session with only acceleration clips flags nothing',
+  Object.keys(ctx.warmupFlags({ 'Acceleration': { 'Drive Position': 2 } }, MAXV)).length === 0);
+// The same scores, two sessions, two different answers -- which is the whole
+// point of separating them.
+const bothTypes = {
+  'Acceleration': { 'Drive Position': 2, 'Shin Angle at Touchdown': 5 },
+  'Max Velocity': { 'Thigh Separation (scissor)': 2, 'Hip Height': 5 },
+};
+const accelFlags = Object.keys(ctx.warmupFlags(bothTypes, ACCEL));
+const maxvFlags = Object.keys(ctx.warmupFlags(bothTypes, MAXV));
+check('an acceleration session flags acceleration measures',
+  accelFlags.includes('Drive Position'), accelFlags.join(', '));
+check('a max-velocity session flags max-velocity measures',
+  maxvFlags.includes('Thigh Separation (scissor)'), maxvFlags.join(', '));
+check('and the two sessions do not share a single flag',
+  accelFlags.every((m) => !maxvFlags.includes(m)),
+  `${accelFlags.join(', ')} vs ${maxvFlags.join(', ')}`);
+// The empty case has to name which clip is missing, not just say "a sprint".
+const emptyAccel = ctx.buildWarmup({ 'Max Velocity': { 'Hip Height': 2 } }, ACCEL);
+check('a session with nothing of its own carries its clip type for the message',
+  emptyAccel.clipType === 'Acceleration', String(emptyAccel.clipType));
+check('and raises no flags borrowed from the other type',
+  Object.keys(emptyAccel.flags).length === 0, JSON.stringify(emptyAccel.flags));
 
 // ---------- days ----------
 const noSession = ctx.buildWarmup(scores({ 'Hip Height': 2 }), null);

@@ -301,6 +301,45 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   assert(trace.frames > 0,
     `a capture that found nobody still reports the frames it took (${trace.frames})`);
 
+  // ---------- the sweep stops once it has found him ----------
+  // Seeking is the whole cost of this path, and the sweep is only locating
+  // the athlete so the dense pass knows where to aim -- it measures nothing.
+  // It used to walk every sample regardless. Measured on this clip with
+  // requestVideoFrameCallback removed, which is the path an iPad without
+  // working playback takes: 26 seeks to 8, and 7.3s to 5.1s.
+  //
+  // The second half of that trade is the part worth guarding. A shorter sweep
+  // must not shrink the pass that does the measuring, or this buys speed with
+  // the "not enough frames to measure a stride" the athlete has seen enough of.
+  const swept = await page.evaluate(async (u) => {
+    const real = window.getPoseLandmarker;
+    const rvfc = HTMLVideoElement.prototype.requestVideoFrameCallback;
+    delete HTMLVideoElement.prototype.requestVideoFrameCallback;
+    window.getPoseLandmarker = async () => ({
+      detect: () => ({ landmarks: [Array.from({ length: 33 }, (_, i) => ({
+        x: 0.45 + (i % 5) * 0.01, y: 0.2 + i * 0.02, z: 0, visibility: 0.99 })) ] }),
+    });
+    const labels = [];
+    const out = await extractFrames(await (await fetch(u)).blob(), 6, 480, (m) => labels.push(m));
+    window.getPoseLandmarker = real;
+    HTMLVideoElement.prototype.requestVideoFrameCallback = rvfc;
+    return {
+      sweepSeeks: labels.filter((l) => l.startsWith('Scanning clip')).length,
+      denseSeeks: labels.filter((l) => l.startsWith('Looking closer')).length,
+      attempts: out.capture.attempts,
+      enough: MIN_TRACK_FRAMES,
+      denseBudget: DENSE_MAX_SAMPLES,
+    };
+  }, `http://localhost:${port}/clip/${CLIPS.blockStart}`);
+
+  assert(swept.sweepSeeks > 0 && swept.sweepSeeks <= swept.enough,
+    `the sweep stops as soon as it has located him (${swept.sweepSeeks} seeks, stops at ${swept.enough})`);
+  assert(swept.denseSeeks === swept.denseBudget,
+    `and the measuring pass still gets its whole budget (${swept.denseSeeks} of ${swept.denseBudget})`);
+  const dense = (swept.attempts || []).find((a) => a.rate > 20);
+  assert(dense && dense.found >= swept.enough * 2,
+    `so the frames that get graded are still dense (${dense ? `${dense.found} @ ${dense.rate.toFixed(0)}/s` : 'no dense pass'})`);
+
   console.log(`\ntiming: blockStart ${bs.ms}ms, scrolled ${sc.ms}ms`);
   console.log(`\n${pass} passed, ${fail} failed`);
   await browser.close();
