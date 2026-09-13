@@ -46,11 +46,13 @@ check('nor does the backend setup doc use the old name', !/Sprint Lab/.test(setu
 // never see.
 const measures = new Set();
 for (const m of app.matchAll(/name: '([A-Z][^']*)'/g)) measures.add(m[1]);
-// Only the measures that are still SCORED. Torso-to-Thigh, Passing Position,
+// Only the measures that are still SCORED. Ankle at Touchdown is named in the
+// README as something the app USED to do and why it stopped, so it must not
+// be in this list -- it is documented precisely because it is not produced. Torso-to-Thigh, Passing Position,
 // Front/Back Balance and Upright Posture survive as flags rather than scores,
 // so the README no longer lists them as things you are graded on.
 const quoted = [
-  'Foot Strike vs COM', 'Hip Height', 'Support Stiffness', 'Ankle at Touchdown',
+  'Foot Strike vs COM', 'Hip Height', 'Leg Stiffness',
   'Drive Position', 'Acceleration Posture', 'Thigh Separation', 'Heel Recovery',
   'Shin Angle at Touchdown',
 ];

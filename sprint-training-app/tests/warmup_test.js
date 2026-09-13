@@ -92,7 +92,7 @@ check('every measure tagged on an item is one the grader emits',
 // nine per clip to five. Torso-to-Thigh, Passing Position, Front/Back Balance
 // and Upright Posture are computed for their flags but no longer scored, so
 // an athlete cannot be "weak at" them and nothing needs to star them.
-const scoreable = ['Foot Strike vs COM', 'Ankle at Touchdown', 'Support Stiffness',
+const scoreable = ['Foot Strike vs COM', 'Leg Stiffness',
   'Hip Height', 'Thigh Separation (scissor)', 'Heel Recovery (knee fold)',
   'Drive Position', 'Acceleration Posture', 'Shin Angle at Touchdown'];
 const unreachable = scoreable.filter((m) => !tagged.has(m));

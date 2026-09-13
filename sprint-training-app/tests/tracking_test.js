@@ -19,8 +19,8 @@ const names = ['frameMetrics', 'legMetrics', 'median', 'longestConsistentRun',
                'MIN_CONTACTS', 'STRIKE_PLAUSIBLE_MIN', 'STRIKE_PLAUSIBLE_MAX',
                'scoreGroundContact', 'stridesMeasured', 'EDGE_MARGIN',
                'scoreDrivePosition', 'scoreAcceleration', 'bandFor', 'DRIVE_BANDS',
-               'ANKLE_AGREEMENT_MAX', 'CONTACT_DEPTH_MIN',
-               'scoreSupportStiffness', 'supportDrops', 'SUPPORT_AGREEMENT_MAX',
+               'CONTACT_DEPTH_MIN',
+               'scoreSupportStiffness', 'supportDrops',
                'CONTACT_DEPTH_MAX', 'scoreHipSink',
                'bestWindow', 'poseSignature', 'buildTracks', 'ATHLETE_MOTION_MIN',
                'passingFolds', 'scorePassingPosition', 'PASSING_FOOT_MAX_DEPTH',
@@ -224,33 +224,18 @@ function shallowFrames() {
 check('a foot that never reaches the ground produces no score',
   ctx.scoreGroundContact(shallowFrames()).every((p) => p.score == null),
   JSON.stringify(ctx.scoreGroundContact(shallowFrames()).map((p) => `${p.name}:${p.score}`)));
-// The athlete reported a stiff ankle and was told it was collapsing. The
-// toe is the least stable landmark the model tracks, and on his clip it read
-// 107, 145 and 137 at three touchdowns -- a 38 degree spread against bands
-// 13 degrees wide. Numbers that disagree that much are not a measurement.
-const wobble = (angles) => {
-  const out = [];
-  for (let i = 0; i < 24; i++) {
-    const phase = i % 6;
-    const mk = (down, k) => ({
-      ank: [108, down ? 180 : 130], hip: [100, 100], legLen: 80,
-      footVsShin: angles[k % angles.length], facing: 1, thighSwing: 20, knee: 120,
-    });
-    out.push({ midHip: [100, 100], legs: [mk(phase === 0 || phase === 1, i), mk(phase === 3 || phase === 4, i + 3)] });
-  }
-  return out;
-};
-const noisy = ctx.scoreGroundContact(wobble([107, 145, 137, 99, 149]));
-const noisyAnkle = noisy.find((p) => p.name === 'Ankle at Touchdown');
-check('an ankle whose touchdowns disagree wildly is not scored',
-  noisyAnkle && noisyAnkle.score == null,
-  JSON.stringify(noisy.map((p) => `${p.name}:${p.score}`)));
-check('and says so rather than leaving a gap',
-  noisyAnkle && /not measurable/i.test(noisyAnkle.note || ''),
-  (noisyAnkle && noisyAnkle.note || '').slice(0, 70));
-const steady = ctx.scoreGroundContact(wobble([112, 118, 115]));
-check('an ankle that reads consistently still is',
-  !!steady.find((p) => p.name === 'Ankle at Touchdown'));
+// The toe-based ankle measure is gone, and stays gone.
+//
+// It asked the same question Leg Stiffness asks -- does the thing collapse
+// when you land on it -- off the smallest landmark the model tracks. On the
+// athlete's own clip its seven touchdowns read 114 to 157 degrees, a 43
+// degree spread, off a leg 14 pixels long. An ankle does not do that between
+// steps of one run, and two numbers for one property, one of them measured
+// off three pixels, is worse than one.
+const anyClip = ctx.scoreGroundContact(contactFrames(8));
+check('no row is reported off the toe any more',
+  !anyClip.some((p) => /ankle/i.test(p.name)),
+  JSON.stringify(anyClip.map((p) => p.name)));
 
 const sane = ctx.scoreGroundContact(contactFrames(8));   // 10% of a leg ahead
 const strikeSane = sane.find((p) => p.name === 'Foot Strike vs COM');
@@ -277,7 +262,8 @@ check('the same foot strike during acceleration is a drive step, and scores',
 check('and is described as behind the hips rather than as negative-ahead',
   strikeMadAccel && /behind the hips/.test(strikeMadAccel.note || ''),
   strikeMadAccel && (strikeMadAccel.note || '').slice(0, 80));
-check('the rest of ground contact still reports', mad.some((p) => p.name === 'Ankle at Touchdown'));
+check('the rest of ground contact still reports', mad.length > 0,
+  JSON.stringify(mad.map((p) => p.name)));
 
 check('a single contact is not enough to call it a measurement',
   ctx.MIN_CONTACTS >= 2, `${ctx.MIN_CONTACTS}`);
@@ -356,15 +342,32 @@ check('it is measured in leg lengths, so filming distance cannot move it',
 // Contacts that disagree are noise, exactly as with the ankle.
 // One stiff stretch and one collapsing one is not a measurement of either.
 const mixed = loadedStride(0).concat(loadedStride(0.4));
-// Withheld, not absent: a measure that disappears off the card reads as the
-// app forgetting it. It comes back unscored, with the reason.
+// Contacts that disagree are now scored off the median, like every other
+// measure in the file.
+//
+// There was an agreement gate here: differ by more than a threshold and the
+// whole measure was withheld. It is why this row almost never reported. The
+// athlete's own clip settles it -- his three contacts dropped 11.7%, 17.9%
+// and 24.7%, so a 13% spread, withheld, when every one of those is already in
+// the give-to-collapsing range. It was seeing the same thing three times and
+// refusing to say so.
+//
+// Nor should they agree: during acceleration he is rising through the drive
+// phase, so hip drop legitimately changes step to step. And Shin Angle reads
+// 7 to 40 degrees on that same clip and is scored 4/5 off its median without
+// complaint -- only this measure and the toe carried the extra gate.
 const mixedSupport = ctx.scoreSupportStiffness(mixed);
-check('contacts that disagree with each other are not scored',
-  mixedSupport && mixedSupport.score == null,
+check('contacts that disagree are scored off the median rather than withheld',
+  mixedSupport && typeof mixedSupport.score === 'number',
   JSON.stringify(ctx.supportDrops(mixed).map((x) => +x.toFixed(2))));
-check('and the row says why rather than vanishing',
-  mixedSupport && /not measurable/i.test(mixedSupport.note || '') && /disagreed/.test(mixedSupport.note),
-  mixedSupport && (mixedSupport.note || '').slice(0, 80));
+check('and the median of a mixed stride lands between its halves',
+  mixedSupport && mixedSupport.value > 0.1 && mixedSupport.value < 0.3,
+  mixedSupport && `${(mixedSupport.value * 100).toFixed(0)}%`);
+check('the note says how many touchdowns it rests on',
+  mixedSupport && /over \d+ touchdowns/.test(mixedSupport.note || ''),
+  mixedSupport && mixedSupport.note);
+check('and it is named for what an athlete would call it',
+  mixedSupport && mixedSupport.name === 'Leg Stiffness', mixedSupport && mixedSupport.name);
 
 // ---------- which stretch of the clip gets measured ----------
 // Picking where he is biggest alone hands back a block start's set position;

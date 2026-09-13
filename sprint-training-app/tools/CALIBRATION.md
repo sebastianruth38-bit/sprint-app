@@ -141,10 +141,17 @@ Two implementation notes that cost real accuracy before they were found:
   Hip height falls both when the support collapses and when the foot lifts,
   so stopping on it truncates the measurement exactly when the collapse is
   worst — a synthetic hip dropping 0.25 of a leg length came back as 0.125.
-- Contacts must agree before it is reported, same as the ankle. Two clips
-  disagreeing by more than `SUPPORT_AGREEMENT_MAX` is noise, not a soft foot.
+- ~~Contacts must agree before it is reported, same as the ankle.~~
+  **Removed 13 Sep** — see "Why two measures never read" above. That gate is
+  why this row almost never reported, and the athlete's own readings show it
+  was withholding three consistent findings for not being identical.
 
-## The toe-based ankle angle (demoted)
+## The toe-based ankle angle (REMOVED 13 Sep)
+
+Demoted first, then removed outright once the per-touchdown readings showed
+the athlete's leg is fourteen pixels long. See "Why two measures never read"
+above. What follows is why it was demoted, kept because it is the evidence.
+
 
 Not shown when support stiffness is available. The athlete reported a stiff
 ankle on a clip that scored it 2/5 "landing toes-down". Across six
@@ -152,9 +159,10 @@ consecutive frames a thirtieth of a second apart it read 115, 126, 139, 129,
 122 and 94 degrees, and the three touchdowns it settled on read 107, 145 and
 137 — a 38 degree spread against bands 13 degrees wide.
 
-It still fires when nothing better is available and the contacts agree, but
-two numbers for one property, one of them known to be shaky, is worse than
-one.
+It no longer fires at all: two numbers for one property, one of them measured
+off three pixels, is worse than one. The dorsi values are still collected into
+the saved readings, so a future calibration has them if a clip filmed close
+enough ever justifies bringing the measure back.
 
 ## Front/back swing balance (UNCALIBRATED — measured, not scored)
 
@@ -379,6 +387,61 @@ The bands were also reworded. They said "hips collapsing -- sitting in the
 stride", which claims Support Stiffness's subject and reads as a flat
 contradiction next to it. They now say what is actually measured: how much
 hip height varies between steps.
+
+## Why two measures never read, answered from the athlete's own clip (13 Sep)
+
+The saved entry now carries the per-touchdown readings, and the first clip to
+use it settled a question two days of reconstruction could not.
+
+| | |
+|---|---|
+| leg length, per touchdown | 12.9, 14.1, 13.0, 14.4, 13.1, 15.8, 14.9 **pixels** |
+| ankle angle | 114.1, 115.6, 116.9, 122.8, 136.0, 138.1, 156.9 (**43° spread**) |
+| shin angle | 7.3, 8.9, 13.7, 26.3, 28.4, 32.9, 39.5 (**32° spread**) |
+| hip drop through contact | 11.7%, 17.9%, 24.7% (**13% spread**) |
+
+**His leg is fourteen pixels.** That is the whole explanation. The toe is a
+pixel or two, and an ankle angle computed from it cannot agree with itself.
+
+### The ankle measure is removed
+
+It asked the same question Leg Stiffness asks — does the thing collapse when
+you land on it — off the least stable landmark the model tracks. Two numbers
+for one property, one of them measured off three pixels, is worse than one.
+The dorsi values are still collected into the readings, so a future
+calibration has them if a close-enough clip ever justifies bringing it back.
+
+### The agreement gate was the wrong rule
+
+`SUPPORT_AGREEMENT_MAX` withheld the whole measure when touchdowns differed by
+more than 9%. His three differ by 13% — and every one of them, 11.7% through
+24.7%, is already in the give-to-collapsing range. The measure was seeing the
+same thing three times and refusing to say so because the three did not match.
+
+Nor should they. During acceleration the athlete is rising through the drive
+phase, so hip drop legitimately changes step to step; demanding constancy asks
+a changing quantity to hold still.
+
+And it was inconsistent. Shin Angle on that same clip spreads 7° to 40° — 
+proportionally wider — and is scored 4/5 off its median without complaint.
+Only this measure and the toe carried an extra gate.
+
+So Leg Stiffness is the median, like everything else. His clip now reads
+**3/5, "Noticeable give on contact", hips drop 18% over 3 touchdowns**.
+
+### What protects against noise instead
+
+The framing check, which refuses a clip where the athlete is too few pixels to
+measure at all. One judgement about whether the picture can be read, rather
+than each measure inventing its own.
+
+**That check needs looking at.** `SUBJECT_PX_MIN` is 90 source pixels of
+athlete; a 14-pixel leg in the 854x480 analysis canvas is roughly 32 pixels in
+the 1920x1080 source, so a body around 65 — under the floor. This clip graded
+anyway. Either the estimate above is off or the guard is not catching this
+case, and a 5/5 built on a 14-pixel leg is exactly the confident-score-from-a-
+bad-read the refusals exist to prevent. The framing numbers are now recorded
+on every entry, so the next clip answers it.
 
 ## Counting detections is not measuring a clip (fixed 12 Sep)
 

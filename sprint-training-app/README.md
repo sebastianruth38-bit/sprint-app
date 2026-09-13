@@ -42,8 +42,8 @@ flags they raise, and no longer scored.
 
 | Clip type | What it is scored on |
 |---|---|
-| **Acceleration** | Drive Position (or Acceleration Posture), Shin Angle at Touchdown, Ankle at Touchdown, Foot Strike vs COM, Support Stiffness, Hip Height |
-| **Max Velocity** | Thigh Separation, Heel Recovery, Foot Strike vs COM, Support Stiffness, Hip Height |
+| **Acceleration** | Drive Position (or Acceleration Posture), Shin Angle at Touchdown, Foot Strike vs COM, Leg Stiffness, Hip Height |
+| **Max Velocity** | Thigh Separation, Heel Recovery, Foot Strike vs COM, Leg Stiffness, Hip Height |
 
 **Foot Strike vs COM** is where the foot lands relative to your centre of
 mass, as a fraction of your own leg length. The mid-hip is the COM proxy a
@@ -54,6 +54,14 @@ blocks it means something else entirely — see below.
 **Shin Angle at Touchdown** is acceleration only, because the same number
 means opposite things at the two ends of a run: the shin is angled hard
 forward out of the blocks and close to vertical by top speed.
+
+**Leg Stiffness** is how far the hips drop while the foot is on the ground —
+whether anything collapses when you land on it. It replaced two rows that
+asked the same question: itself, and an Ankle at Touchdown read off the toe,
+the smallest landmark the model tracks. On one recorded clip the toe spread
+43° across seven touchdowns off a leg 14 pixels long, which is not a
+measurement of an ankle. Two numbers for one property, one of them measured
+off three pixels, is worse than one.
 
 Each is scored 1–5 against bands in `tools/CALIBRATION.md`, every one of which
 came from measuring real footage rather than from a textbook.

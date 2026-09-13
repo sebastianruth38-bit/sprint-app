@@ -102,9 +102,9 @@ check('and still below the depth a planted leg cannot exceed',
 // ---------- no measure may leave silently ----------
 // The whole complaint in one assertion: whatever the clip, the card shows
 // every measure the clip type promises.
-const ACCELERATION_SET = ['Shin Angle at Touchdown', 'Support Stiffness',
-                          'Foot Strike vs COM', 'Ankle at Touchdown', 'Hip Height'];
-const MAXV_SET = ['Support Stiffness', 'Foot Strike vs COM', 'Hip Height'];
+const ACCELERATION_SET = ['Shin Angle at Touchdown', 'Leg Stiffness',
+                          'Foot Strike vs COM', 'Hip Height'];
+const MAXV_SET = ['Leg Stiffness', 'Foot Strike vs COM', 'Hip Height'];
 
 [['Acceleration', ACCELERATION_SET], ['Max Velocity', MAXV_SET]].forEach(([type, expected]) => {
   // A clip good enough to read, and one whose touchdowns are too shallow to
@@ -531,29 +531,24 @@ check('support drops are recorded too, since they span a contact rather than an 
   JSON.stringify(r.supportDrops));
 // The aggregate in the note has to be recoverable from the readings, or the
 // record does not explain the verdict it sits next to.
-// Built to decline: the toe reads a different angle on every touchdown, which
-// is the shape of the athlete's own clip.
-// Varied on every frame, not on hand-picked ones: which frames become
-// touchdowns is decided by footContacts and then trimmed by limitToStrides,
-// so choosing frames by index sets the angle on frames that never get read.
-const wobbly = stride(0.9);
-wobbly.forEach((row, i) => {
-  (row.legs || []).forEach((leg) => { leg.footVsShin = 88 + (i % 6) * 11; });
-});
-const declined = ctx.buildLocalAnalysis(wobbly, 'Acceleration', 'Track');
-const ankleRow = (declined.pinpoints || []).find((p) => p.name === 'Ankle at Touchdown');
-check('a wobbling toe makes the ankle decline, as it does on a real clip',
-  ankleRow && ankleRow.score === null, ankleRow && `${ankleRow.score}: ${ankleRow.note}`);
-const quoted = ankleRow && /wobbled (\d+)\u00b0/.exec(ankleRow.note || '');
-check('and the note quotes a spread', !!quoted, ankleRow && ankleRow.note);
-if (quoted) {
-  const seen = ((declined.readings || {}).contacts || []).map((c) => c.ankle).filter((v) => typeof v === 'number');
-  const spread = seen.length >= 2 ? Math.max(...seen) - Math.min(...seen) : null;
-  // The whole point of the record: the verdict has to be checkable against it.
-  check('the spread the athlete is shown is recoverable from the readings',
-    spread != null && Math.abs(spread - Number(quoted[1])) <= 1,
-    `note says ${quoted[1]}, readings give ${spread == null ? 'nothing' : spread.toFixed(1)} from ${JSON.stringify(seen)}`);
-}
+// The toe-based ankle row is gone: it asked the same question Leg Stiffness
+// asks, off the smallest landmark the model tracks, and on the athlete's clip
+// its seven touchdowns spread 43 degrees off a 14-pixel leg.
+//
+// The readings still carry the ankle angle per touchdown -- it costs nothing
+// to keep, and it is what a future calibration would need to bring the
+// measure back on clips filmed close enough to support it.
+const gone = ctx.buildLocalAnalysis(stride(0.9), 'Acceleration', 'Track');
+check('no row is reported off the toe any more',
+  !(gone.pinpoints || []).some((p) => /ankle/i.test(p.name)),
+  (gone.pinpoints || []).map((p) => p.name).join(', '));
+check('but the readings still record what the toe said',
+  (gone.readings.contacts || []).some((c) => typeof c.ankle === 'number'),
+  JSON.stringify((gone.readings.contacts || []).map((c) => c.ankle)));
+check('and the collapse measure is there under one name',
+  (gone.pinpoints || []).some((p) => p.name === 'Leg Stiffness'),
+  (gone.pinpoints || []).map((p) => p.name).join(', '));
+
 // Precise enough to be worth keeping.
 //
 // A record that rounds a touchdown depth of 0.89 to 1 is still a list of
