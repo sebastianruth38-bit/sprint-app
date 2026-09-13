@@ -1303,26 +1303,38 @@ function selectSubject(framePoses, secondsPerFrame) {
   // recoverable -- the extraction pass will already have tried cropping to
   // him -- but too few real pixels of athlete is not: there is no detail
   // left to enlarge, and any angle read off him is invented.
+  // The framing numbers ride along with the refusal as well as with a grade.
+  // This is the branch that decides "too far away", so the measurement behind
+  // it is the first thing anyone will want and the last thing a message can
+  // carry without becoming unreadable.
+  const framing = { frac, px, edgeFraction };
   if (px != null && px < SUBJECT_PX_MIN) {
     return {
       metrics: [],
+      framing,
       rejection: 'The athlete is too far away to measure. There isn\'t enough of him in the picture. Film closer.',
     };
   }
   if (frac != null && frac < SUBJECT_FRAC_MIN) {
     return {
       metrics: [],
+      framing,
       rejection: 'The athlete is too small in the frame to measure. Film closer, or crop the clip to him before uploading.',
     };
   }
   if (edgeFraction > MAX_EDGE_FRACTION) {
     return {
       metrics: [],
+      framing,
       rejection: 'His feet leave the picture for much of this clip. Ground contact can\'t be read. Keep the whole body in frame.',
     };
   }
 
-  return { metrics: subject.metrics, rejection: null };
+  // The framing numbers travel with the result rather than being computed and
+  // thrown away. They are what every "too far away" argument turns on, and
+  // without them in the saved entry the only way to ask how big the athlete
+  // was is to rebuild his phone in a sandbox, which does not work.
+  return { metrics: subject.metrics, rejection: null, framing };
 }
 
 // ---------- Ground contact, and the checks that hang off it ----------
@@ -1490,6 +1502,58 @@ function limitToStrides(metrics, strides = 3) {
   const from = contacts[0];
   const to = contacts[wanted];
   return metrics.slice(Math.max(0, from - 1), Math.min(metrics.length, to + 2));
+}
+
+// The individual readings behind the numbers, for when a measure declines.
+//
+// Every "not measurable" row is an aggregate: N touchdowns disagreed by X. The
+// aggregate is what the athlete needs, and it is uselessly little when the
+// question is WHY -- one wild touchdown and six steady ones look identical to
+// four middling ones, and the fix is different for each.
+//
+// This tried to be answered by re-running a clip in a sandbox and it does not
+// work: no H.264 there, pose an order of magnitude slower, so different
+// capture passes win and two runs of the same clip disagreed with each other.
+// The measurement has to happen where the clip is actually graded, which is
+// the athlete's phone, so the readings ride along in the saved entry.
+//
+// Deliberately raw. No verdict, no rounding past what keeps it small -- the
+// point is to be able to ask a question nobody has thought of yet.
+function rawReadings(metrics, clipType) {
+  const round = (v, p = 3) => (typeof v === 'number' && isFinite(v) ? Number(v.toFixed(p)) : null);
+  const facing = median(
+    metrics.flatMap((m) => (m.legs || []).map((l) => l.facing)).filter((v) => v)
+  ) || 1;
+  const contacts = [];
+  [0, 1].forEach((side) => {
+    footContacts(metrics, side).forEach((c) => {
+      const row = metrics[c.i];
+      if (!row || !row.midHip) return;
+      contacts.push({
+        i: c.i,
+        side,
+        t: round(row.t, 2),
+        // in leg lengths below the hip -- what CONTACT_DEPTH_MIN gates on
+        depth: round((c.leg.ank[1] - row.midHip[1]) / (c.leg.legLen || 1)),
+        strike: round(((c.leg.ank[0] - row.midHip[0]) * facing) / c.leg.legLen),
+        shin: round(c.leg.shinFromVertical == null ? null : c.leg.shinFromVertical * facing, 1),
+        // the toe-derived angle, which is the one that disagrees most
+        ankle: round(c.leg.footVsShin, 1),
+        legLenPx: round(c.leg.legLen, 1),
+      });
+    });
+  });
+  contacts.sort((a, b) => a.i - b.i);
+  return {
+    clipType: clipType || null,
+    frames: metrics.length,
+    strides: round(stridesMeasured(metrics), 2),
+    facing,
+    contacts,
+    // Support stiffness is measured across a contact rather than at one
+    // instant, so its readings cannot be recovered from the rows above.
+    supportDrops: supportDrops(metrics).map((d) => round(d)),
+  };
 }
 
 // A measure that was attempted and could not be read.
@@ -2378,6 +2442,10 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
     flags,
     strides,
     basis,
+    // Diagnostic only. Nothing reads this to decide anything -- it is here so
+    // a question about a declined measure can be answered from the saved row
+    // instead of from a reconstruction.
+    readings: rawReadings(metrics, clipType),
     filming_note: readRate < 0.6
       ? 'Only part of the clip was readable -- film side-on with the full body in frame.'
       : null,
@@ -3271,6 +3339,8 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
       metrics: measured,
       denseFrames,
       rejection: subject.rejection,
+      // Carried out so the saved entry can record how big he was.
+      framing: subject.framing || null,
       shotTrimmed: cutOut > 0,
       // How much of the clip the decoder gave us twice. Reported so a device
       // that cannot keep up shows up as a number rather than as an athlete
@@ -3387,7 +3457,7 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
     let measured = [];
     try {
       saveBtn.textContent = 'Analyzing…';
-      const { frames, metrics, rejection, shotTrimmed, duplicateShare, capture,
+      const { frames, metrics, rejection, shotTrimmed, duplicateShare, capture, framing,
               stills: captured } =
         await extractFrames(pendingBlob, 6, 480, setAnalysisStatus);
       stills = captured || [];
@@ -3445,6 +3515,13 @@ document.getElementById('saveDiagnosis').addEventListener('click', async () => {
         analysis.ai_summary = aiData.summary || null;
         analysis.additional_observations = aiData.pinpoints || [];
         analysis.flags = [...(analysis.flags || []), ...(aiData.flags || [])];
+      }
+      // How the clip was read and how big he was in it, recorded whether it
+      // graded or not. A refusal is exactly when this is worth having, and the
+      // refusal message can only carry so much before it stops being readable.
+      if (analysis) {
+        analysis.capture = capture || null;
+        analysis.framing = framing || null;
       }
       setAnalysisStatus('Analysis complete.');
     } catch (analysisErr) {

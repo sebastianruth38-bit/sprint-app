@@ -475,6 +475,103 @@ const guarded = ctx.describeCapture({
 check('the ordinary refusal carries the trace as well',
   /scan 17@4\/s/.test(guarded) && /build test/.test(guarded), guarded);
 
+// ---------- the readings are a record, never an input ----------
+// Added so a declined measure can be asked about from the saved row rather
+// than by rebuilding a phone in a sandbox -- which was tried, and does not
+// work: no H.264 there, pose an order of magnitude slower, different capture
+// passes winning, two runs of the same clip disagreeing.
+//
+// The whole value of it depends on it changing nothing. So the first thing
+// checked is that it does not: same clip, same scores, same notes, same flags,
+// with the readings stripped out.
+// The card's shape is pinned by its exact key set, not by the absence of one
+// name. Checking only that "readings" does not appear lets any OTHER new key
+// through -- which is the same mistake as a test that names the thing it
+// expects instead of deriving it.
+const CARD_KEYS = ['summary', 'pinpoints', 'flags', 'strides', 'basis', 'filming_note'];
+const DIAGNOSTIC_KEYS = ['readings'];
+[['Acceleration', stride(0.9)], ['Acceleration', stride(0.3)],
+ ['Max Velocity', stride(0.9)], ['Max Velocity', stride(0.3)]].forEach(([type, frames], i) => {
+  const out = ctx.buildLocalAnalysis(frames, type, 'Track');
+  const extra = Object.keys(out).filter((k) => !CARD_KEYS.includes(k) && !DIAGNOSTIC_KEYS.includes(k));
+  check(`${type} #${i}: the graded card grew nothing but the diagnostics`,
+    extra.length === 0, extra.join(', '));
+  check(`${type} #${i}: and still carries everything it did before`,
+    CARD_KEYS.every((k) => k in out), CARD_KEYS.filter((k) => !(k in out)).join(', '));
+  check(`${type} #${i}: with the readings attached`,
+    out.readings && Array.isArray(out.readings.contacts), JSON.stringify(out.readings || null).slice(0, 60));
+});
+
+// Every touchdown the agreement checks judged, with the numbers they judged.
+const readable = ctx.buildLocalAnalysis(stride(0.9), 'Acceleration', 'Track');
+// Guarded, so a missing record reports as one failure rather than throwing
+// and taking the rest of the file down with it.
+check('there is a readings record to inspect at all', !!(readable.readings && readable.readings.contacts),
+  JSON.stringify(readable.readings || null));
+const r = readable.readings || { contacts: [], supportDrops: [] };
+check('the readings name the clip type they came from', r.clipType === 'Acceleration', String(r.clipType));
+check('and count the strides', typeof r.strides === 'number', String(r.strides));
+check('one entry per touchdown, in time order',
+  r.contacts.length > 0 && r.contacts.every((c, i, a) => i === 0 || a[i - 1].i <= c.i),
+  JSON.stringify(r.contacts.map((c) => c.i)));
+// The four quantities the declining measures are computed from. Ankle may be
+// null when the toe was not readable, which is itself the thing worth seeing.
+['depth', 'strike', 'shin', 'legLenPx'].forEach((k) => {
+  check(`every touchdown carries its ${k}`,
+    r.contacts.every((c) => typeof c[k] === 'number'),
+    JSON.stringify(r.contacts.map((c) => c[k])));
+});
+check('and its ankle reading, or null where the toe was not readable',
+  r.contacts.every((c) => c.ankle === null || typeof c.ankle === 'number'));
+// Non-empty, not merely an array: this clip has four of them, and an empty
+// list is exactly what a broken collector returns.
+check('support drops are recorded too, since they span a contact rather than an instant',
+  Array.isArray(r.supportDrops) && r.supportDrops.length > 0
+    && r.supportDrops.every((d) => typeof d === 'number'),
+  JSON.stringify(r.supportDrops));
+// The aggregate in the note has to be recoverable from the readings, or the
+// record does not explain the verdict it sits next to.
+// Built to decline: the toe reads a different angle on every touchdown, which
+// is the shape of the athlete's own clip.
+// Varied on every frame, not on hand-picked ones: which frames become
+// touchdowns is decided by footContacts and then trimmed by limitToStrides,
+// so choosing frames by index sets the angle on frames that never get read.
+const wobbly = stride(0.9);
+wobbly.forEach((row, i) => {
+  (row.legs || []).forEach((leg) => { leg.footVsShin = 88 + (i % 6) * 11; });
+});
+const declined = ctx.buildLocalAnalysis(wobbly, 'Acceleration', 'Track');
+const ankleRow = (declined.pinpoints || []).find((p) => p.name === 'Ankle at Touchdown');
+check('a wobbling toe makes the ankle decline, as it does on a real clip',
+  ankleRow && ankleRow.score === null, ankleRow && `${ankleRow.score}: ${ankleRow.note}`);
+const quoted = ankleRow && /wobbled (\d+)\u00b0/.exec(ankleRow.note || '');
+check('and the note quotes a spread', !!quoted, ankleRow && ankleRow.note);
+if (quoted) {
+  const seen = ((declined.readings || {}).contacts || []).map((c) => c.ankle).filter((v) => typeof v === 'number');
+  const spread = seen.length >= 2 ? Math.max(...seen) - Math.min(...seen) : null;
+  // The whole point of the record: the verdict has to be checkable against it.
+  check('the spread the athlete is shown is recoverable from the readings',
+    spread != null && Math.abs(spread - Number(quoted[1])) <= 1,
+    `note says ${quoted[1]}, readings give ${spread == null ? 'nothing' : spread.toFixed(1)} from ${JSON.stringify(seen)}`);
+}
+// Precise enough to be worth keeping.
+//
+// A record that rounds a touchdown depth of 0.89 to 1 is still a list of
+// numbers and still passes every "is it a number" check, while having thrown
+// away the thing it exists to show -- the difference between one touchdown
+// and the next.
+const precise = [...r.contacts.map((c) => c.depth), ...r.contacts.map((c) => c.strike),
+                 ...r.supportDrops].filter((v) => typeof v === 'number');
+check('the readings keep the precision that distinguishes one touchdown from another',
+  precise.some((v) => Math.abs(v - Math.round(v)) > 0.001),
+  JSON.stringify(precise));
+
+// Small enough to sit in every row for good.
+check('the readings stay small enough to store on every clip',
+  JSON.stringify(r).length < 4000, `${JSON.stringify(r).length} bytes`);
+check('and hold no landmark dumps or image data',
+  !/data:|landmark|\[\[/.test(JSON.stringify(r)));
+
 // ---------- sampling rate is measured over what was sampled ----------
 // The seek fallback takes its samples from a deliberately narrow window: 32
 // of them across about a second. Divided by a 7.5s clip that is 4/s, and the
