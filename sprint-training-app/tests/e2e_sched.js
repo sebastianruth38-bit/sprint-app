@@ -31,7 +31,7 @@ const assert=(c,m)=>{ if(c){console.log('PASS: '+m);pass++;} else {console.error
       return json([]);
     }
     if (u.includes('/rest/v1/competition_seasons')) return m === 'GET' ? json({ outdoor_start:'2027-04-01', outdoor_end:'2027-06-30' }) : json({});
-    if (u.includes('/rest/v1/athlete_settings')) return json({ primary_events:['100m'], equipment:[], next_meet_date:null, next_meet_events:[] });
+    if (u.includes('/rest/v1/athlete_settings')) return json({ primary_events:['100m'], equipment:[], next_meet_date:null, next_meet_events:[], onboarded_at:'2026-01-01T00:00:00Z' });
     return json([]);
   });
 

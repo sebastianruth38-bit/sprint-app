@@ -39,6 +39,9 @@ const assert = (c, m) => { if (c) { console.log('PASS: ' + m); pass++; } else { 
   await page.route('**/*supabase.co/**', async (route) => {
     const u = route.request().url(), m = route.request().method();
     const json = (b, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    // An account that has signed in before: onboarded_at is set, so the
+    // first-run walkthrough never opens over this suite's clicks.
+    if (u.includes('/rest/v1/athlete_settings')) return json({ primary_events:[], equipment:[], has_gym:true, next_meet_date:null, next_meet_events:[], onboarded_at:'2026-01-01T00:00:00Z' });
     if (u.includes('/rest/v1/times') && m === 'POST') {
       posts.push(JSON.parse(route.request().postData() || '{}'));
       if (serverFails) return json({ message: 'row violates row-level security policy' }, 403);

@@ -222,6 +222,34 @@ set, because in that set absent means "does not have it" — a Gym chip would
 have moved every existing athlete to bodyweight the moment it shipped without
 anyone touching a setting.
 
+### The first time you open it
+
+A new account gets a walkthrough instead of the app: what it does, then the
+three things every other screen reads — the events you run, what you have to
+train with, and which days you can train, plus your season and next meet.
+Signing in and landing on an empty week with a Settings menu you have not
+found yet is how an install becomes an uninstall.
+
+**Every step can be skipped, and skipping still saves what you already
+answered.** None of it is required — the same fields are in ⚙️ Settings, the
+plan has a working default for all of them, and binning five screens of
+answers to punish someone for tapping Skip would be our fault, not theirs.
+
+It is closed by `onboarded_at` on `athlete_settings`, which is stamped
+whether it was finished or skipped. Nullable rather than a boolean, so a
+brand-new account with no row at all reads the same as one that has not seen
+it. Athletes who were already using the app were stamped as onboarded when
+the column shipped, rather than being walked through settings they had
+already filled in by hand. A failed read of that column means *not* showing
+it: interrupting someone mid-season because a query timed out is the worse of
+the two mistakes.
+
+The animation is the same vocabulary as the rest of the app — the `rise`
+cascade the warm-up uses, transform and opacity only, and all of it off under
+`prefers-reduced-motion`, which `onboarding_test.js` asserts by reading the
+computed `animation-name` in a reduced-motion browser rather than by trusting
+the stylesheet.
+
 ## The rest of the app
 
 - **Form Analysis** — upload, grade, and a history of past clips with score trends.
@@ -251,7 +279,7 @@ is public by design; Row Level Security is what protects the data, not the key.
 ./tests/run.sh --clips   # also the ones that need tests/clips/
 ```
 
-32 suites. The pure-logic ones run the grader's maths against recorded pose
+33 suites. The pure-logic ones run the grader's maths against recorded pose
 data; the rest drive the real page in headless Chromium with the network
 stubbed. `tests/setup.sh` builds the fixture copy of the app — **it runs
 automatically from `run.sh`, but if you test by hand after editing `app.js`,

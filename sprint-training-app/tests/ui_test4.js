@@ -39,6 +39,12 @@ function assert(cond, msg) {
   await page.route('**/*supabase.co/**', async (route) => {
     const url = route.request().url();
     const method = route.request().method();
+    // An account that has signed in before: onboarded_at is set, so the
+    // first-run walkthrough never opens over this suite's clicks.
+    if (url.includes('/rest/v1/athlete_settings')) {
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ primary_events:[], equipment:[], has_gym:true, next_meet_date:null, next_meet_events:[], onboarded_at:'2026-01-01T00:00:00Z' }) });
+    }
     if (url.includes('/rest/v1/workouts') && method === 'GET') {
       return route.fulfill({
         status: 200, contentType: 'application/json',

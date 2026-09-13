@@ -426,6 +426,109 @@
   </nav>
   </div>
 
+  <!--
+    FIRST RUN
+    Sits outside the app shell because it is not a dialog over the app -- it
+    is what the athlete sees instead of the app, the first time only. Every
+    step is skippable: a wall you cannot get past on the way in is how an
+    install becomes an uninstall, and everything asked here also lives in
+    Settings. `onboarded_at` on athlete_settings is what closes it for good.
+  -->
+  <div id="onboarding" class="onboard" hidden>
+    <div class="onboard-inner">
+      <div class="onboard-top">
+        <div class="onboard-dots" id="onboardDots" aria-hidden="true"></div>
+        <button type="button" id="onboardSkip" class="onboard-skip">Skip</button>
+      </div>
+
+      <div class="onboard-stage" id="onboardStage">
+        <!-- 1. What this is -->
+        <section class="onboard-step" data-step="intro">
+          <h1 class="brand brand-lg onboard-brand" style="--i:0">
+            <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false"><path d="M26 6 L14 6 L20 15.5 L9 15.5 L21 26" stroke="url(#sprintrG)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Sprintr</span>
+          </h1>
+          <p class="onboard-lede" style="--i:1">A coach's eye for your sprint, on the phone in your pocket.</p>
+          <ul class="onboard-points">
+            <li style="--i:2"><span class="onboard-ico">🐆</span><div><strong>Film a run, get it graded.</strong>Foot strike, hip height, heel recovery — scored out of 5. The video never leaves your phone.</div></li>
+            <li style="--i:3"><span class="onboard-ico">📋</span><div><strong>A week that fits your week.</strong>Sprint days, lift days and the season you're in.</div></li>
+            <li style="--i:4"><span class="onboard-ico">🔥</span><div><strong>A warm-up built around your weak points.</strong>Four phases, no equipment needed.</div></li>
+          </ul>
+          <p class="hint onboard-tail" id="onboardTail" style="--i:5"></p>
+        </section>
+
+        <!-- 2. Events -->
+        <section class="onboard-step" data-step="events" hidden>
+          <h2 class="onboard-h" style="--i:0">What do you run?</h2>
+          <p class="hint onboard-sub" style="--i:1">Sets which sessions the week leans on. Tap all that apply.</p>
+          <div class="onboard-chips" id="onboardEvents" style="--i:2"></div>
+          <label class="hint season-label" style="--i:3">Anything else?</label>
+          <input type="text" id="onboardEventsOther" placeholder="e.g. 4x400, heptathlon" style="--i:3" />
+        </section>
+
+        <!-- 3. Equipment -->
+        <section class="onboard-step" data-step="equipment" hidden>
+          <h2 class="onboard-h" style="--i:0">What have you got to train with?</h2>
+          <p class="hint onboard-sub" style="--i:1">Nothing here is required — the plan is written around whatever you say.</p>
+          <p class="avail-label" style="--i:2">🏋️ Weight room</p>
+          <div class="gym-toggle" style="--i:2">
+            <button type="button" id="onboardGymBtn" class="day-chip" aria-pressed="true">I have a gym</button>
+            <p class="hint" id="onboardGymNote"></p>
+          </div>
+          <p class="avail-label" style="--i:3">🎒 Equipment</p>
+          <div class="day-picker" id="onboardEquipment" style="grid-template-columns:repeat(3,1fr);--i:3"></div>
+        </section>
+
+        <!-- 4. Calendar -->
+        <section class="onboard-step" data-step="calendar" hidden>
+          <h2 class="onboard-h" style="--i:0">Which days can you train?</h2>
+          <p class="hint onboard-sub" style="--i:1">A guideline, not a schedule — you can move any session later.</p>
+          <p class="avail-label" style="--i:2">🏃 Can sprint</p>
+          <div class="day-picker" id="onboardSprintDays" style="--i:2"></div>
+          <p class="avail-label" style="--i:3">💪 Can hit the gym</p>
+          <div class="day-picker" id="onboardGymDays" style="--i:3"></div>
+        </section>
+
+        <!-- 5. Season and next meet -->
+        <section class="onboard-step" data-step="season" hidden>
+          <h2 class="onboard-h" style="--i:0">When do you compete?</h2>
+          <p class="hint onboard-sub" style="--i:1">Decides whether you're in off-season, pre-season or in-season work.</p>
+          <div class="form-grid" style="--i:2">
+            <div>
+              <label class="hint season-label">Indoor season</label>
+              <input type="date" id="onboardIndoorStart" />
+              <input type="date" id="onboardIndoorEnd" style="margin-top:0.4rem" />
+            </div>
+            <div>
+              <label class="hint season-label">Outdoor season</label>
+              <input type="date" id="onboardOutdoorStart" />
+              <input type="date" id="onboardOutdoorEnd" style="margin-top:0.4rem" />
+            </div>
+          </div>
+          <p class="hint" style="margin-top:0.2rem;--i:3">Leave indoor blank if you don't compete indoors.</p>
+          <label class="hint season-label" style="--i:4">Next meet</label>
+          <input type="date" id="onboardMeetDate" style="--i:4" />
+          <label class="hint season-label" style="margin-top:0.6rem;--i:5">Events at that meet</label>
+          <input type="text" id="onboardMeetEvents" placeholder="e.g. 100m, 4x100 relay" style="--i:5" />
+        </section>
+
+        <!-- 6. Done -->
+        <section class="onboard-step" data-step="done" hidden>
+          <div class="onboard-tick" style="--i:0" aria-hidden="true">
+            <svg viewBox="0 0 52 52"><circle class="onboard-tick-ring" cx="26" cy="26" r="23" /><path class="onboard-tick-mark" d="M15 27 L23 35 L38 18" /></svg>
+          </div>
+          <h2 class="onboard-h" style="--i:1">You're set.</h2>
+          <p class="onboard-sub" id="onboardSummary" style="--i:2"></p>
+          <p class="hint" style="--i:3">Film one run from the side, tap Form Analysis, and see where you stand. All of this lives in ⚙️ Settings if it changes.</p>
+        </section>
+      </div>
+
+      <div class="onboard-actions">
+        <button type="button" id="onboardBack" class="btn onboard-back">Back</button>
+        <button type="button" id="onboardNext" class="btn primary onboard-next">Get started</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!--

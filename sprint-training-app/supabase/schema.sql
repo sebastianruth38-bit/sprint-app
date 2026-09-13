@@ -195,8 +195,16 @@ create table if not exists public.athlete_settings (
   has_gym boolean not null default true,
   next_meet_date date,
   next_meet_events jsonb not null default '[]'::jsonb,
+  -- When the athlete finished the first-run walkthrough. Null means they have
+  -- not seen it. Nullable rather than a boolean default so the absence of a
+  -- row and the absence of a walkthrough read the same: a brand-new account
+  -- has no row here at all.
+  onboarded_at timestamptz,
   updated_at timestamptz not null default now()
 );
+-- Existing athletes had already set all of this by hand, so they were stamped
+-- as onboarded when the column arrived rather than being walked through it.
+alter table public.athlete_settings add column if not exists onboarded_at timestamptz;
 
 -- ---------- Row Level Security: every table, owner-only ----------
 alter table public.workouts enable row level security;

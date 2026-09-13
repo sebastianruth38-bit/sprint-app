@@ -13,7 +13,14 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   const errors=[]; page.on('pageerror',e=>errors.push(e.message));
   // What the athlete is actually shown when a save goes wrong.
   const alerts=[]; page.on('dialog',d=>{alerts.push(d.message);d.dismiss().catch(()=>{});});
-  await page.route('**/*supabase.co/**',r=>r.fulfill({status:200,contentType:'application/json',body:'[]'}));
+  await page.route('**/*supabase.co/**', r => {
+    // Everything answers empty except athlete_settings, which answers as an
+    // account that has signed in before -- otherwise the first-run
+    // walkthrough opens on top of the flow this suite is clicking through.
+    const body = r.request().url().includes('/rest/v1/athlete_settings')
+      ? JSON.stringify({ primary_events:[], equipment:[], has_gym:true, next_meet_date:null, next_meet_events:[], onboarded_at:'2026-01-01T00:00:00Z' }) : '[]';
+    return r.fulfill({ status:200, contentType:'application/json', body });
+  });
   await page.goto(`http://localhost:${port}/index.html`);
   await page.waitForFunction(()=>typeof window.handleSession==='function');
   await page.evaluate(()=>window.handleSession({user:{id:'u'}}));
@@ -272,6 +279,7 @@ const assert=(c,m)=>{if(c){console.log('PASS: '+m);pass++;}else{console.error('F
   await page.route('**/*supabase.co/**', async (route) => {
     const u = route.request().url(), m = route.request().method();
     const json = (b) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (u.includes('/rest/v1/athlete_settings')) return json({ primary_events:[], equipment:[], has_gym:true, next_meet_date:null, next_meet_events:[], onboarded_at:'2026-01-01T00:00:00Z' });
     if (u.includes('/storage/v1/object/list')) return json([]);
     if (u.includes('/storage/')) return json({ Key: 'ok' });
     if (u.includes('/rest/v1/diagnosis_entries') && m === 'POST') {
