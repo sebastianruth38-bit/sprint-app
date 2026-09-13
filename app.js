@@ -174,6 +174,7 @@ let sprintDaysSelected = new Set();
 let gymDaysSelected = new Set();
 
 function renderDayPicker(container, selectedSet) {
+  if (!container) return;
   container.innerHTML = '';
   DAYS.forEach((day) => {
     const btn = document.createElement('button');
@@ -436,10 +437,18 @@ function handleSession(session) {
     authGate.hidden = true;
     appShell.hidden = false;
     refreshAllData();
+    // Fires on every auth event; it guards itself so the second one is a
+    // no-op rather than a walkthrough restarting under the athlete.
+    maybeStartOnboarding();
   } else {
     currentUser = null;
     authGate.hidden = false;
     appShell.hidden = true;
+    const onboarding = document.getElementById('onboarding');
+    if (onboarding) onboarding.hidden = true;
+    // Signing in as somebody else on the same device has to be able to
+    // reach the walkthrough again.
+    onboardStarted = false;
   }
 }
 
@@ -4869,10 +4878,13 @@ let equipmentSelected = new Set();
 // moment it shipped without anyone touching a setting.
 let hasGymSelected = true;
 
-function renderGymToggle() {
-  const btn = document.getElementById('hasGymBtn');
-  const note = document.getElementById('hasGymNote');
-  if (!btn) return;
+// Takes the element ids so the first-run walkthrough can show the same
+// control without owning a second copy of what it says. Defaults are the
+// Training Setup modal's, so every existing call site is unchanged.
+function renderGymToggle(btnId = 'hasGymBtn', noteId = 'hasGymNote') {
+  const btn = document.getElementById(btnId);
+  const note = document.getElementById(noteId);
+  if (!btn || !note) return;
   btn.classList.toggle('selected', hasGymSelected);
   btn.setAttribute('aria-pressed', String(hasGymSelected));
   btn.textContent = hasGymSelected ? 'I have a gym' : 'No gym';
@@ -4887,8 +4899,9 @@ document.getElementById('hasGymBtn').addEventListener('click', () => {
 });
 const trainingSetupModal = document.getElementById('trainingSetupModal');
 
-function renderEquipmentPicker() {
-  const container = document.getElementById('equipmentPicker');
+function renderEquipmentPicker(containerId = 'equipmentPicker') {
+  const container = document.getElementById(containerId);
+  if (!container) return;
   container.innerHTML = '';
   EQUIPMENT_OPTIONS.forEach((item) => {
     const btn = document.createElement('button');
@@ -4959,6 +4972,261 @@ document.getElementById('saveTrainingSetup').addEventListener('click', async () 
   trainingSetupModal.hidden = true;
   renderWeekBoard();
 });
+
+// ---------- First run ----------
+// The walkthrough an athlete sees once: what the app does, then the things
+// every other screen depends on -- their events, their equipment, their week
+// and their season. All of it is also in Settings, so every step here can be
+// skipped; a sign-up flow that cannot be got past is one people abandon.
+//
+// It reuses the same state and the same renderers as Training Setup and the
+// availability modal rather than keeping a second copy, so a chip can never
+// mean one thing on the way in and another in Settings.
+const ONBOARD_STEPS = ['intro', 'events', 'equipment', 'calendar', 'season', 'done'];
+
+// Chosen so `pickRaceModelingText` reads them the way it already reads the
+// typed-in ones: it substring-matches 100/200/400. Relays are left to the
+// free-text box, because a 4x100 runner is not a 100m runner and the matcher
+// cannot tell the difference.
+const ONBOARD_EVENTS = [
+  '60m', '100m', '200m', '400m',
+  '100m Hurdles', '110m Hurdles', '400m Hurdles', 'Long Jump',
+];
+
+const onboardEl = document.getElementById('onboarding');
+let onboardStep = 0;
+let onboardEventsSelected = new Set();
+let onboardStarted = false;
+let onboardSaving = false;
+
+function onboardCurrent() {
+  return ONBOARD_STEPS[onboardStep];
+}
+
+function renderOnboardEvents() {
+  const box = document.getElementById('onboardEvents');
+  if (!box) return;
+  box.innerHTML = '';
+  ONBOARD_EVENTS.forEach((name) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'day-chip' + (onboardEventsSelected.has(name) ? ' selected' : '');
+    btn.textContent = name;
+    btn.addEventListener('click', () => {
+      if (onboardEventsSelected.has(name)) onboardEventsSelected.delete(name);
+      else onboardEventsSelected.add(name);
+      btn.classList.toggle('selected');
+    });
+    box.appendChild(btn);
+  });
+}
+
+function renderOnboardDots() {
+  const dots = document.getElementById('onboardDots');
+  if (!dots) return;
+  dots.innerHTML = '';
+  ONBOARD_STEPS.forEach((_, i) => {
+    const dot = document.createElement('i');
+    if (i < onboardStep) dot.className = 'done';
+    else if (i === onboardStep) dot.className = 'now';
+    dots.appendChild(dot);
+  });
+}
+
+// Everything the athlete has entered so far, read off the screen and put in
+// the shape the three tables want. Reading it in one place is what lets Skip
+// and Finish save the same thing without saying so twice.
+function onboardCollected() {
+  const splitCsv = (val) => (val || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const val = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  };
+  return {
+    primaryEvents: Array.from(onboardEventsSelected).concat(splitCsv(val('onboardEventsOther'))),
+    equipment: Array.from(equipmentSelected),
+    hasGym: hasGymSelected,
+    sprintDays: Array.from(sprintDaysSelected),
+    gymDays: Array.from(gymDaysSelected),
+    indoorStart: val('onboardIndoorStart') || null,
+    indoorEnd: val('onboardIndoorEnd') || null,
+    outdoorStart: val('onboardOutdoorStart') || null,
+    outdoorEnd: val('onboardOutdoorEnd') || null,
+    nextMeetDate: val('onboardMeetDate') || null,
+    nextMeetEvents: splitCsv(val('onboardMeetEvents')),
+  };
+}
+
+// The last screen says back what it heard, because an athlete who tapped
+// through five screens has no other way to check it landed.
+function onboardSummaryText(c) {
+  const bits = [];
+  if (c.primaryEvents.length) bits.push(c.primaryEvents.join(', '));
+  bits.push(c.hasGym ? 'lifting in a weight room' : 'lifting bodyweight');
+  if (c.equipment.length) bits.push('with ' + c.equipment.join(', ').toLowerCase());
+  const days = new Set(c.sprintDays.concat(c.gymDays));
+  if (days.size) bits.push(days.size + (days.size === 1 ? ' day a week' : ' days a week'));
+  if (c.nextMeetDate) bits.push('next meet ' + c.nextMeetDate);
+  return bits.join(' · ');
+}
+
+function showOnboardStep(index, goingBack) {
+  onboardStep = Math.max(0, Math.min(ONBOARD_STEPS.length - 1, index));
+  const name = onboardCurrent();
+  const stage = document.getElementById('onboardStage');
+  if (stage) stage.classList.toggle('back', !!goingBack);
+
+  document.querySelectorAll('#onboardStage .onboard-step').forEach((step) => {
+    step.hidden = step.dataset.step !== name;
+  });
+
+  // Rendered on arrival rather than up front: the day pickers and the chips
+  // read shared state that the step before them can still be changing.
+  if (name === 'intro') {
+    const tail = document.getElementById('onboardTail');
+    // Counted rather than written down. "Three quick questions" was true
+    // for about ten minutes.
+    const asked = ONBOARD_STEPS.length - 2; // intro and done ask nothing
+    if (tail) tail.textContent = asked + ' quick questions and you\u2019re in.';
+  }
+  if (name === 'events') renderOnboardEvents();
+  if (name === 'equipment') {
+    renderEquipmentPicker('onboardEquipment');
+    renderGymToggle('onboardGymBtn', 'onboardGymNote');
+  }
+  if (name === 'calendar') {
+    renderDayPicker(document.getElementById('onboardSprintDays'), sprintDaysSelected);
+    renderDayPicker(document.getElementById('onboardGymDays'), gymDaysSelected);
+  }
+  if (name === 'done') {
+    const summary = document.getElementById('onboardSummary');
+    if (summary) summary.textContent = onboardSummaryText(onboardCollected());
+  }
+
+  const back = document.getElementById('onboardBack');
+  const next = document.getElementById('onboardNext');
+  const skip = document.getElementById('onboardSkip');
+  if (back) back.hidden = onboardStep === 0;
+  if (skip) skip.hidden = name === 'done';
+  if (next) {
+    next.textContent = name === 'intro' ? 'Get started'
+      : name === 'done' ? 'Start training'
+      : 'Next';
+  }
+  renderOnboardDots();
+}
+
+// Skip and Finish save the same thing. Whatever was filled in before the
+// athlete stopped answering is still theirs, and throwing it away to punish
+// them for skipping would be the wrong lesson.
+async function finishOnboarding() {
+  if (onboardSaving) return;
+  onboardSaving = true;
+  const next = document.getElementById('onboardNext');
+  if (next) next.disabled = true;
+  const c = onboardCollected();
+  let failed = null;
+
+  try {
+    if (!currentUser) throw new Error('Not signed in');
+    const writes = [
+      supabaseClient.from('athlete_settings').upsert(
+        {
+          user_id: currentUser.id,
+          primary_events: c.primaryEvents,
+          equipment: c.equipment,
+          has_gym: c.hasGym,
+          next_meet_date: c.nextMeetDate,
+          next_meet_events: c.nextMeetEvents,
+          onboarded_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      ),
+    ];
+    if (c.indoorStart || c.indoorEnd || c.outdoorStart || c.outdoorEnd) {
+      writes.push(
+        supabaseClient.from('competition_seasons').upsert(
+          {
+            user_id: currentUser.id,
+            indoor_start: c.indoorStart,
+            indoor_end: c.indoorEnd,
+            outdoor_start: c.outdoorStart,
+            outdoor_end: c.outdoorEnd,
+          },
+          { onConflict: 'user_id' }
+        )
+      );
+    }
+    if (c.sprintDays.length || c.gymDays.length) {
+      writes.push(
+        supabaseClient.from('availability').upsert(
+          {
+            user_id: currentUser.id,
+            week_key: getWeekKey(),
+            sprint_days: c.sprintDays,
+            gym_days: c.gymDays,
+          },
+          { onConflict: 'user_id,week_key' }
+        )
+      );
+    }
+    const results = await Promise.all(writes);
+    const bad = results.find((r) => r && r.error);
+    if (bad) throw bad.error;
+  } catch (err) {
+    failed = err;
+    console.error('Could not save the first-run answers:', err);
+  }
+
+  onboardSaving = false;
+  if (next) next.disabled = false;
+  onboardEl.hidden = true;
+  if (failed) {
+    alert("Couldn't save that — you can set it all up under ⚙️ Settings.");
+  }
+  refreshAllData();
+}
+
+if (onboardEl) {
+  document.getElementById('onboardNext').addEventListener('click', () => {
+    if (onboardCurrent() === 'done') finishOnboarding();
+    else showOnboardStep(onboardStep + 1, false);
+  });
+  document.getElementById('onboardBack').addEventListener('click', () => {
+    showOnboardStep(onboardStep - 1, true);
+  });
+  document.getElementById('onboardSkip').addEventListener('click', finishOnboarding);
+  document.getElementById('onboardGymBtn').addEventListener('click', () => {
+    hasGymSelected = !hasGymSelected;
+    renderGymToggle('onboardGymBtn', 'onboardGymNote');
+  });
+}
+
+// `onboarded_at` set means they have been here. No row at all means a brand
+// new account, which is exactly who this is for. Anything that goes wrong
+// reading it means NOT showing the walkthrough: interrupting someone who has
+// used the app for months is worse than missing an intro once.
+async function maybeStartOnboarding() {
+  if (onboardStarted || !onboardEl || !currentUser) return;
+  // Claimed before the await, not after: getSession() and onAuthStateChange
+  // both land here within a tick of each other, and a check that only closes
+  // once the query returns lets both through.
+  onboardStarted = true;
+  try {
+    const { data, error } = await supabaseClient
+      .from('athlete_settings')
+      .select('onboarded_at')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data && data.onboarded_at) return;
+  } catch (err) {
+    console.error('Could not read first-run state:', err);
+    return;
+  }
+  onboardEl.hidden = false;
+  showOnboardStep(0, false);
+}
 
 // =====================================================
 // WEIGHT ROOM

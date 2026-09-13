@@ -1973,3 +1973,203 @@ body::before {
 }
 .guide-list li.yes::before { content: '✓'; color: #4ade80; }
 .guide-list li.no::before { content: '✕'; color: #f87171; }
+
+/* =====================================================================
+   FIRST RUN
+   A separate surface, not a modal: on the first sign-in this is the app
+   until it is finished or skipped. Everything moving here is transform or
+   opacity, same rule as the rest of the file, and all of it stops for
+   anyone who asked for reduced motion.
+   ===================================================================== */
+.onboard {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+  animation: onboard-open 0.45s var(--ease) both;
+}
+@keyframes onboard-open {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* A wash behind the content, keyed to the brand gradient. Slower and
+   larger than the ambient one on body so the two never beat against
+   each other. */
+.onboard::before {
+  content: '';
+  position: absolute;
+  inset: -25%;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 32% at 18% 8%, rgba(56, 232, 255, 0.16), transparent 70%),
+    radial-gradient(46% 36% at 86% 88%, rgba(167, 139, 250, 0.16), transparent 70%);
+  animation: drift 30s var(--ease) infinite alternate;
+  will-change: transform;
+}
+
+.onboard-inner {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  padding: max(1.1rem, env(safe-area-inset-top)) 1.25rem
+           max(1.1rem, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.onboard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: 0 0 auto;
+}
+
+.onboard-dots { display: flex; gap: 0.32rem; }
+.onboard-dots i {
+  display: block;
+  width: 18px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  transition: background 0.3s var(--ease), width 0.3s var(--ease);
+}
+.onboard-dots i.done { background: var(--border-strong); }
+.onboard-dots i.now { background: var(--glow); width: 30px; }
+
+.onboard-skip {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  padding: 0.4rem 0.2rem;
+  cursor: pointer;
+  transition: color 0.2s var(--ease);
+}
+.onboard-skip:hover { color: var(--text); }
+
+/* The middle scrolls; the buttons below never move off screen. */
+.onboard-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  -webkit-overflow-scrolling: touch;
+}
+/* A question belongs near the top, where the eye starts. The two screens
+   that are not questions are the two that should sit in the middle --
+   but only on a screen tall enough to have a middle. Auto margins inside a
+   scrolling box push the top of overflowing content out of reach, and the
+   intro is the longest screen in here. */
+@media (min-height: 700px) {
+  .onboard-step[data-step="intro"],
+  .onboard-step[data-step="done"] { margin: auto 0; }
+}
+
+.onboard-step { animation: step-fwd 0.34s var(--ease) both; }
+.onboard-stage.back .onboard-step { animation-name: step-back; }
+@keyframes step-fwd {
+  from { opacity: 0; transform: translate3d(22px, 0, 0); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes step-back {
+  from { opacity: 0; transform: translate3d(-22px, 0, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Each line arrives just behind the one above it. The same --i cascade the
+   warm-up uses, so the two screens move in the same language. */
+.onboard-step > *,
+.onboard-points > li {
+  animation: rise 0.42s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 0.07s + 0.1s);
+}
+
+.onboard-brand { margin: 0 0 0.2rem; }
+.onboard-lede {
+  margin: 0 0 1.3rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.onboard-h { margin: 0 0 0.45rem; font-size: 1.35rem; }
+/* Two classes deep on purpose: `h2 + p.hint` pulls the paragraph after a
+   heading up by 0.6rem everywhere else in the app, which here put the
+   subtitle straight through the question. */
+.onboard-step .onboard-sub {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.onboard-step .onboard-lede { margin-top: 0; }
+.onboard-tail { text-align: center; margin: 1.2rem 0 0; }
+
+.onboard-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+.onboard-points li {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 0.85rem 0.95rem;
+}
+.onboard-points strong { display: block; font-size: 0.88rem; margin-bottom: 0.15rem; }
+.onboard-points div { font-size: 0.78rem; line-height: 1.45; color: var(--muted); }
+.onboard-ico { font-size: 1.25rem; line-height: 1.2; flex: 0 0 auto; }
+
+.onboard-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+.onboard-chips .day-chip { padding: 0.6rem 0.95rem; font-size: 0.78rem; }
+
+.onboard-step input[type="text"],
+.onboard-step input[type="date"] { width: 100%; }
+.onboard-step .avail-label { font-size: 0.92rem; }
+
+/* The tick draws itself rather than appearing already drawn -- the one
+   place in the app where a flourish is the whole point of the screen. */
+.onboard-tick { display: flex; justify-content: center; margin-bottom: 0.8rem; }
+.onboard-tick svg { width: 76px; height: 76px; overflow: visible; }
+.onboard-tick-ring {
+  fill: none;
+  stroke: var(--glow-dim);
+  stroke-width: 2;
+  stroke-dasharray: 145;
+  stroke-dashoffset: 145;
+  animation: draw 0.7s var(--ease) 0.12s forwards;
+}
+.onboard-tick-mark {
+  fill: none;
+  stroke: var(--glow);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: draw 0.42s var(--ease) 0.6s forwards;
+}
+.onboard-step[data-step="done"] { text-align: center; }
+
+.onboard-actions { display: flex; gap: 0.6rem; flex: 0 0 auto; }
+.onboard-next { flex: 1 1 auto; }
+.onboard-back { flex: 0 0 auto; min-width: 88px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .onboard,
+  .onboard::before,
+  .onboard-step,
+  .onboard-step > *,
+  .onboard-points > li { animation: none; }
+  .onboard-tick-ring,
+  .onboard-tick-mark { animation: none; stroke-dashoffset: 0; }
+}
