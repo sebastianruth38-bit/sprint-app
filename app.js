@@ -4289,18 +4289,36 @@ const WORKOUT_TEMPLATES = {
     { text: '2x20-30m hill sprints', requires: 'Hills' },
     { text: '(2x20,2x25,2x30,1x40)' },
     { text: 'Sleds (2x10,20,30)', requires: 'Sleds', fallback: '2x30' },
+    { text: '6x30m from blocks', requires: 'Blocks', fallback: '6x30m from a 3-point start' },
+    { text: '3x(10,20,30) from blocks', requires: 'Blocks', fallback: '3x(10,20,30)' },
+    { text: '4x20m sled push', requires: 'Sleds', fallback: '4x20m' },
+    { text: '3x30m hill sprints', requires: 'Hills' },
+    { text: '8x20m' },
+    { text: '4x(10,20)' },
+    { text: '5x30m' },
+    { text: '2x(20,30,40)' },
   ],
   'Max Velocity (flys/build-ups)': [
     { text: '4x30m fly' },
     { text: '4x float sprint (40-60-90)' },
     { text: '2x40m fly, 2x30m fly' },
+    { text: '3x20m fly off a 30m run-in' },
+    { text: '5x30m build-up to 95%' },
+    { text: '2x(30m fly, 20m fly)' },
+    { text: '3x40m fly off a 20m run-in' },
+    { text: '6x60m at 90-95%' },
+    { text: '4x(20m build, 20m hold)' },
   ],
   'Tempo (extensive/aerobic)': [
     '8x200', '8x150', '3x3x100', '5x300', '3x500', '4x350', '6x250',
     '150,200,250,300,250,200,150', '200,300,200,300,200',
+    '4x4x100', '10x150', '6x300', '2x(100,200,300)', '12x100',
+    '100,200,300,400,300,200,100', '9x200',
   ].map((text) => ({ text })),
   'Speed Endurance (60-150m)': [
     '5x150', '3x250', '3x300', '200,300,200', '5x120', '4x250',
+    '6x100', '2x(150,120,100)', '150,150,150', '4x180',
+    '300,250,200,150', '2x(120,150)', '5x100 at 95%', '3x200',
   ].map((text) => ({ text })),
 };
 
@@ -4401,60 +4419,131 @@ async function getPrimaryEvents() {
 // producing force fast, so cleans become jumps rather than becoming squats
 // for reps; the tempo days stay about general strength, so the pressing and
 // pulling stay in even though pulling is the awkward one without a bar.
-function buildLiftDetails(role, phase, hasGym = true) {
+// How many versions of each lifting day there are.
+//
+// One fixed string per day meant a month of training read like the same four
+// sessions copied twelve times. The movements are deliberately drawn from the
+// set the Form Reference already covers -- a variant that prescribes an
+// exercise with no reference entry is a name the athlete has nowhere to look
+// up, and coverage_test fails the build over it.
+const LIFT_VARIANTS = 3;
+
+// The variant is an ARGUMENT, not a dice roll inside the function.
+//
+// buildLiftDetails has to stay pure: gym_test asserts that calling it twice
+// with the same arguments gives the same answer, which is what lets every
+// other check about a day's contents mean anything. Rolling the dice in here
+// would make each of those assertions a coin flip. buildWeekPlan picks the
+// number; this only reads it.
+function buildLiftDetails(role, phase, hasGym = true, variant = 0) {
   const inSeason = phase.seasonPhase === 'in';
+  const pick = (pool) => pool[((Math.round(variant) % pool.length) + pool.length) % pool.length];
 
   if (!hasGym) {
     // Rows and dips need something to hang off or push from -- a low bar, a
     // sturdy table, a bench, a step. Every one of those is findable; a
     // barbell is not, which is the distinction being drawn here.
     if (role === 'accel') {
-      return inSeason
-        ? 'Squat Jumps 3x5, Broad Jumps 3x3, Bodyweight Bulgarian Split Squats 2x8, Single-Leg Glute Bridges 2x10, Core 2x'
-        : 'Squat Jumps 4x5, Broad Jumps 3x3, Bodyweight Bulgarian Split Squats 3x8-10, Single-Leg Glute Bridges 3x12, Core 3x';
+      return pick(inSeason ? [
+        'Squat Jumps 3x5, Broad Jumps 3x3, Bodyweight Bulgarian Split Squats 2x8, Single-Leg Glute Bridges 2x10, Core 2x',
+        'Broad Jumps 3x3, Squat Jumps 2x5, Single-Leg Squats 2x6, Core 2x',
+        'Split Squat Jumps 2x4, Broad Jumps 3x3, Single-Leg Glute Bridges 2x10, Core 2x',
+      ] : [
+        'Squat Jumps 4x5, Broad Jumps 3x3, Bodyweight Bulgarian Split Squats 3x8-10, Single-Leg Glute Bridges 3x12, Core 3x',
+        'Broad Jumps 4x3, Squat Jumps 3x6, Single-Leg Squats 3x6, Single-Leg Glute Bridges 3x12, Core 3x',
+        'Squat Jumps 4x4, Split Squat Jumps 3x4, Bodyweight Bulgarian Split Squats 3x8, Core 3x',
+      ]);
     }
     if (role === 'maxv') {
-      return inSeason
-        ? 'Tuck Jumps 2x5, Line Hops 2x10 each way, Single-Leg Squats 2x6, Split Squat Jumps 2x4, Core 2x'
-        : 'Tuck Jumps 3x5, Line Hops 3x10 each way, Single-Leg Squats 3x6-8, Split Squat Jumps 3x5, Core 3x';
+      return pick(inSeason ? [
+        'Tuck Jumps 2x5, Line Hops 2x10 each way, Single-Leg Squats 2x6, Split Squat Jumps 2x4, Core 2x',
+        'Tuck Jumps 2x5, Line Hops 2x10 each way, Squat Jumps 2x5, Core 2x',
+        'Split Squat Jumps 2x4, Line Hops 2x12 each way, Single-Leg Squats 2x6, Core 2x',
+      ] : [
+        'Tuck Jumps 3x5, Line Hops 3x10 each way, Single-Leg Squats 3x6-8, Split Squat Jumps 3x5, Core 3x',
+        'Tuck Jumps 3x6, Line Hops 3x12 each way, Squat Jumps 3x5, Single-Leg Squats 3x6, Core 3x',
+        'Split Squat Jumps 3x5, Tuck Jumps 3x5, Line Hops 3x10 each way, Single-Leg Glute Bridges 3x12, Core 3x',
+      ]);
     }
+    // Both tempo days have to keep pushing AND pulling in every version --
+    // pulling is the awkward one without a bar, and the easy mistake is a
+    // variant that quietly becomes push-ups and nothing else.
     if (role === 'tempo1') {
-      return 'Push-Ups 3x12-15, Inverted Rows 3x8-10, Pike Push-Ups 3x8, Prone Y-T-W 3x10, Core 3x';
+      return pick([
+        'Push-Ups 3x12-15, Inverted Rows 3x8-10, Pike Push-Ups 3x8, Prone Y-T-W 3x10, Core 3x',
+        'Push-Ups 4x12, Inverted Rows 4x8, Tricep Dips 3x10, Prone Y-T-W 3x12, Core 3x',
+        'Decline Push-Ups 3x10, Inverted Rows 3x10, Pike Push-Ups 3x8, Superman Holds 3x20s, Core 3x',
+      ]);
     }
     if (role === 'tempo2') {
-      return 'Decline Push-Ups 3x10, Inverted Rows 3x8, Tricep Dips 3x10, Superman Holds 3x20s, Core 3x';
+      return pick([
+        'Decline Push-Ups 3x10, Inverted Rows 3x8, Tricep Dips 3x10, Superman Holds 3x20s, Core 3x',
+        'Pike Push-Ups 3x10, Inverted Rows 3x10, Tricep Dips 3x12, Prone Y-T-W 3x12, Core 3x',
+        'Push-Ups 4x10, Inverted Rows 3x8, Superman Holds 3x30s, Core 3x',
+      ]);
     }
     if (role === 'competitionLight') {
-      return 'Core 2x, Squat Jumps 2x3, Split Squat Jumps 2x3. Keep it crisp and nowhere near failure';
+      return pick([
+        'Core 2x, Squat Jumps 2x3, Split Squat Jumps 2x3. Keep it crisp and nowhere near failure',
+        'Core 2x, Broad Jumps 2x3, Squat Jumps 2x3. Keep it crisp and nowhere near failure',
+        'Core 2x, Tuck Jumps 2x3, Split Squat Jumps 2x3. Keep it crisp and nowhere near failure',
+      ]);
     }
     return null;
   }
 
   if (role === 'accel') {
-    return inSeason
-      ? 'Power Cleans 3x3-5, Broad Jumps 3x3, Bulgarian Split Squats 2-3x6, Med Ball Throws 2x5, Core 2x'
-      : 'Power Cleans 3x3-5, Broad Jumps 3x3, Bulgarian Split Squats 3x6-8, Core 3x';
+    return pick(inSeason ? [
+      'Power Cleans 3x3-5, Broad Jumps 3x3, Bulgarian Split Squats 2-3x6, Med Ball Throws 2x5, Core 2x',
+      'Power Cleans 3x3, Broad Jumps 2x3, Quarter Squats 2x5, Med Ball Throws 2x5, Core 2x',
+      'Hang Power Cleans 3x3, Broad Jumps 2x4, Bulgarian Split Squats 2x6, Core 2x',
+    ] : [
+      'Power Cleans 3x3-5, Broad Jumps 3x3, Bulgarian Split Squats 3x6-8, Core 3x',
+      'Power Cleans 4x3, Broad Jumps 3x3, Back Squats 3x5, Core 3x',
+      'Hang Power Cleans 4x3, Broad Jumps 3x4, Step Ups 3x6, Core 3x',
+    ]);
   }
   if (role === 'maxv') {
-    const oly = inSeason ? 'Hang Power Cleans' : 'Hang Snatches';
-    const legs = inSeason ? 'Quarter Squats 2-3x6' : 'Step Ups & Squats 3x6-8';
-    return inSeason
-      ? `${oly} 3x3-5, Hurdle Hops 2-3x5, ${legs}, Med Ball Throws 2x5, Core 2x`
-      : `${oly} 3x3-5, Hurdle Hops 3x5, ${legs}, Core 3x`;
+    return pick(inSeason ? [
+      'Hang Power Cleans 3x3-5, Hurdle Hops 2-3x5, Quarter Squats 2-3x6, Med Ball Throws 2x5, Core 2x',
+      'Hang Power Cleans 3x3, Hurdle Hops 2x5, Step Ups 2x6, Med Ball Throws 2x5, Core 2x',
+      'Hang Snatches 2x3, Hurdle Hops 2x5, Quarter Squats 2x5, Core 2x',
+    ] : [
+      'Hang Snatches 3x3-5, Hurdle Hops 3x5, Step Ups & Squats 3x6-8, Core 3x',
+      'Hang Snatches 4x3, Hurdle Hops 3x6, Back Squats 3x6, Core 3x',
+      'Hang Power Cleans 3x3-5, Hurdle Hops 3x5, Bulgarian Split Squats 3x6, Core 3x',
+    ]);
   }
   if (role === 'tempo1') {
-    return 'Flat Bench 3x8, Back Row 3x8, Pull-Ups 3x, Tricep Pushdowns 3x12, Lateral Raises 3x12';
+    return pick([
+      'Flat Bench 3x8, Back Row 3x8, Pull-Ups 3x, Tricep Pushdowns 3x12, Lateral Raises 3x12',
+      'Flat Bench 4x6, Barbell Back Row 4x6, Pull-Ups 3x, Lateral Raises 3x12',
+      'Incline Bench 3x8, Pull-Ups 4x, Tricep Pushdowns 3x12, Lateral Raises 3x15',
+    ]);
   }
   if (role === 'tempo2') {
-    return 'Incline Bench 3x8, Barbell Back Row 3x8, Shoulder Press 3x8, Tricep Overhead Extensions 3x12';
+    return pick([
+      'Incline Bench 3x8, Barbell Back Row 3x8, Shoulder Press 3x8, Tricep Overhead Extensions 3x12',
+      'Shoulder Press 4x6, Barbell Back Row 4x8, Flat Bench 3x8, Tricep Overhead Extensions 3x12',
+      'Incline Bench 4x6, Pull-Ups 3x, Shoulder Press 3x10, Tricep Pushdowns 3x12',
+    ]);
   }
   if (role === 'competitionLight') {
-    return 'Core 2x, Med Ball Throws 2x5, Hang Cleans 2x3 @ ~half normal load, Quarter Squats 2x5 @ ~half normal load';
+    return pick([
+      'Core 2x, Med Ball Throws 2x5, Hang Cleans 2x3 @ ~half normal load, Quarter Squats 2x5 @ ~half normal load',
+      'Core 2x, Med Ball Throws 2x5, Quarter Squats 2x5 @ ~half normal load',
+      'Core 2x, Broad Jumps 2x3, Hang Cleans 2x3 @ ~half normal load',
+    ]);
   }
   return null;
 }
 
 function buildWeekPlan(phase, equipment, primaryEvents, hasGym = true) {
+  // A different version of each lifting day per week, the same way the
+  // running session is already drawn from a pool. Rolled here rather than
+  // inside buildLiftDetails, which has to stay pure -- see the note there.
+  const lift = (role) => buildLiftDetails(role, phase, hasGym,
+    Math.floor(Math.random() * LIFT_VARIANTS));
   const accel = () => pickTemplateText('Acceleration (0-30m)', equipment, phase) || '';
   const maxV = () => pickTemplateText('Max Velocity (flys/build-ups)', equipment, phase) || '';
   const tempo = () => pickTemplateText('Tempo (extensive/aerobic)', equipment, phase) || '';
@@ -4466,7 +4555,7 @@ function buildWeekPlan(phase, equipment, primaryEvents, hasGym = true) {
     // end of the week", so Monday gets one light lift; every other day
     // stays lift-free.
     return [
-      { day: 'Monday', type: 'Max Velocity (flys/build-ups)', details: maxV(), liftDetails: buildLiftDetails('competitionLight', phase, hasGym) },
+      { day: 'Monday', type: 'Max Velocity (flys/build-ups)', details: maxV(), liftDetails: lift('competitionLight') },
       { day: 'Tuesday', type: 'Recovery / Mobility', details: 'Rest + light mobility' },
       { day: 'Wednesday', type: 'Race Modeling', details: pickRaceModelingText(primaryEvents), timed: 'Timed' },
       { day: 'Thursday', type: 'Recovery / Mobility', details: 'Rest + light mobility' },
@@ -4478,11 +4567,11 @@ function buildWeekPlan(phase, equipment, primaryEvents, hasGym = true) {
 
   if (phase.seasonPhase === 'in') {
     return [
-      { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase, hasGym) },
+      { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: lift('accel') },
       { day: 'Tuesday', type: 'Speed Endurance (60-150m)', details: speedEnd(), timed: 'Timed' },
       { day: 'Wednesday', type: 'Recovery / Mobility', details: 'Mobility + foam roll' },
-      { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase, hasGym) },
-      { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: buildLiftDetails('tempo2', phase, hasGym) },
+      { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: lift('maxv') },
+      { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: lift('tempo2') },
       { day: 'Saturday', type: 'Rest Day', details: '' },
       { day: 'Sunday', type: 'Rest Day', details: '' },
     ];
@@ -4492,11 +4581,11 @@ function buildWeekPlan(phase, equipment, primaryEvents, hasGym = true) {
   // pre-season (within ~2 months of competition) drops the Friday lift
   // so the athlete isn't loading heavy this close to the season starting.
   return [
-    { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: buildLiftDetails('accel', phase, hasGym) },
-    { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo(), liftDetails: buildLiftDetails('tempo1', phase, hasGym) },
+    { day: 'Monday', type: 'Acceleration (0-30m)', details: accel(), timed: 'Timed', liftDetails: lift('accel') },
+    { day: 'Tuesday', type: 'Tempo (extensive/aerobic)', details: tempo(), liftDetails: lift('tempo1') },
     { day: 'Wednesday', type: 'Rest Day', details: '' },
-    { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: buildLiftDetails('maxv', phase, hasGym) },
-    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: phase.seasonPhase === 'pre' ? null : buildLiftDetails('tempo2', phase, hasGym) },
+    { day: 'Thursday', type: 'Max Velocity (flys/build-ups)', details: maxV(), timed: 'Timed', liftDetails: lift('maxv') },
+    { day: 'Friday', type: 'Tempo (extensive/aerobic)', details: tempoPlusMobility(), liftDetails: phase.seasonPhase === 'pre' ? null : lift('tempo2') },
     { day: 'Saturday', type: 'Rest Day', details: '' },
     { day: 'Sunday', type: 'Rest Day', details: '' },
   ];
