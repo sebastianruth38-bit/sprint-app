@@ -242,10 +242,14 @@ const caught = strikeOf([0.0, 0.30, 0.40]);
 check('but strides after the first are still judged',
   caught && caught.score === 2,
   caught ? `${caught.score}/5 (3 would mean the good first step masked them) ${caught.note}` : '(no row)');
-check('and the note says what it was judged on',
-  caught && /after the first step/.test(caught.note), caught && caught.note);
+// The note says how many strides it judged, not how many it read. The wording
+// that spelled out "after the first step" was dropped for length -- the
+// behaviour is still pinned by the two score checks above, which is where it
+// belongs: a note can be reworded, a score cannot be reworded into being right.
 check('and counts the strides it actually used, not the ones it read',
   caught && /over 2 strides/.test(caught.note), caught && caught.note);
+check('and the note is short enough to read at a glance',
+  caught && caught.note.length <= 90, caught && `${caught.note.length} chars: ${caught.note}`);
 
 // Which foot the athlete starts on must not change the answer. Touchdowns are
 // gathered one foot at a time, so before they were sorted into time order

@@ -951,10 +951,10 @@ const ANKLE_AGREEMENT_MAX = 25;
 // phase is longer with more give -- but two clips is not a calibration, and
 // the bands are deliberately coarse until there are more.
 const SUPPORT_BANDS = [
-  { min: -Infinity, max: 0.06, score: 5, note: 'Hips stay up through contact -- stiff support' },
-  { min: 0.06, max: 0.12, score: 4, note: 'Hips settle slightly through contact' },
-  { min: 0.12, max: 0.20, score: 3, note: 'Noticeable give through contact' },
-  { min: 0.20, max: Infinity, score: 2, note: 'Support collapsing -- the hip drops onto the foot' },
+  { min: -Infinity, max: 0.06, score: 5, note: 'Hips stay up -- stiff support' },
+  { min: 0.06, max: 0.12, score: 4, note: 'Hips settle slightly' },
+  { min: 0.12, max: 0.20, score: 3, note: 'Noticeable give on contact' },
+  { min: 0.20, max: Infinity, score: 2, note: 'Support collapsing under you' },
 ];
 // Contacts must agree before this is worth reporting, same as the ankle.
 const SUPPORT_AGREEMENT_MAX = 0.09;
@@ -1351,17 +1351,17 @@ function selectSubject(framePoses, secondsPerFrame) {
 // otherwise.
 const SHIN_BANDS = [
   { min: 30, max: Infinity, score: 5, note: 'Shin driving forward hard at touchdown' },
-  { min: 20, max: 30, score: 4, note: 'Good forward shin angle out of the start' },
-  { min: 12, max: 20, score: 3, note: 'Shin coming upright earlier than it should' },
-  { min: 5, max: 12, score: 2, note: 'Shin nearly vertical on contact, little left to push back against' },
-  { min: -Infinity, max: 5, score: 1, note: 'Foot landing ahead of the knee, braking out of the start' },
+  { min: 20, max: 30, score: 4, note: 'Good forward shin angle' },
+  { min: 12, max: 20, score: 3, note: 'Shin uprighting too early' },
+  { min: 5, max: 12, score: 2, note: 'Shin nearly vertical, little to push against' },
+  { min: -Infinity, max: 5, score: 1, note: 'Foot ahead of the knee, braking' },
 ];
 
 const STRIKE_BANDS = [
   { min: -Infinity, max: 0.12, score: 5, note: 'Foot lands under the hips' },
-  { min: 0.12, max: 0.22, score: 4, note: 'Foot lands slightly ahead of the hips' },
-  { min: 0.22, max: 0.32, score: 3, note: 'Reaching -- foot landing ahead of the hips' },
-  { min: 0.32, max: Infinity, score: 2, note: 'Overstriding badly -- braking on every step' },
+  { min: 0.12, max: 0.22, score: 4, note: 'Lands slightly ahead of the hips' },
+  { min: 0.22, max: 0.32, score: 3, note: 'Reaching, landing ahead of the hips' },
+  { min: 0.32, max: Infinity, score: 2, note: 'Overstriding, braking each step' },
 ];
 
 // Where the foot lands during acceleration, which is a different question
@@ -1386,11 +1386,11 @@ const STRIKE_BANDS = [
 // front" is reasoning from the athlete's scale, not a measurement. Treat 1/5
 // and 2/5 here as worth looking at the frame yourself.
 const ACCEL_STRIKE_BANDS = [
-  { min: -Infinity, max: 0.12, score: 5, note: 'Foot lands right under you, driving the ground back' },
-  { min: 0.12, max: 0.22, score: 4, note: 'Foot lands slightly ahead of you' },
-  { min: 0.22, max: 0.35, score: 3, note: 'Landing in front of you -- reaching rather than pushing' },
-  { min: 0.35, max: 0.5, score: 2, note: 'Well in front, braking against your own start' },
-  { min: 0.5, max: Infinity, score: 1, note: 'Way in front -- every step is fighting the last one' },
+  { min: -Infinity, max: 0.12, score: 5, note: 'Lands right under you, driving the ground back' },
+  { min: 0.12, max: 0.22, score: 4, note: 'Lands slightly ahead of you' },
+  { min: 0.22, max: 0.35, score: 3, note: 'Landing in front -- reaching, not pushing' },
+  { min: 0.35, max: 0.5, score: 2, note: 'Well in front, braking each step' },
+  { min: 0.5, max: Infinity, score: 1, note: 'Way in front, fighting every step' },
 ];
 
 // A planted foot cannot be a full leg length behind the hip, so anything past
@@ -1414,9 +1414,9 @@ const ACCEL_STRIKE_MIN_CONTACTS = 3;
 // ready to be stiff; well over that it lands pointed and collapses.
 const DORSI_BANDS = [
   { min: -Infinity, max: 95, score: 5, note: 'Toes up on landing' },
-  { min: 95, max: 108, score: 4, note: 'Ankle close to neutral on landing' },
+  { min: 95, max: 108, score: 4, note: 'Ankle near neutral on landing' },
   { min: 108, max: 120, score: 3, note: 'Toes dropping before landing' },
-  { min: 120, max: Infinity, score: 2, note: 'Landing toes-down -- no stiff platform' },
+  { min: 120, max: Infinity, score: 2, note: 'Landing toes-down, no platform' },
 ];
 
 // How much the hips drop through the stride, as a fraction of leg length.
@@ -1426,8 +1426,8 @@ const DORSI_BANDS = [
 // wording ("hips collapsing through contact") claimed the other metric's
 // subject and flatly contradicted it on the same card.
 const SINK_BANDS = [
-  { min: -Infinity, max: 0.08, score: 5, note: 'Hips ride at the same height every step' },
-  { min: 0.08, max: 0.13, score: 4, note: 'Hip height varies a little between steps' },
+  { min: -Infinity, max: 0.08, score: 5, note: 'Hips stay level every step' },
+  { min: 0.08, max: 0.13, score: 4, note: 'Hip height varies a little' },
   { min: 0.13, max: 0.2, score: 3, note: 'Hip height varies between steps' },
   { min: 0.2, max: Infinity, score: 2, note: 'Riding much lower on some steps than others' },
 ];
@@ -1513,11 +1513,10 @@ function notMeasurable(name, reason) {
 // one reason. Said once, in the same words, rather than four guesses.
 function touchdownShortfall(found) {
   if (!found) {
-    return 'No touchdown could be read in the frames that were graded. '
-      + 'Film side-on with both feet in shot for the whole run.';
+    return 'No touchdown could be read. Film side-on with both feet in shot.';
   }
-  return `Only ${found} touchdown${found === 1 ? '' : 's'} could be read and ${MIN_CONTACTS} are needed. `
-    + 'A longer clip, filmed side-on with both feet in shot, gives it more to work with.';
+  return `Only ${found} touchdown${found === 1 ? '' : 's'} could be read; ${MIN_CONTACTS} are needed. `
+    + 'Film side-on with both feet in shot.';
 }
 
 // How the shin is angled the moment the foot lands. Acceleration only.
@@ -1544,7 +1543,7 @@ function scoreShinAngle(metrics) {
   const shin = median(shins);
   const band = bandFor(shin, SHIN_BANDS);
   return { name: 'Shin Angle at Touchdown', score: band.score,
-           note: `${band.note} (${shin.toFixed(0)} degrees off vertical)`, value: shin };
+           note: `${band.note} (${shin.toFixed(0)}\u00b0 off vertical)`, value: shin };
 }
 
 function scoreGroundContact(metrics, clipType) {
@@ -1582,10 +1581,9 @@ function scoreGroundContact(metrics, clipType) {
       // Not the generic shortfall: this one is not about the filming. A first
       // step lands ahead of the hips whoever is running, so grading a start
       // off a single stride marks the athlete down for how a start works.
-      ? `Only ${strikes.length} touchdown${strikes.length === 1 ? '' : 's'} could be read, and the first `
-        + 'step of a start lands ahead of the hips whoever you are -- so it is thrown away rather than '
-        + `counted against you. That needs ${ACCEL_STRIKE_MIN_CONTACTS} touchdowns to grade: one to drop `
-        + 'and two to judge. Film a few more strides of the run.'
+      ? `Only ${strikes.length} touchdown${strikes.length === 1 ? '' : 's'} could be read. The first `
+        + 'step of a start always lands ahead, so it is dropped \u2014 that needs '
+        + `${ACCEL_STRIKE_MIN_CONTACTS}. Film a few more strides.`
       : touchdownShortfall(strikes.length)));
   } else {
     // The first step goes. Everything after it is the athlete's mechanics
@@ -1597,21 +1595,21 @@ function scoreGroundContact(metrics, clipType) {
       // Behind reads as behind. "-46% ahead of the hips" is a sentence that
       // makes the athlete do the arithmetic to find out he did well.
       const where = strike < 0
-        ? `${Math.abs(strike * 100).toFixed(0)}% of a leg length behind the hips`
-        : `${(strike * 100).toFixed(0)}% of a leg length ahead of the hips`;
+        ? `${Math.abs(strike * 100).toFixed(0)}% of a leg behind the hips`
+        : `${(strike * 100).toFixed(0)}% of a leg ahead`;
       const basis = accel
-        ? `, over ${judged.length} stride${judged.length === 1 ? '' : 's'} after the first step`
+        ? `, over ${judged.length} stride${judged.length === 1 ? '' : 's'}`
         : '';
       out.push({ name: 'Foot Strike vs COM', score: band.score,
                  note: `${band.note} (${where}${basis})`, value: strike });
     } else if (strike < plausibleMin) {
       out.push(notMeasurable('Foot Strike vs COM',
-        `The foot read ${Math.abs(strike * 100).toFixed(0)}% of a leg length behind the hips, which is `
-        + 'further back than a planted leg reaches. The ankle was mistracked on these touchdowns.'));
+        `The foot read ${Math.abs(strike * 100).toFixed(0)}% of a leg behind the hips \u2014 further `
+        + 'than a planted leg reaches, so the ankle was mistracked here.'));
     } else {
       out.push(notMeasurable('Foot Strike vs COM',
-        `The foot read ${(strike * 100).toFixed(0)}% of a leg length ahead of the hips, which is further `
-        + 'than a leg reaches. The ankle was mistracked on these touchdowns rather than mislanded.'));
+        `The foot read ${(strike * 100).toFixed(0)}% of a leg ahead \u2014 further than a leg reaches, `
+        + 'so the ankle was mistracked here.'));
     }
   }
   // Only when the touchdowns agree. A spread wider than the bands themselves
@@ -1626,13 +1624,11 @@ function scoreGroundContact(metrics, clipType) {
   const ankleSpread = dorsi.length ? Math.max(...dorsi) - Math.min(...dorsi) : null;
   if (dorsi.length < MIN_CONTACTS) {
     out.push({ name: 'Ankle at Touchdown', score: null, value: null,
-      note: 'Not measurable. The toe was not trackable on enough touchdowns. '
-          + 'Better light, or filming closer, is what makes it readable.' });
+      note: 'Not measurable. The toe was not trackable on enough touchdowns. Film closer.' });
   } else if (ankleSpread > ANKLE_AGREEMENT_MAX) {
     out.push({ name: 'Ankle at Touchdown', score: null, value: null,
-      note: `Not measurable. The touchdowns disagreed by ${ankleSpread.toFixed(0)} degrees, `
-          + 'which means the toe was jumping around rather than that your ankle was. '
-          + 'Filming closer and side-on steadies it.' });
+      note: `Not measurable. Toe tracking wobbled ${ankleSpread.toFixed(0)}\u00b0, not your ankle. `
+          + 'Film closer and side-on.' });
   }
   if (dorsi.length >= MIN_CONTACTS && ankleSpread <= ANKLE_AGREEMENT_MAX) {
     const d = median(dorsi);
@@ -1668,8 +1664,7 @@ function scoreHipSink(metrics) {
   // and a range needs more than the two points that define it.
   if (contactRows.length < 3) {
     return notMeasurable('Hip Height',
-      `Hip height is compared across touchdowns and only ${contactRows.length} could be read. `
-      + 'Three are needed to see a range rather than a pair of numbers.');
+      `Only ${contactRows.length} touchdowns could be read; three are needed to see a range.`);
   }
   const heights = contactRows.map((m) => {
     const lowestFoot = Math.max(...m.legs.map((l) => l.ank[1]));
@@ -1680,8 +1675,7 @@ function scoreHipSink(metrics) {
   }).filter((h) => h <= CONTACT_DEPTH_MAX);
   if (heights.length < 3) {
     return notMeasurable('Hip Height',
-      'The hips read further above the foot than a leg is long on most of these touchdowns, '
-      + 'so the landmarks were not to be trusted. Filming closer and side-on steadies them.');
+      'The hips read further above the foot than a leg is long \u2014 mistracked. Film closer and side-on.');
   }
   // Percentiles, not min/max: one mistracked frame should not define the
   // athlete's whole range of hip height.
@@ -1690,7 +1684,7 @@ function scoreHipSink(metrics) {
   const sink = at(0.95) - at(0.05);
   const band = bandFor(sink, SINK_BANDS);
   return { name: 'Hip Height', score: band.score,
-           note: `${band.note} (${(sink * 100).toFixed(0)}% of a leg length between the highest and lowest touchdown)`,
+           note: `${band.note} (${(sink * 100).toFixed(0)}% step to step)`,
            value: sink };
 }
 
@@ -1924,8 +1918,8 @@ function scoreKneeFold(metrics) {
   const folds = metrics.map((m) => m.kneeFold).filter((v) => v != null && v > 15);
   if (folds.length < 3) {
     return notMeasurable('Heel Recovery (knee fold)',
-      `The knee could be read in only ${folds.length} frame${folds.length === 1 ? '' : 's'} of the swing. `
-      + 'Film side-on so the swinging leg is not hidden behind the other one.');
+      `The knee was readable in only ${folds.length} frame${folds.length === 1 ? '' : 's'} of the swing. `
+      + 'Film side-on.');
   }
   const tightest = Math.min(...folds);
   const band = bandFor(tightest, FOLD_BANDS);
@@ -2133,15 +2127,15 @@ function scoreSupportStiffness(metrics) {
   const spread = Math.max(...drops) - Math.min(...drops);
   if (spread > SUPPORT_AGREEMENT_MAX) {
     return notMeasurable('Support Stiffness',
-      `The touchdowns disagreed by ${(spread * 100).toFixed(0)}% of a leg length, which is wider than `
-      + 'the bands themselves. That is the hip landmark moving between frames, not the hips.');
+      `Touchdowns disagreed by ${(spread * 100).toFixed(0)}%, hip tracking not your hips. `
+      + 'Film closer and side-on.');
   }
   const drop = median(drops);
   const band = bandFor(drop, SUPPORT_BANDS);
   return {
     name: 'Support Stiffness',
     score: band.score,
-    note: `${band.note} (hips drop ${(drop * 100).toFixed(0)}% of a leg length)`,
+    note: `${band.note} (hips drop ${(drop * 100).toFixed(0)}%)`,
     value: drop,
   };
 }
