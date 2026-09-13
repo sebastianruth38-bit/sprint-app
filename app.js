@@ -929,13 +929,6 @@ const CONTACT_DEPTH_MIN = 0.7;
 // Hip Height report a 48% collapse on a clip whose support was measurably
 // stiff (5% settle per contact).
 const CONTACT_DEPTH_MAX = 1.05;
-// The ankle angle comes from the toe, the smallest and least stable landmark
-// the model tracks. On one clip it moved 115, 126, 139, 129, 122, 94 across
-// six consecutive frames a thirtieth of a second apart -- an ankle cannot do
-// that, and the bands it is scored against are only ~13 degrees wide. When
-// the contacts disagree by more than this the number is noise, and reporting
-// it told an athlete his stiff ankle was collapsing.
-const ANKLE_AGREEMENT_MAX = 25;
 
 // How far the hips settle while the foot is on the ground, in leg lengths.
 //
@@ -956,8 +949,6 @@ const SUPPORT_BANDS = [
   { min: 0.12, max: 0.20, score: 3, note: 'Noticeable give on contact' },
   { min: 0.20, max: Infinity, score: 2, note: 'Support collapsing under you' },
 ];
-// Contacts must agree before this is worth reporting, same as the ankle.
-const SUPPORT_AGREEMENT_MAX = 0.09;
 // A contact seen for fewer frames than this never showed the hip settle.
 const SUPPORT_MIN_FRAMES = 2;
 // How far the ankle may move and still count as planted, in leg lengths.
@@ -1422,14 +1413,6 @@ const ACCEL_STRIKE_PLAUSIBLE_MIN = -1.0;
 // is not either, so it is dropped and the rest are graded.
 const ACCEL_STRIKE_MIN_CONTACTS = 3;
 
-// Ankle angle at touchdown. Under ~95 the toes are up and the foot is
-// ready to be stiff; well over that it lands pointed and collapses.
-const DORSI_BANDS = [
-  { min: -Infinity, max: 95, score: 5, note: 'Toes up on landing' },
-  { min: 95, max: 108, score: 4, note: 'Ankle near neutral on landing' },
-  { min: 108, max: 120, score: 3, note: 'Toes dropping before landing' },
-  { min: 120, max: Infinity, score: 2, note: 'Landing toes-down, no platform' },
-];
 
 // How much the hips drop through the stride, as a fraction of leg length.
 // This is the spread in hip height ACROSS the clip's touchdowns, not the
@@ -1677,28 +1660,18 @@ function scoreGroundContact(metrics, clipType) {
     }
   }
   // Only when the touchdowns agree. A spread wider than the bands themselves
-  // means the toe landmark was wandering, not the ankle.
-  // Say so when it cannot be read, rather than leaving a gap.
+  // Ankle at Touchdown is gone, and this is the reasoning.
   //
-  // This measure comes off the toe, and it declines to report more often than
-  // it reports. A row that silently disappears looks like the app forgot;
-  // "Not measurable" with the reason tells the athlete there is nothing wrong
-  // with their ankle and what would make it readable next time. It carries no
-  // score, so it is skipped by the average and gets no bar.
-  const ankleSpread = dorsi.length ? Math.max(...dorsi) - Math.min(...dorsi) : null;
-  if (dorsi.length < MIN_CONTACTS) {
-    out.push({ name: 'Ankle at Touchdown', score: null, value: null,
-      note: 'Not measurable. The toe was not trackable on enough touchdowns. Film closer.' });
-  } else if (ankleSpread > ANKLE_AGREEMENT_MAX) {
-    out.push({ name: 'Ankle at Touchdown', score: null, value: null,
-      note: `Not measurable. Toe tracking wobbled ${ankleSpread.toFixed(0)}\u00b0, not your ankle. `
-          + 'Film closer and side-on.' });
-  }
-  if (dorsi.length >= MIN_CONTACTS && ankleSpread <= ANKLE_AGREEMENT_MAX) {
-    const d = median(dorsi);
-    const band = bandFor(d, DORSI_BANDS);
-    out.push({ name: 'Ankle at Touchdown', score: band.score, note: `${band.note} (${d.toFixed(0)}°)`, value: d });
-  }
+  // It came off the toe, the smallest landmark the model tracks, and it asked
+  // the same question Leg Stiffness asks: does the thing collapse when you
+  // land on it. Two numbers for one property, one of them measured off three
+  // pixels, is worse than one -- and it almost never reported. On the
+  // athlete's own clip the seven touchdowns read 114.1, 115.6, 116.9, 122.8,
+  // 136.0, 138.1 and 156.9 degrees, a 43 degree spread, off a leg 14 pixels
+  // long. An ankle does not do that between steps of one run.
+  //
+  // The dorsi values are still collected above: they cost nothing, and they
+  // go into the saved readings where a future calibration can use them.
   return out;
 }
 
@@ -2182,24 +2155,42 @@ function scoreSupportStiffness(metrics) {
     // Not the same shortfall as the others: this one needs the foot to stay
     // put across several frames, so a touchdown can be perfectly readable and
     // still be no use here.
-    return notMeasurable('Support Stiffness', drops.length
+    return notMeasurable('Leg Stiffness', drops.length
       ? `Only ${drops.length} touchdown could be followed all the way through contact and `
         + `${MIN_CONTACTS} are needed. A clip filmed closer, side-on, holds the foot long enough.`
       : 'No touchdown stayed in frame long enough to watch the hips through it. '
         + 'Film side-on, closer, with the whole body in shot.');
   }
-  const spread = Math.max(...drops) - Math.min(...drops);
-  if (spread > SUPPORT_AGREEMENT_MAX) {
-    return notMeasurable('Support Stiffness',
-      `Touchdowns disagreed by ${(spread * 100).toFixed(0)}%, hip tracking not your hips. `
-      + 'Film closer and side-on.');
-  }
+  // The median, the way every other measure in this file works.
+  //
+  // There used to be an agreement gate here: if the touchdowns differed by
+  // more than SUPPORT_AGREEMENT_MAX the whole measure was withheld. It is the
+  // reason this row almost never reported, and the athlete's own clip shows
+  // why it was the wrong rule. His three contacts dropped 11.7%, 17.9% and
+  // 24.7% -- a 13% spread, so withheld -- when every one of those is already
+  // in the give-to-collapsing range. The measure was not failing to see
+  // anything; it was seeing the same thing three times and refusing to say so
+  // because the three did not match closely enough.
+  //
+  // Nor should they match. During acceleration the athlete is rising through
+  // the drive phase, so hip drop legitimately changes from step to step, and
+  // demanding constancy asks a changing quantity to hold still.
+  //
+  // And it was inconsistent: on that same clip Shin Angle reads 7.3 to 39.5
+  // degrees across the touchdowns -- a wider spread, proportionally -- and is
+  // scored 4/5 off the median without complaint. Only this measure and the
+  // toe-based ankle carried an extra gate.
+  //
+  // What protects against noise is the framing check, which refuses a clip
+  // where the athlete is too few pixels to measure at all. That is the right
+  // place for it: one judgement about whether the picture can be read, rather
+  // than each measure inventing its own.
   const drop = median(drops);
   const band = bandFor(drop, SUPPORT_BANDS);
   return {
-    name: 'Support Stiffness',
+    name: 'Leg Stiffness',
     score: band.score,
-    note: `${band.note} (hips drop ${(drop * 100).toFixed(0)}%)`,
+    note: `${band.note} (hips drop ${(drop * 100).toFixed(0)}% over ${drops.length} touchdowns)`,
     value: drop,
   };
 }
@@ -2386,11 +2377,6 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
   const support = scoreSupportStiffness(metrics);
   if (support) pinpoints.push(support);
   scoreGroundContact(metrics, clipType).forEach((p) => {
-    // Ankle at Touchdown is an acceleration read now. At top speed it said
-    // the same thing as Support Stiffness off shakier landmarks, and two
-    // numbers for one property, one of them known to be soft, is worse than
-    // one.
-    if (p.name === 'Ankle at Touchdown' && clipType !== 'Acceleration') return;
     pinpoints.push({ name: p.name, score: p.score, note: p.note });
     // Raised at the point the bands themselves call it overstriding, so the
     // flag and the score can never disagree -- acceleration allows a little
@@ -2401,9 +2387,6 @@ function buildLocalAnalysis(allMetrics, clipType, surface) {
       flags.push(clipType === 'Acceleration'
         ? 'Overstriding out of the start, reaching instead of pushing the ground back'
         : 'Overstriding, the foot is landing well in front of the hips');
-    }
-    if (p.name === 'Ankle at Touchdown' && p.value != null && p.value > 120) {
-      flags.push('Landing with the toes down, the foot has no stiff platform to push from');
     }
   });
   const sink = scoreHipSink(metrics);
@@ -3314,7 +3297,12 @@ async function extractFrames(videoBlob, count = 6, maxEdge = 480, onProgress = (
           subject = selectSubject(windowPoses, secondsPerFrame);
           if (!subject.rejection) {
             const trimmed = longestConsistentRun(subject.metrics);
-            if (trimmed.length >= MIN_TRACK_FRAMES) subject = { metrics: trimmed, rejection: null };
+            // Keep the framing: rebuilding the object here dropped it, which
+            // is why the first entries to carry this recorded framing: null on
+            // the very path that produces every graded clip.
+            if (trimmed.length >= MIN_TRACK_FRAMES) {
+              subject = { metrics: trimmed, rejection: null, framing: subject.framing };
+            }
             denseFrames = subject.metrics.length;
           }
         }
@@ -5465,7 +5453,7 @@ const WARMUP_PHASES = [
       { name: 'Close the gate', detail: '8 each leg. Same thing backwards, swinging the knee in.',
         measures: ['Hip Height'] },
       { name: 'Ankle rolls', detail: '10 circles each way, each foot.',
-        measures: ['Ankle at Touchdown', 'Support Stiffness'] },
+        measures: ['Leg Stiffness'] },
     ],
   },
   {
@@ -5491,9 +5479,9 @@ const WARMUP_PHASES = [
       { name: 'Glute bridges', detail: '2 x 12. Squeeze at the top, ribs down.',
         measures: ['Hip Height', 'Drive Position'] },
       { name: 'Pogo hops', detail: '3 x 10. Toes up, bounce off the front of the foot, short contacts.',
-        measures: ['Support Stiffness', 'Ankle at Touchdown'] },
+        measures: ['Leg Stiffness'] },
       { name: 'Ankling', detail: '2 x 20m. Tiny steps, feet picked straight up under you, toes held up.',
-        measures: ['Foot Strike vs COM', 'Ankle at Touchdown', 'Shin Angle at Touchdown'] },
+        measures: ['Foot Strike vs COM', 'Shin Angle at Touchdown'] },
       { name: 'A-march', detail: '2 x 20m. Slow and exact. This sets the position everything after it repeats.',
         measures: ['Thigh Separation (scissor)', 'Hip Height'] },
       { name: 'A-skip', detail: '2 x 20m. The march with rhythm and arms. Thigh to parallel, tall.',
@@ -5503,7 +5491,7 @@ const WARMUP_PHASES = [
       { name: 'B-skip', detail: '2 x 20m. Knee up, then unfold and paw the ground back underneath you.',
         measures: ['Heel Recovery (knee fold)'] },
       { name: 'Straight-leg bounds', detail: '2 x 20m. Legs long, striking down and back.',
-        measures: ['Foot Strike vs COM', 'Support Stiffness'] },
+        measures: ['Foot Strike vs COM', 'Leg Stiffness'] },
       { name: 'Dribbles, low to high', detail: '2 x 15m at each height. Turnover, foot landing under the hip.',
         measures: ['Foot Strike vs COM'] },
     ],
@@ -5540,7 +5528,7 @@ const WARMUP_PLANS = {
       { name: 'Rolling build-ups', detail: '3 x 60m, rising to 90%. Walk back between.',
         measures: ['Thigh Separation (scissor)', 'Heel Recovery (knee fold)'] },
       { name: 'One at race rhythm', detail: '1 x 80m at the pace the session is meant to hold.',
-        measures: ['Hip Height', 'Support Stiffness'] },
+        measures: ['Hip Height', 'Leg Stiffness'] },
     ],
   },
   tempo: {
