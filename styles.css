@@ -1144,6 +1144,18 @@ blockquote {
 .settings-legal a { color: var(--muted); text-decoration: none; }
 .settings-legal a:hover { color: var(--text); text-decoration: underline; }
 
+/* Which build is running. Deliberately quiet -- it is a diagnostic, not a
+   feature -- but present without having to make the app fail first. */
+.settings-build {
+  margin-top: 0.35rem;
+  text-align: center;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0.65;
+}
+
 /* ---- Privacy / Terms pages ----
    Plain reading pages. They reuse the app's shell so they do not look like a
    different site, but they are static HTML with no script: the App Store needs
